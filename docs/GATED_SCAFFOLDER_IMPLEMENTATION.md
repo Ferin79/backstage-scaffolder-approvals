@@ -206,7 +206,7 @@ into it, so it lands in Phase 9 alongside end-to-end verification.
 
 ---
 
-# Phase 1 — Common package
+# Phase 1 — Common package — **DONE**
 
 **Context.** Everything else imports from here, so getting the types right first prevents churn.
 `-common` must stay **isomorphic** — no Node imports whatsoever — because the frontend consumes it.
@@ -342,9 +342,73 @@ Keep `canonicalise` in `-common` and the actual digest in `-node`, so `-common` 
 
 ### Exit criteria
 
-- [ ] `-common` has zero Node imports (`grep -r "from 'node:\|require(" src/` returns nothing).
-- [ ] `canonicalise` has unit tests proving key order and nesting do not affect the result.
-- [ ] `yarn build:api-reports` produces a report for `-common`.
+- [x] `-common` has zero Node imports, and all three dependencies
+      (`@backstage/catalog-model`, `@backstage/plugin-permission-common`, `@backstage/types`) are
+      isomorphic
+- [x] `canonicalJson` has unit tests proving key order and nesting do not affect the result
+- [x] `yarn build:api-reports` produces a report for `-common` (and is idempotent on a second run)
+- [x] 25 tests pass across `canonicalJson`, `gatePolicy` and `types`
+- [x] `tsc:full`, `lint:all` and `prettier:check` clean
+
+### What landed
+
+| File               | Purpose                                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `constants.ts`     | `GATE_ACTION_ID`, `GATED_ANNOTATION`, `APPROVAL_GRANT_SECRET`, resource type, defaults                                 |
+| `types.ts`         | Status union, `GatePolicy`, `ApprovalRequest`, `ApprovalDecision`, API request/response types, `computeQuorumProgress` |
+| `permissions.ts`   | The four permissions — create (basic), read / decide / cancel (resource)                                               |
+| `canonicalJson.ts` | Deterministic JSON serialisation for the values hash                                                                   |
+| `gatePolicy.ts`    | `readGatePolicy` — normalises and validates a gate step's input                                                        |
+
+### Decisions made while implementing
+
+These were not settled in the design review and were decided here. Each is small, but each is the
+kind of thing that is expensive to change later.
+
+**`canonicalJson` throws rather than coercing.** `JSON.stringify` maps `NaN` and `Infinity` to
+`null`, which would let two materially different inputs produce the same hash. Since the output is a
+security binding, non-representable values (`NaN`, `Infinity`, bigint, function, symbol, `undefined`
+at the root, circular references) raise `CanonicalJsonError` instead. `-0` is normalised to `0`,
+because they are the same JSON number. `undefined` object properties are still dropped and
+`undefined` array slots still become `null`, matching `JSON.stringify` — a caller who omits an
+optional field must get the same hash as one who sets it to `undefined`.
+
+**Approver refs are normalised through `catalog-model`, not by hand.** Entity refs are
+case-insensitive with an optional namespace, so `Group:DevX` and `group:default/devx` denote the same
+group. `parseEntityRef` + `stringifyEntityRef` produces a fully-qualified lowercase ref, which is
+what the caller's `ownershipEntityRefs` look like. Anything less would silently fail to match and
+lock an approver out of their own gate. This is why `-common` depends on `@backstage/catalog-model`.
+
+**Duplicate approvers are de-duplicated after normalisation.** Listing the same group twice must not
+inflate the achievable quorum.
+
+**A zero timeout is an error, not "no timeout".** `timeout: { hours: 0 }` would expire every request
+on the first sweep. Treating it as no timeout would silently disable what the author asked for, so
+`readGatePolicy` rejects it and directs the author to omit the field.
+
+**`quorum` may exceed `approvers.length`.** One group ref can expand to many members, so this is
+legitimate rather than a mistake to catch.
+
+**`computeQuorumProgress` lives in `-common`.** Both the backend's gate logic and the UI's progress
+indicator need it, and they must never disagree about what "1 of 2" means. It counts distinct
+principals, and treats any single denial as decisive regardless of the approval count.
+
+**`ApprovalRequest.values` and `.summary` are `| null`.** Redaction is a first-class state rather
+than an afterthought, so every consumer is forced to handle a redacted request.
+
+### Notes for the next phase
+
+`canonicalJson` produces the _string_; the SHA-256 digest of it belongs in `-node`, which is where
+Phase 2 will add it. Keeping the digest out of `-common` is what lets `-common` stay isomorphic.
+
+Two type packages had to be added to the frontend package to make `tsc:full` pass:
+`@types/react-dom` (referenced by the CLI's `asset-types.d.ts`) and `@types/aria-query` (imported by
+`@testing-library/jest-dom@6.9`, which ships no types for it). A fresh lockfile resolves a newer
+jest-dom than the donor workspaces pinned, which is why they do not need the latter.
+
+`src/alpha.ts` was created as a placeholder in the frontend package. The `./alpha` export is part of
+the dual-ship contract, and the API report generator fails on an export that points at a missing
+file.
 
 ---
 

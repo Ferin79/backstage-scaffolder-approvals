@@ -1,0 +1,366 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import type { HumanDuration, JsonObject } from '@backstage/types';
+
+/**
+ * The lifecycle of an approval request.
+ *
+ * The request, not the scaffolder task, is the system of record. A task exists
+ * only from `running` onwards, and is joined to the request by `taskId`.
+ *
+ * - `pending` — awaiting decisions; quorum not yet met.
+ * - `approved` — quorum met and a grant minted; the launch is in flight. This
+ *   is a durable state rather than a transient one, so that a launch lost to a
+ *   crash or a scaffolder outage can be retried.
+ * - `running` — a scaffolder task exists and is executing.
+ * - `completed` — the task finished successfully.
+ * - `failed` — the task ran and errored, or the grant expired before the launch
+ *   succeeded. Terminal: re-running requires a fresh approval.
+ * - `rejected` — an approver denied the request.
+ * - `cancelled` — the requester withdrew before a decision.
+ * - `expired` — the timeout swept the request before quorum was met.
+ *
+ * @public
+ */
+export type ApprovalRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'rejected'
+  | 'cancelled'
+  | 'expired';
+
+/**
+ * Every status an approval request can reach, in rough lifecycle order.
+ *
+ * @public
+ */
+export const APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[] = [
+  'pending',
+  'approved',
+  'running',
+  'completed',
+  'failed',
+  'rejected',
+  'cancelled',
+  'expired',
+];
+
+/**
+ * Statuses from which no further transition is possible.
+ *
+ * @public
+ */
+export const TERMINAL_APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[] =
+  ['completed', 'failed', 'rejected', 'cancelled', 'expired'];
+
+/**
+ * Whether a request has reached a state it can never leave.
+ *
+ * @public
+ */
+export function isTerminalStatus(status: ApprovalRequestStatus): boolean {
+  return TERMINAL_APPROVAL_REQUEST_STATUSES.includes(status);
+}
+
+/**
+ * Whether a status is one this plugin recognises.
+ *
+ * Useful when reading a status back out of the database or off the wire, where
+ * the value is a bare string.
+ *
+ * @public
+ */
+export function isApprovalRequestStatus(
+  value: unknown,
+): value is ApprovalRequestStatus {
+  return (
+    typeof value === 'string' &&
+    (APPROVAL_REQUEST_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * The terms a request was submitted under.
+ *
+ * This is snapshotted from the template's gate step when the request is
+ * created, and never re-read afterwards. Editing the template — or moving an
+ * approver group around — therefore cannot change the terms of a request that
+ * is already in flight.
+ *
+ * Group membership is the deliberate exception: `approvers` holds entity refs,
+ * and group refs are expanded at decision time so that adding someone to an
+ * approver group takes effect immediately.
+ *
+ * @public
+ */
+export interface GatePolicy {
+  /**
+   * Who may decide, as entity refs. `group:` and `user:` refs may be mixed.
+   */
+  approvers: string[];
+
+  /**
+   * How many *distinct* principals must approve.
+   *
+   * A single denial rejects the request outright regardless of this value — a
+   * quorum is a threshold for assent, not a tally.
+   *
+   * May legitimately exceed `approvers.length`, since one group ref can expand
+   * to many members.
+   */
+  quorum: number;
+
+  /**
+   * Whether the requester may count towards their own request's quorum.
+   */
+  selfApprove: boolean;
+
+  /**
+   * How long the request may stay `pending` before the timeout sweep expires
+   * it. Omitted means no timeout.
+   */
+  timeout?: HumanDuration;
+
+  /**
+   * A short, human-readable description of what is being requested, shown to
+   * approvers. Rendered by the scaffolder's templating, so it may reference
+   * `parameters`.
+   */
+  summary?: string;
+}
+
+/**
+ * An approval request: a template someone wants to run, and its decision state.
+ *
+ * @public
+ */
+export interface ApprovalRequest {
+  id: string;
+
+  /** The gated template, as an entity ref. */
+  templateRef: string;
+
+  /**
+   * The submitted template parameters, or `null` once redacted.
+   *
+   * Values may carry personal data (an access justification, say), so the
+   * retention sweep nulls this while keeping the request and its decisions.
+   * Consumers must handle `null` — a redacted request is still a valid one.
+   */
+  values: JsonObject | null;
+
+  /**
+   * A canonical hash of the submitted values.
+   *
+   * Survives redaction, and binds a grant to exactly the values that were
+   * approved: the gate action recomputes it from the running task and refuses
+   * on mismatch, so "approved for X, executed as Y" cannot happen.
+   */
+  valuesHash: string;
+
+  /** Who submitted the request, as a user entity ref. */
+  requesterRef: string;
+
+  status: ApprovalRequestStatus;
+
+  /** Rendered summary from the gate step, or `null` once redacted. */
+  summary: string | null;
+
+  /** The terms this request was submitted under. See {@link GatePolicy}. */
+  policySnapshot: GatePolicy;
+
+  /** The scaffolder task, once one has been launched. */
+  taskId?: string;
+
+  createdAt: string;
+  updatedAt: string;
+
+  /** When the timeout sweep should expire this request, if it has a timeout. */
+  expiresAt?: string;
+
+  /** When quorum was met, or when a denial landed. */
+  decidedAt?: string;
+
+  /** When the retention sweep redacted `values` and `summary`. */
+  redactedAt?: string;
+}
+
+/**
+ * Which way an approver went.
+ *
+ * @public
+ */
+export type ApprovalDecisionOutcome = 'approve' | 'deny';
+
+/**
+ * One approver's decision on one request.
+ *
+ * Decisions are append-only and never updated, so they double as the audit
+ * trail. At most one per approver per request.
+ *
+ * @public
+ */
+export interface ApprovalDecision {
+  id: string;
+  requestId: string;
+
+  /** Who decided, as a user entity ref. */
+  approverRef: string;
+
+  decision: ApprovalDecisionOutcome;
+
+  /** Optional free-text rationale, shown to the requester. */
+  comment?: string;
+
+  createdAt: string;
+}
+
+/**
+ * A request together with its decision history.
+ *
+ * @public
+ */
+export interface ApprovalRequestWithDecisions extends ApprovalRequest {
+  decisions: ApprovalDecision[];
+}
+
+/**
+ * How far a pending request has got towards its quorum.
+ *
+ * @public
+ */
+export interface QuorumProgress {
+  /** Distinct principals who have approved. */
+  approvals: number;
+
+  /** How many are needed. */
+  quorum: number;
+
+  /** Whether any approver denied, which rejects the request outright. */
+  denied: boolean;
+
+  /** Whether the quorum has been reached and nobody denied. */
+  satisfied: boolean;
+}
+
+/**
+ * Summarise a decision history against the request's quorum.
+ *
+ * Pure and shared so that the backend's gate logic and the UI's progress
+ * indicator can never disagree about what "1 of 2" means.
+ *
+ * @public
+ */
+export function computeQuorumProgress(
+  decisions: readonly ApprovalDecision[],
+  policy: Pick<GatePolicy, 'quorum'>,
+): QuorumProgress {
+  const denied = decisions.some(d => d.decision === 'deny');
+
+  // Distinct principals, not distinct decisions: the store enforces one vote
+  // per approver, but a caller may hand us anything.
+  const approvers = new Set(
+    decisions.filter(d => d.decision === 'approve').map(d => d.approverRef),
+  );
+
+  return {
+    approvals: approvers.size,
+    quorum: policy.quorum,
+    denied,
+    satisfied: !denied && approvers.size >= policy.quorum,
+  };
+}
+
+/**
+ * Which side of a request the caller is asking about.
+ *
+ * @public
+ */
+export type ApprovalRequestRole = 'requester' | 'approver';
+
+/**
+ * Query parameters for listing approval requests.
+ *
+ * @public
+ */
+export interface ListApprovalRequestsOptions {
+  /** Restrict to these statuses. Omitted means all. */
+  status?: ApprovalRequestStatus | ApprovalRequestStatus[];
+
+  /**
+   * Restrict to requests the caller submitted (`requester`) or may decide on
+   * (`approver`).
+   */
+  role?: ApprovalRequestRole;
+
+  templateRef?: string;
+  requesterRef?: string;
+
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * A page of approval requests.
+ *
+ * @public
+ */
+export interface ListApprovalRequestsResponse {
+  items: ApprovalRequest[];
+
+  /** Total matching the filter, ignoring `limit` and `offset`. */
+  totalItems: number;
+}
+
+/**
+ * Body for submitting a new approval request.
+ *
+ * @public
+ */
+export interface SubmitApprovalRequestOptions {
+  templateRef: string;
+  values: JsonObject;
+}
+
+/**
+ * Result of submitting an approval request.
+ *
+ * @public
+ */
+export interface SubmitApprovalRequestResponse {
+  id: string;
+
+  /**
+   * True when an identical pending request from the same requester already
+   * existed and was returned instead of creating a duplicate. Approvers should
+   * not see the same request twice in their inbox.
+   */
+  collapsed: boolean;
+}
+
+/**
+ * Body for recording a decision.
+ *
+ * @public
+ */
+export interface DecideApprovalRequestOptions {
+  decision: ApprovalDecisionOutcome;
+  comment?: string;
+}

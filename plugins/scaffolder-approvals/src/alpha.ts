@@ -15,16 +15,15 @@
  */
 
 /**
- * Common types, permissions and pure helpers for the scaffolder-approvals
- * plugin.
+ * New frontend system entrypoint for the scaffolder-approvals plugin.
  *
- * Isomorphic: safe to import from both frontend and backend code.
+ * This package dual-ships: the default export carries the legacy
+ * `createPlugin` definition and this entrypoint carries the
+ * `createFrontendPlugin` one. Both mount the same components, so only the
+ * wiring is duplicated.
  *
  * @packageDocumentation
  */
 
-export * from './constants';
-export * from './types';
-export * from './permissions';
-export * from './canonicalJson';
-export * from './gatePolicy';
+// Populated in the frontend phase; see GATED_SCAFFOLDER_IMPLEMENTATION.md.
+export {};
