@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+import { resolvePackagePath } from '@backstage/backend-plugin-api';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import knexFactory, { type Knex } from 'knex';
 
 /**
@@ -28,8 +31,21 @@ import knexFactory, { type Knex } from 'knex';
  * noticing. It needs no database, so it runs everywhere.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires, no-restricted-syntax
-const migration = require('../../migrations/20260911000000_init.js');
+/**
+ * Every migration, in order. Read from disk rather than listed, so a new
+ * migration is covered the moment it is added instead of when somebody
+ * remembers to add it here.
+ */
+const migrationsDir = resolvePackagePath(
+  '@backstage-community/plugin-scaffolder-approvals-backend',
+  'migrations',
+);
+
+const migrations = readdirSync(migrationsDir)
+  .filter(name => name.endsWith('.js'))
+  .sort()
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, no-restricted-syntax
+  .map(name => require(join(migrationsDir, name)));
 
 const DIALECTS = ['better-sqlite3', 'pg', 'mysql2'] as const;
 
@@ -50,20 +66,30 @@ async function compile(client: string): Promise<string[]> {
     return Promise.resolve();
   };
 
-  const recorder = {
-    schema: {
-      createTable: (...args: Parameters<Knex.SchemaBuilder['createTable']>) =>
-        capture(knex.schema.createTable(...args)),
-      dropTableIfExists: (
-        ...args: Parameters<Knex.SchemaBuilder['dropTableIfExists']>
-      ) => capture(knex.schema.dropTableIfExists(...args)),
-    },
-    fn: knex.fn,
+  // A stand-in for the knex instance that compiles schema changes instead of
+  // running them. It is also callable, because a migration that backfills data
+  // uses the query builder — here that finds nothing to backfill, which is
+  // correct: this suite is about the DDL, and there is no database behind it.
+  const recorder: any = () => ({
+    select: async () => [],
+  });
+  recorder.schema = {
+    createTable: (...args: Parameters<Knex.SchemaBuilder['createTable']>) =>
+      capture(knex.schema.createTable(...args)),
+    dropTableIfExists: (
+      ...args: Parameters<Knex.SchemaBuilder['dropTableIfExists']>
+    ) => capture(knex.schema.dropTableIfExists(...args)),
   };
+  recorder.fn = knex.fn;
+  recorder.batchInsert = async () => [];
 
   try {
-    await migration.up(recorder);
-    await migration.down(recorder);
+    for (const migration of migrations) {
+      await migration.up(recorder);
+    }
+    for (const migration of [...migrations].reverse()) {
+      await migration.down(recorder);
+    }
   } finally {
     await knex.destroy();
   }
@@ -102,9 +128,11 @@ describe('migration portability', () => {
   it.each(DIALECTS)('compiles for %s', dialect => {
     const statements = compiled.get(dialect)!;
 
-    // Three tables up, three down.
-    expect(statements.filter(s => /^create table/i.test(s))).toHaveLength(3);
-    expect(statements.filter(s => /^drop table/i.test(s))).toHaveLength(3);
+    // Every table created is also dropped.
+    const created = statements.filter(s => /^create table/i.test(s));
+    const dropped = statements.filter(s => /^drop table/i.test(s));
+    expect(created).toHaveLength(4);
+    expect(dropped).toHaveLength(created.length);
   });
 
   it.each(DIALECTS)('declares no partial index on %s', dialect => {

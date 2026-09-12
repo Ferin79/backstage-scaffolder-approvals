@@ -50,3 +50,65 @@ export function generateGrantToken(): string {
 export function hashGrantToken(token: string): string {
   return sha256Hex(token);
 }
+
+/**
+ * The separator between the request id and the token in a formatted grant.
+ *
+ * A dot, because neither half can contain one: a UUID is hex and hyphens, and
+ * base64url has no `.`.
+ */
+const GRANT_SEPARATOR = '.';
+
+/**
+ * Thrown when a grant string is not in the expected form.
+ *
+ * @public
+ */
+export class GrantFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GrantFormatError';
+  }
+}
+
+/**
+ * Bundle a request id and its token into the single string handed to a task.
+ *
+ * The request id travels with the token because the redeeming end needs it and
+ * has no other way to learn it. It cannot ride along as a template *value*: the
+ * values hash is computed over exactly what the requester submitted, so adding
+ * a field would break the binding the grant exists to enforce. And it cannot be
+ * inferred from the token alone without giving up the store's `request_id`
+ * guard, which is a real cross-check that a task cannot redeem another
+ * request's grant.
+ *
+ * The id half is not secret — it appears in URLs — so bundling it with the
+ * secret half costs nothing and keeps this to one task secret.
+ *
+ * @public
+ */
+export function formatGrant(requestId: string, token: string): string {
+  if (requestId.includes(GRANT_SEPARATOR)) {
+    throw new GrantFormatError('A request id cannot contain a dot');
+  }
+  return `${requestId}${GRANT_SEPARATOR}${token}`;
+}
+
+/**
+ * Split a grant back into its request id and token.
+ *
+ * @public
+ */
+export function parseGrant(grant: string): {
+  requestId: string;
+  token: string;
+} {
+  const separator = grant.indexOf(GRANT_SEPARATOR);
+  if (separator <= 0 || separator === grant.length - 1) {
+    throw new GrantFormatError('Malformed approval grant');
+  }
+  return {
+    requestId: grant.slice(0, separator),
+    token: grant.slice(separator + 1),
+  };
+}

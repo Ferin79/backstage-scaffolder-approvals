@@ -30,6 +30,7 @@ import {
 import {
   computeValuesHash,
   findGateStep,
+  formatGrant,
   generateGrantToken,
   GateStepError,
   hashGrantToken,
@@ -426,7 +427,9 @@ export class ApprovalService {
           // scaffolder's type does not. These came back out of a JSON column,
           // and JSON cannot represent `undefined`, so the cast is sound.
           values: request.values as Record<string, JsonValue>,
-          secrets: { [APPROVAL_GRANT_SECRET]: token },
+          // The request id travels with the token: the gate action needs it to
+          // redeem the grant and has no other way to learn it.
+          secrets: { [APPROVAL_GRANT_SECRET]: formatGrant(requestId, token) },
         },
         { credentials },
       );
@@ -452,6 +455,31 @@ export class ApprovalService {
         `Launched task ${taskId} for approval request ${requestId}, but the request had already left 'approved'`,
       );
     }
+  }
+
+  /**
+   * Redeem a grant on behalf of a running task.
+   *
+   * Returns false for every kind of failure, deliberately. The caller is
+   * presenting a bearer token, and distinguishing "no such grant" from "wrong
+   * values" or "already used" would tell an attacker which part to change.
+   *
+   * The request's status is not checked: the task can reach the gate before
+   * `launch` has finished recording its id, so `approved` and `running` are
+   * both legitimate here. The grant's own guards are what decide.
+   */
+  async consumeGrant(options: {
+    requestId: string;
+    token: string;
+    valuesHash: string;
+    taskId: string;
+  }): Promise<boolean> {
+    return await this.store.consumeGrant({
+      requestId: options.requestId,
+      tokenHash: hashGrantToken(options.token),
+      valuesHash: options.valuesHash,
+      taskId: options.taskId,
+    });
   }
 
   private async requireRequest(id: string): Promise<ApprovalRequest> {

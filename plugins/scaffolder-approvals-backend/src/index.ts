@@ -20,6 +20,6 @@
  * @packageDocumentation
  */
 
-// Populated by the implementation phases; see
-// GATED_SCAFFOLDER_IMPLEMENTATION.md in the repository root.
-export {};
+export { scaffolderApprovalsPlugin as default } from './plugin';
+export { scaffolderApprovalsPlugin } from './plugin';
+export type { ApprovalObserver } from './service';

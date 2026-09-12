@@ -596,6 +596,137 @@ describe('ApprovalStore', () => {
       });
     });
 
+    describe('getManyByIds', () => {
+      it('returns requests in the order asked for', async () => {
+        // The permission framework's contract: one slot per requested id, in
+        // the same order, so it can line results up with its own requests.
+        const first = await store.createOrCollapse(newRequest());
+        const second = await store.createOrCollapse(
+          newRequest({ values: { other: true } }),
+        );
+
+        const ids = [second.id, first.id];
+        const loaded = await store.getManyByIds(ids);
+
+        expect(loaded.map(r => r?.id)).toEqual(ids);
+      });
+
+      it('leaves a gap for an id that does not exist', async () => {
+        // A hole rather than a shorter array, or the caller's indices shift.
+        const { id } = await store.createOrCollapse(newRequest());
+
+        const loaded = await store.getManyByIds([
+          '3f1e4c8a-0000-4000-8000-00000000dead',
+          id,
+        ]);
+
+        expect(loaded).toHaveLength(2);
+        expect(loaded[0]).toBeUndefined();
+        expect(loaded[1]?.id).toBe(id);
+      });
+
+      it('returns nothing for an empty request', async () => {
+        expect(await store.getManyByIds([])).toEqual([]);
+      });
+    });
+
+    describe('approverRefs filter', () => {
+      it('finds the requests a set of refs may decide on', async () => {
+        const devx = await store.createOrCollapse(
+          newRequest({
+            policySnapshot: {
+              approvers: ['group:default/devx-team'],
+              quorum: 1,
+              selfApprove: false,
+            },
+          }),
+        );
+        const platform = await store.createOrCollapse(
+          newRequest({
+            values: { other: true },
+            policySnapshot: {
+              approvers: ['group:default/platform'],
+              quorum: 1,
+              selfApprove: false,
+            },
+          }),
+        );
+
+        const asDevx = await store.listRequests({
+          approverRefs: ['user:default/alice', 'group:default/devx-team'],
+        });
+        expect(asDevx.items.map(i => i.id)).toEqual([devx.id]);
+        expect(asDevx.totalItems).toBe(1);
+
+        const asOutsider = await store.listRequests({
+          approverRefs: ['user:default/outsider'],
+        });
+        expect(asOutsider).toEqual({ items: [], totalItems: 0 });
+
+        const asBoth = await store.listRequests({
+          approverRefs: ['group:default/devx-team', 'group:default/platform'],
+        });
+        expect(asBoth.items.map(i => i.id).sort()).toEqual(
+          [devx.id, platform.id].sort(),
+        );
+      });
+
+      it('counts a request once even when several of the caller refs match', async () => {
+        // A subquery rather than a join, precisely so this cannot double-count.
+        const { id } = await store.createOrCollapse(
+          newRequest({
+            policySnapshot: {
+              approvers: ['group:default/devx-team', 'user:default/alice'],
+              quorum: 1,
+              selfApprove: false,
+            },
+          }),
+        );
+
+        const page = await store.listRequests({
+          approverRefs: ['user:default/alice', 'group:default/devx-team'],
+        });
+
+        expect(page.items.map(i => i.id)).toEqual([id]);
+        expect(page.totalItems).toBe(1);
+      });
+
+      it('combines with a status filter and paging', async () => {
+        const approvers = ['group:default/devx-team'];
+        const policySnapshot = { approvers, quorum: 1, selfApprove: false };
+
+        for (const index of [0, 1, 2]) {
+          clock = new Date(Date.UTC(2026, 8, 12, 10, index));
+          const { id } = await store.createOrCollapse(
+            newRequest({ values: { index }, policySnapshot }),
+          );
+          if (index === 0) {
+            await store.transition(id, 'pending', 'rejected');
+          }
+        }
+
+        const pending = await store.listRequests({
+          approverRefs: approvers,
+          status: 'pending',
+          limit: 1,
+        });
+        expect(pending.items).toHaveLength(1);
+        expect(pending.totalItems).toBe(2);
+      });
+
+      it('records the approvers of a collapsed request only once', async () => {
+        const first = await store.createOrCollapse(newRequest());
+        const second = await store.createOrCollapse(newRequest());
+        expect(second.id).toBe(first.id);
+
+        expect(
+          await knex('approval_request_approvers').where({
+            request_id: first.id,
+          }),
+        ).toHaveLength(1);
+      });
+    });
+
     describe('getRequestWithDecisions', () => {
       it('joins the decision history onto the request', async () => {
         const { id } = await store.createOrCollapse(newRequest());

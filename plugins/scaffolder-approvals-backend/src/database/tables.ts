@@ -17,6 +17,7 @@
 export const TABLE_REQUESTS = 'approval_requests';
 export const TABLE_DECISIONS = 'approval_decisions';
 export const TABLE_GRANTS = 'approval_grants';
+export const TABLE_REQUEST_APPROVERS = 'approval_request_approvers';
 
 /**
  * What a `dateTime` column actually hands back, which depends on the driver.
@@ -56,6 +57,12 @@ export interface ApprovalDecisionRow {
   decision: string;
   comment: string | null;
   created_at: DbTimestamp;
+}
+
+/** A row of {@link TABLE_REQUEST_APPROVERS}. */
+export interface ApprovalRequestApproverRow {
+  request_id: string;
+  approver_ref: string;
 }
 
 /** A row of {@link TABLE_GRANTS}. */

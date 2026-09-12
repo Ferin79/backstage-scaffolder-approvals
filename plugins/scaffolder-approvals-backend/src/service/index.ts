@@ -15,4 +15,5 @@
  */
 
 export * from './ApprovalService';
+export * from './router';
 export * from './validateValues';

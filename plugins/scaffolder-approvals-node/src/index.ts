@@ -23,3 +23,4 @@
 export * from './hashes';
 export * from './grantToken';
 export * from './gateStep';
+export * from './permissions';

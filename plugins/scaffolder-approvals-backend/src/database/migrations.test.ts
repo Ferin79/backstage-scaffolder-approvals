@@ -17,7 +17,12 @@
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import { TestDatabases } from '@backstage/backend-test-utils';
 import type { Knex } from 'knex';
-import { TABLE_DECISIONS, TABLE_GRANTS, TABLE_REQUESTS } from './tables';
+import {
+  TABLE_DECISIONS,
+  TABLE_GRANTS,
+  TABLE_REQUEST_APPROVERS,
+  TABLE_REQUESTS,
+} from './tables';
 
 jest.setTimeout(60_000);
 
@@ -26,7 +31,12 @@ const migrationsDir = resolvePackagePath(
   'migrations',
 );
 
-const ALL_TABLES = [TABLE_REQUESTS, TABLE_DECISIONS, TABLE_GRANTS];
+const ALL_TABLES = [
+  TABLE_REQUESTS,
+  TABLE_DECISIONS,
+  TABLE_GRANTS,
+  TABLE_REQUEST_APPROVERS,
+];
 
 describe('migrations', () => {
   const databases = TestDatabases.create();
@@ -98,6 +108,81 @@ describe('migrations', () => {
           'values_hash',
         ],
       );
+
+      expect(
+        Object.keys(await knex(TABLE_REQUEST_APPROVERS).columnInfo()).sort(),
+      ).toEqual(['approver_ref', 'request_id']);
+    });
+
+    it('backfills approvers from the snapshots already stored', async () => {
+      // The realistic upgrade path: a deployment that ran only the first
+      // migration has requests whose approvers exist solely inside the JSON.
+      await knex.migrate.up({ directory: migrationsDir });
+
+      const requestId = '3f1e4c8a-0000-4000-8000-000000000100';
+      await knex(TABLE_REQUESTS).insert({
+        id: requestId,
+        template_ref: 'template:default/gated',
+        values_json: '{}',
+        values_hash: 'a'.repeat(64),
+        requester_ref: 'user:default/requester',
+        status: 'pending',
+        policy_snapshot: JSON.stringify({
+          approvers: ['group:default/devx-team', 'user:default/lead'],
+          quorum: 1,
+          selfApprove: false,
+        }),
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      // A snapshot that will not parse must not fail the whole migration for
+      // every other request.
+      await knex(TABLE_REQUESTS).insert({
+        id: '3f1e4c8a-0000-4000-8000-000000000101',
+        template_ref: 'template:default/gated',
+        values_json: '{}',
+        values_hash: 'b'.repeat(64),
+        requester_ref: 'user:default/requester',
+        status: 'pending',
+        policy_snapshot: '{not json',
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      await knex.migrate.latest({ directory: migrationsDir });
+
+      const rows = await knex(TABLE_REQUEST_APPROVERS).orderBy('approver_ref');
+      expect(rows).toEqual([
+        { request_id: requestId, approver_ref: 'group:default/devx-team' },
+        { request_id: requestId, approver_ref: 'user:default/lead' },
+      ]);
+    });
+
+    it('refuses to list one approver twice for a request', async () => {
+      // The composite primary key is what keeps a duplicate from inflating an
+      // inbox or a count.
+      await knex.migrate.latest({ directory: migrationsDir });
+
+      const requestId = '3f1e4c8a-0000-4000-8000-000000000110';
+      await knex(TABLE_REQUESTS).insert({
+        id: requestId,
+        template_ref: 'template:default/gated',
+        values_json: '{}',
+        values_hash: 'a'.repeat(64),
+        requester_ref: 'user:default/requester',
+        status: 'pending',
+        policy_snapshot: '{}',
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      const row = {
+        request_id: requestId,
+        approver_ref: 'group:default/devx-team',
+      };
+      await knex(TABLE_REQUEST_APPROVERS).insert(row);
+      await expect(knex(TABLE_REQUEST_APPROVERS).insert(row)).rejects.toThrow();
     });
 
     it('drops every table on the way down', async () => {

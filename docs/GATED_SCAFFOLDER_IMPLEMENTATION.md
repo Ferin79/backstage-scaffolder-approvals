@@ -15,7 +15,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 1 — Common package                | **Done**    |
 | 2 — Database and store            | **Done**    |
 | 3 — Approval service              | **Done**    |
-| 4 — Router and permissions        | Not started |
+| 4 — Router and permissions        | **Done**    |
 | 5 — Gate action                   | Not started |
 | 6 — Catalog processor             | Not started |
 | 7 — Sweeps, events, notifications | Not started |
@@ -947,7 +947,7 @@ passed to `ApprovalService` as a `HumanDuration`; Phase 7 reads `retention`.
 
 ---
 
-# Phase 4 — Router and permissions
+# Phase 4 — Router and permissions — **DONE**
 
 **Context.** Reads are open to any signed-in user (Q12), so there is no list filtering to implement —
 `toQuery` is a no-op. The only real authorization is `decide`, routed through the permission framework
@@ -1056,11 +1056,131 @@ if (decision.result !== AuthorizeResult.ALLOW) throw new NotAllowedError();
 
 ### Exit criteria
 
-- [ ] `/grants/consume` rejects a user principal with 403.
-- [ ] A non-approver gets 403 on `/decision`; a designated approver succeeds.
-- [ ] A group member of a listed approver group succeeds.
-- [ ] Any signed-in user can `GET /requests` and see everything (Q12).
-- [ ] Pagination returns a correct `totalItems` independent of `limit`.
+- [x] `/grants/consume` rejects a user principal with 403 (mutation-tested: relaxing the guard to
+      `httpAuth.credentials(req)` fails this test and the unauthenticated one).
+- [x] A non-approver gets 403 on `/decision`; a designated approver succeeds.
+- [x] A group member of a listed approver group succeeds — bob is never named by the gate, only
+      `group:default/devx-team` is.
+- [x] Any signed-in user can `GET /requests` and see everything (Q12).
+- [x] Pagination returns a correct `totalItems` independent of `limit`, including alongside a filter.
+- [x] 217 tests pass (41 common, 34 node, 142 backend); `tsc:full`, `lint:all`, `prettier:check`
+      clean; `build:api-reports` regenerated and idempotent.
+
+### What landed
+
+| File                                                      | Purpose                                                   |
+| --------------------------------------------------------- | --------------------------------------------------------- |
+| `-backend/src/service/router.ts`                          | The six routes, and all the authorization                 |
+| `-backend/src/plugin.ts`                                  | `createBackendPlugin`, resource-type registration, config |
+| `-backend/migrations/20260912000000_request_approvers.js` | The approvers table, with a backfill                      |
+| `-node/src/permissions.ts`                                | Resource ref, `ApprovalRequestFilter`, the three rules    |
+| `-node/src/grantToken.ts`                                 | `formatGrant` / `parseGrant` (added)                      |
+
+### Corrections to the plan
+
+**§4.3 describes something that does not exist, and something already built.** Its fast path reads
+`credentials.principal.ownershipEntityRefs`, but `BackstageUserPrincipal` carries only
+`userEntityRef`. More to the point, the two-tier expansion §4.3 hand-rolls — token claims first, one
+cached catalog read as a fallback — _is_ `DefaultUserInfoService`: it decodes `ent` from the JWT and
+falls back to `GET /api/auth/v1/userinfo`. So there is no `expandCaller` and no membership cache;
+Phase 3 already used `UserInfoService`, and Phase 4 just calls it.
+
+One consequence is worth stating plainly, since §4.3's cache was trying to avoid it: when a token
+carries `ent`, ownership refs are as of sign-in, so somebody added to an approver group mid-session
+is not recognised until their token refreshes. That is how every Backstage plugin that uses ownership
+refs behaves, the catalog's own `isOwner` rule included. A private cache here would make this plugin
+_differ_ from the rest of Backstage, which is worse than the staleness.
+
+**`toQuery: () => ({})` would have been a lie.** An empty object is not a no-op criterion, it is a
+`TQuery` of `{}`. The rules now return real filters over a deliberately narrow
+`ApprovalRequestFilter` (`requesterRef`, `templateRef`, `approverRef`) — each answerable by an
+indexed column or the approvers table. `apply` is what a `decide` authorization actually uses, so
+these cost little, but a filter language that could express something the database cannot answer
+would have to be applied in memory, and could then neither page nor report a correct total.
+
+**The consume endpoint needed a contract the plan did not give it.** The gate action holds the token
+but has no way to learn the request id, while the store's `request_id` guard needs one. It cannot
+arrive as a template _value_ — the values hash covers exactly what the requester submitted, so an
+extra field would break the binding the grant exists to enforce — and deriving it from the token
+alone would mean giving up that guard. So a grant is now a single compound secret,
+`<requestId>.<token>`, built and split by `formatGrant` / `parseGrant`. The id half is not secret (it
+is in URLs), so bundling it costs nothing and keeps this to one task secret.
+
+### Decisions made while implementing
+
+**A normalised `approval_request_approvers` table, added as a second migration.** "Which requests am
+I an approver for" is the inbox — the primary view of the whole feature — and the approvers live
+inside a JSON `text` column. Answering from JSON means scanning and filtering in memory, which cannot
+page and cannot report a correct total. Denormalising is safe precisely because the policy is a frozen
+snapshot: the rows are written once, with the request, and never change. Group membership is
+deliberately _not_ expanded into the table — a row holds the `group:` ref as written, and the
+caller's ownership refs are matched against it at query time, which is what keeps immediate group
+membership working. The migration backfills from existing snapshots in JavaScript, because parsing
+JSON in SQL is not portable; a snapshot that will not parse is skipped rather than failing the
+migration for every other request.
+
+**The list filter is a subquery, not a join.** A request whose policy names two refs the caller holds
+would otherwise be counted twice.
+
+**A conditional read policy is refused loudly.** Reads are open to any signed-in user (Q12), so there
+is no filter to push down — but the route still calls `authorizeConditional`, so that a policy
+denying reads is honoured, and so that a policy returning a _condition_ gets a clear 403 instead of
+being silently ignored. Silently ignoring it would be a quiet hole in whatever that policy was trying
+to enforce. The extension point is the rules' `toQuery` plus `ListApprovalRequestRows.approverRefs`.
+
+**Zod failures are translated into `InputError`.** A bare `schema.parse` throws `ZodError`, which
+Backstage's error middleware does not recognise as a client error — so a malformed body came back as
+a **500**. This was a real defect, caught by a test expecting 400. `parseOrBadRequest` now wraps every
+schema in the router.
+
+**`createPermissionRule` is used through its non-deprecated overload.** The zod-v3 `paramsSchema`
+form is deprecated in favour of a Standard Schema, and this workspace has `listDeprecations: true`.
+Zod 4 satisfies `StandardSchemaV1 & StandardJSONSchemaV1`, so importing from `'zod'` picks the current
+overload with no deprecation.
+
+**`isNotRequester` fails closed on an unparseable ref.** "Is not the requester" must not be satisfied
+by accident — that rule is the four-eyes control.
+
+**A collapsed duplicate returns 200, not 201.** Nothing was created, so 201 would be a lie.
+
+**The permission check on `/decision` runs _in addition to_ the service's eligibility check.** They
+answer different questions: the permission layer is what an RBAC policy can see and extend (Q19),
+while the service enforces the gate's own terms. Either can refuse. A test asserts a DENY from the
+policy is honoured even when the gate would have allowed the vote.
+
+**`/grants/consume` trusts the caller's `valuesHash` to describe the task it is running.** Nothing
+else can — only the task knows its own values. That is exactly why the route refuses user principals,
+and the refusal is deliberately identical for every failure: telling a bearer-token holder whether it
+was the token, the values or the expiry that failed would be an oracle. A test asserts the two
+messages are byte-identical.
+
+**`cancel` stays requester-only in the service**, with the cancel permission checked in front of it.
+If admin-cancel is ever wanted, the service rule is what to revisit — not the router.
+
+### Verification note
+
+The service-principal guard on `/grants/consume` was mutation-tested: relaxing it to
+`httpAuth.credentials(req)` fails both the user-principal and the unauthenticated tests.
+
+The router tests configure `mockServices.httpAuth({ defaultCredentials: mockCredentials.none() })`.
+Without that the mock treats a request with **no credentials as the default mock user**, which made
+the unauthenticated cases pass while testing nothing — they were green for the wrong reason until
+this was fixed.
+
+One run of the backend suite reported 3 failures which six later runs — including the identical
+command — could not reproduce, and the output was truncated before the names were captured. Recorded
+here rather than dismissed: the suspicion is contention over the many per-test SQLite databases, and
+it is worth watching in CI.
+
+### Notes for the next phase
+
+Phase 5's gate action reads `ctx.secrets[APPROVAL_GRANT_SECRET]`, splits it with `parseGrant`,
+recomputes the values hash from the running task with `computeValuesHash`, and POSTs
+`{ grant, valuesHash, taskId }` to `/grants/consume` using its own plugin service credentials. A
+non-200 must fail the step — that refusal is the enforcement point for the entire feature.
+
+`findGateStep` is already exported from `-node` and rejects a gate that is not first or a template
+with two gates, so the action can rely on its own step being step one.
 
 ---
 

@@ -15,6 +15,7 @@
  */
 
 import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { parseGrant } from '@backstage-community/plugin-scaffolder-approvals-node';
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import {
   mockCredentials,
@@ -478,9 +479,12 @@ describe('ApprovalService', () => {
 
         // Values are echoed back to the requester by the scaffolder API;
         // secrets are not.
-        const token = request.secrets.APPROVAL_GRANT;
-        expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-        expect(JSON.stringify(request.values)).not.toContain(token);
+        // The request id travels with the token, since the gate action needs it
+        // to redeem the grant and cannot learn it any other way.
+        const grant = request.secrets.APPROVAL_GRANT;
+        expect(parseGrant(grant).requestId).toBe(id);
+        expect(parseGrant(grant).token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(JSON.stringify(request.values)).not.toContain(grant);
 
         // Service credentials, since AuthService cannot mint credentials for an
         // arbitrary user days after the fact.
@@ -497,7 +501,9 @@ describe('ApprovalService', () => {
           credentials: alice.credentials,
         });
 
-        const token = scaffold.mock.calls[0][0].secrets.APPROVAL_GRANT;
+        const { token } = parseGrant(
+          scaffold.mock.calls[0][0].secrets.APPROVAL_GRANT,
+        );
         const grants = await knex('approval_grants').where({ request_id: id });
 
         expect(grants).toHaveLength(1);

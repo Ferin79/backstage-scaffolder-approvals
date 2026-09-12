@@ -33,9 +33,11 @@ import { rowToApprovalDecision, rowToApprovalRequest } from './rowMapping';
 import {
   type ApprovalDecisionRow,
   type ApprovalGrantRow,
+  type ApprovalRequestApproverRow,
   type ApprovalRequestRow,
   TABLE_DECISIONS,
   TABLE_GRANTS,
+  TABLE_REQUEST_APPROVERS,
   TABLE_REQUESTS,
 } from './tables';
 
@@ -107,6 +109,13 @@ export interface ListApprovalRequestRows {
   status?: ApprovalRequestStatus | ApprovalRequestStatus[];
   templateRef?: string;
   requesterRef?: string;
+  /**
+   * Restrict to requests any of these refs may decide on.
+   *
+   * Pass the caller's own ownership refs — their user ref plus their groups —
+   * and the join matches whichever of them the policy happens to list.
+   */
+  approverRefs?: string[];
   /** Restrict to these ids, as a permission filter would. */
   ids?: string[];
   limit?: number;
@@ -225,8 +234,41 @@ export class ApprovalStore {
         redacted_at: null,
       });
 
+      const approverRows: ApprovalRequestApproverRow[] = [
+        ...new Set(input.policySnapshot.approvers),
+      ].map(approver_ref => ({ request_id: id, approver_ref }));
+
+      if (approverRows.length) {
+        await tx(TABLE_REQUEST_APPROVERS).insert(approverRows);
+      }
+
       return { id, collapsed: false };
     });
+  }
+
+  /**
+   * Load many requests by id, in the order asked for.
+   *
+   * This is what the permission framework calls to resolve a conditional
+   * decision, so the contract is exact: one slot per requested id, in the same
+   * order, `undefined` where there is no such request.
+   */
+  async getManyByIds(
+    ids: string[],
+  ): Promise<Array<ApprovalRequest | undefined>> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS).whereIn(
+      'id',
+      ids,
+    );
+
+    const byId = new Map(
+      rows.map(row => [row.id, rowToApprovalRequest(row)] as const),
+    );
+    return ids.map(id => byId.get(id));
   }
 
   async getRequest(id: string): Promise<ApprovalRequest | undefined> {
@@ -265,6 +307,16 @@ export class ApprovalStore {
       }
       if (options.ids !== undefined) {
         query.whereIn('id', options.ids);
+      }
+      if (options.approverRefs !== undefined) {
+        // A subquery rather than a join, so a request listing two refs the
+        // caller holds is still counted once.
+        query.whereIn(
+          'id',
+          this.db<ApprovalRequestApproverRow>(TABLE_REQUEST_APPROVERS)
+            .select('request_id')
+            .whereIn('approver_ref', options.approverRefs),
+        );
       }
       return query;
     };
