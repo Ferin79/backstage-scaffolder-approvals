@@ -39,15 +39,17 @@
   },
   "dependencies": {
     "@backstage-community/plugin-scaffolder-approvals-common": "workspace:^",
+    "@backstage-community/plugin-scaffolder-approvals-node": "workspace:^",
     "@backstage/backend-plugin-api": "backstage:^",
     "@backstage/errors": "backstage:^",
-    "@backstage/plugin-scaffolder-node": "backstage:^"
+    "@backstage/plugin-scaffolder-node": "backstage:^",
+    "@backstage/types": "backstage:^",
+    "zod": "^3.25.76 || ^4.0.0"
   },
   "devDependencies": {
     "@backstage/backend-test-utils": "backstage:^",
     "@backstage/cli": "backstage:^",
-    "@backstage/plugin-scaffolder-node-test-utils": "backstage:^",
-    "zod": "^3.25.76 || ^4.0.0"
+    "@backstage/plugin-scaffolder-node-test-utils": "backstage:^"
   },
   "files": [
     "dist"

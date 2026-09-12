@@ -20,6 +20,7 @@ import {
   type ApprovalRequest,
   type ApprovalRequestWithDecisions,
   checkDecisionEligibility,
+  type ConsumeGrantResponse,
   computeQuorumProgress,
   type DecideApprovalRequestOptions,
   type DecisionIneligibility,
@@ -473,13 +474,42 @@ export class ApprovalService {
     token: string;
     valuesHash: string;
     taskId: string;
-  }): Promise<boolean> {
-    return await this.store.consumeGrant({
+  }): Promise<ConsumeGrantResponse | undefined> {
+    const consumed = await this.store.consumeGrant({
       requestId: options.requestId,
       tokenHash: hashGrantToken(options.token),
       valuesHash: options.valuesHash,
       taskId: options.taskId,
     });
+
+    if (!consumed) {
+      return undefined;
+    }
+
+    // Read back only after the grant is spent, so nothing about a request is
+    // revealed to a caller whose token was refused.
+    const request = await this.store.getRequest(options.requestId);
+    if (!request) {
+      // The grant's foreign key makes this impossible short of a concurrent
+      // delete, and the task is already running, so say so rather than hide it.
+      throw new ConflictError(
+        `Approval grant for ${options.requestId} was consumed but the request has gone`,
+      );
+    }
+
+    const decisions = await this.store.listDecisions(options.requestId);
+
+    return {
+      requestId: request.id,
+      requesterRef: request.requesterRef,
+      approvedBy: [
+        ...new Set(
+          decisions
+            .filter(decision => decision.decision === 'approve')
+            .map(decision => decision.approverRef),
+        ),
+      ],
+    };
   }
 
   private async requireRequest(id: string): Promise<ApprovalRequest> {

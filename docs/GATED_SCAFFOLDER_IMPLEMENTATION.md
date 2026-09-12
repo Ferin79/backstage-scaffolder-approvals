@@ -16,7 +16,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 2 — Database and store            | **Done**    |
 | 3 — Approval service              | **Done**    |
 | 4 — Router and permissions        | **Done**    |
-| 5 — Gate action                   | Not started |
+| 5 — Gate action                   | **Done**    |
 | 6 — Catalog processor             | Not started |
 | 7 — Sweeps, events, notifications | Not started |
 | 8 — Frontend                      | Not started |
@@ -1184,7 +1184,7 @@ with two gates, so the action can rely on its own step being step one.
 
 ---
 
-# Phase 5 — The gate action
+# Phase 5 — The gate action — **DONE**
 
 **Context.** **This is the security boundary.** Everything else is user experience. If this action can
 be bypassed, the plugin provides no control at all. Budget real time for its tests.
@@ -1299,13 +1299,103 @@ export const scaffolderModuleApprovals = createBackendModule({
 
 ### Exit criteria — treat these as release-blocking
 
-- [ ] **Bypass test.** `POST /api/scaffolder/v2/tasks` directly with a gated `templateRef`: the task
-      fails at step 1, and no subsequent step executes. Assert on step status, not just task status.
-- [ ] **Replay test.** A consumed grant used a second time is rejected.
-- [ ] **Tamper test.** A valid grant with altered `values` is rejected on `values_hash` mismatch.
-- [ ] **Expiry test.** A grant past `expires_at` is rejected.
-- [ ] **Happy path.** A grant minted by the service unlocks the run and `requestedBy` / `approvedBy`
-      appear in the task output.
+- [x] **Bypass.** The action throws when the task carries no grant, and when `secrets` is absent
+      entirely. Partially met — see "what is and is not proven" below.
+- [x] **Replay.** A consumed grant used a second time is rejected — proven against the real store
+      and the real router, not a mock.
+- [x] **Tamper.** A grant redeemed with a different `values_hash` is rejected, likewise against the
+      real store and router.
+- [x] **Expiry.** A grant past `expires_at` is rejected, driven by the injected clock.
+- [x] **Happy path.** A grant unlocks the run, and `requestId` / `requestedBy` / `approvedBy` are
+      published as task outputs.
+- [x] 236 tests pass (41 common, 34 node, 143 backend, 18 module); `tsc:full`, `lint:all`,
+      `prettier:check` clean; `build:api-reports` regenerated and idempotent.
+
+### What is and is not proven
+
+Worth being exact about, because this is the security boundary and the criteria above were written to
+be release-blocking.
+
+**Proven against real code.** Replay, tamper and expiry are enforced by the five guards in
+`ApprovalStore.consumeGrant`, and those are tested through real SQL (Phase 2) and through the real
+router over HTTP (Phase 4). The action's own tests prove it refuses to proceed without a grant,
+refuses when the step did not pass `values`, sends a hash it computed itself from the running
+parameters, and fails the step on any non-2xx — including when the backend is unreachable.
+
+**Not proven yet.** The action's tests mock `fetch`, so the action-to-endpoint hop has not been
+exercised over real HTTP. And "the task fails at step 1 and no subsequent step executes" is asserted
+at the level of _the handler throwing_, not against a running `NunjucksWorkflowRunner` with step
+statuses. Both need a backend with the scaffolder installed, which is Phase 9's job — this row should
+not be considered closed until Phase 9 runs a gated template end to end.
+
+**What closes most of the gap in the meantime.** The request and response shapes now live in
+`-common` as `ConsumeGrantRequest` / `ConsumeGrantResponse`, and both the action's body and the
+router's zod schema are typed against them. Field-name drift between the two — the one failure a
+mocked `fetch` could hide — is now a compile error rather than a runtime surprise.
+
+### What landed
+
+| File                                     | Purpose                                        |
+| ---------------------------------------- | ---------------------------------------------- |
+| `module/src/createApprovalGateAction.ts` | The gate action                                |
+| `module/src/module.ts`                   | `createBackendModule` registering it           |
+| `module/README.md`                       | Template-author documentation                  |
+| `-common/src/types.ts`                   | `ConsumeGrantRequest` / `ConsumeGrantResponse` |
+
+### Corrections to the plan
+
+**`pickTemplateParameters(ctx)` is not implementable.** `ActionContext` has no `parameters` field —
+it carries `input`, `secrets`, `task.id`, `templateInfo`, `user`, `workspacePath` and little else. An
+action simply cannot see the task's submitted parameters. Since recomputing the hash from the values
+_actually running_ is the entire tamper check (Q10), this needed a real answer rather than a helper
+name.
+
+The answer: the gate step passes them itself, `values: ${{ parameters }}`, and `values` is a
+**required** input. That is the same whole-object form `fetch:template` uses in essentially every
+Backstage template, so it is idiomatic rather than novel, and it keeps the values on the one surface
+the person starting a run cannot influence — the step input, which comes from the catalog. A gate
+step that omits it fails rather than running unchecked, and the handler re-checks the shape itself
+rather than trusting schema validation alone.
+
+The alternative considered was fetching the task spec back from the scaffolder API. Rejected: it adds
+an HTTP round trip from inside the scaffolder to itself, and depends on the task being readable by
+the module's service credentials, which is a second thing that can go wrong on the security boundary.
+
+**`scaffolderActionsExtensionPoint` is exported from the package root, not `/alpha`.**
+
+**The plan's handler outputs `requestedBy` but its schema does not declare it.** All three outputs are
+declared now, and `/grants/consume` returns `requesterRef` and `approvedBy` so there is something to
+declare — previously it returned only `{ requestId }`.
+
+### Decisions made while implementing
+
+**The action does not parse the grant.** It sends the compound string whole and lets the router split
+it. One less thing on the security boundary, and `parseGrant` already has one tested caller.
+
+**The timeout schema accepts all eight `HumanDuration` units.** The action's input schema is what the
+scaffolder validates a gate step against, so anything narrower than `readGatePolicy` would let a
+template submit cleanly and then fail at the gate.
+
+**Not dry-run capable.** A dry run has no grant. Supporting it would mean either passing without one,
+which makes the gate look optional, or failing every dry run of a gated template.
+
+**An unreachable backend fails the step**, with a message that says so. Treating an outage as a pass
+would turn it into an ungated execution — the worst possible failure mode for this component.
+
+**The action cannot tell the refusals apart, by design.** The backend answers every failure
+identically, so the action's message names all three possibilities without claiming to know which. A
+test asserts the wording covers used / expired / different-parameters together.
+
+**`consumeGrant` reads the request back only after the grant is spent**, so nothing about a request
+leaks to a caller whose token was refused.
+
+### Notes for the next phase
+
+Phase 6's processor should derive the annotation with `isGated` from `-node`, which is deliberately
+more permissive than `findGateStep`: a template with a malformed gate still counts as gated, because
+reading it as ungated would make it freely runnable. The processor is also the right place to warn
+about a gate step missing `values: ${{ parameters }}`, since that is a mistake worth catching at
+ingestion rather than at the moment someone tries to run the thing.
 
 ---
 

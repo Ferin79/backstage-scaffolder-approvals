@@ -15,11 +15,12 @@
  */
 
 /**
- * A scaffolder module providing the `approval:gate` action.
+ * The `approval:gate` scaffolder action, which blocks a gated template until
+ * its approval request has been granted.
  *
  * @packageDocumentation
  */
 
-// Populated by the implementation phases; see
-// GATED_SCAFFOLDER_IMPLEMENTATION.md in the repository root.
-export {};
+export { scaffolderModuleApprovals as default } from './module';
+export { scaffolderModuleApprovals } from './module';
+export { createApprovalGateAction } from './createApprovalGateAction';

@@ -117,6 +117,22 @@ export function computeQuorumProgress(
 ): QuorumProgress;
 
 // @public
+export interface ConsumeGrantRequest {
+  grant: string;
+  taskId: string;
+  valuesHash: string;
+}
+
+// @public
+export interface ConsumeGrantResponse {
+  approvedBy: string[];
+  // (undocumented)
+  requesterRef: string;
+  // (undocumented)
+  requestId: string;
+}
+
+// @public
 export interface DecideApprovalRequestOptions {
   // (undocumented)
   comment?: string;

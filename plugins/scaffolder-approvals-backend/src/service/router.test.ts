@@ -491,7 +491,43 @@ describe('createRouter', () => {
           });
 
         expect(response.status).toBe(200);
-        expect(response.body).toEqual({ requestId: id });
+        // The actors travel back with the grant: the task was launched by the
+        // service principal, so this is the only place the run can learn who
+        // actually asked and who agreed.
+        expect(response.body).toEqual({
+          requestId: id,
+          requesterRef: REQUESTER,
+          approvedBy: ['user:default/alice'],
+        });
+      });
+
+      it('reports each approver once, and only those who approved', async () => {
+        const id = await submit();
+        // Quorum is 1 here, so bob's vote lands before alice's decides it.
+        await store.recordDecision({
+          requestId: id,
+          approverRef: 'user:default/bob',
+          decision: 'approve',
+        });
+        await request(app)
+          .post(`/requests/${id}/decision`)
+          .set('authorization', as('user:default/alice'))
+          .send({ decision: 'approve' });
+
+        const grant = scaffold.mock.calls[0][0].secrets.APPROVAL_GRANT;
+        const response = await request(app)
+          .post('/grants/consume')
+          .set('authorization', mockCredentials.service.header())
+          .send({
+            grant,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+          });
+
+        expect(response.body.approvedBy).toEqual([
+          'user:default/bob',
+          'user:default/alice',
+        ]);
       });
 
       it('rejects a user principal with 403', async () => {

@@ -356,6 +356,47 @@ export interface SubmitApprovalRequestResponse {
 }
 
 /**
+ * Body of a request to redeem an approval grant.
+ *
+ * Shared between the gate action, which sends it, and the approvals router,
+ * which validates it. Both sides being typed from here is what stops the two
+ * from drifting apart — a mismatch would not fail loudly, it would make every
+ * gated run fail or, worse, stop checking what it is meant to check.
+ *
+ * @public
+ */
+export interface ConsumeGrantRequest {
+  /** The opaque grant handed to the task as a secret. */
+  grant: string;
+
+  /**
+   * A hash of the parameters the task is *actually* running, recomputed by the
+   * gate action rather than taken from anything the backend said.
+   */
+  valuesHash: string;
+
+  /** The scaffolder task presenting the grant. */
+  taskId: string;
+}
+
+/**
+ * What redeeming a grant reveals about the request behind it.
+ *
+ * The task cannot say who asked or who agreed: it was launched by the service
+ * principal, so `task.createdBy` names the plugin rather than a person. The
+ * gate action puts these into the task output so later steps can record the
+ * real actors.
+ *
+ * @public
+ */
+export interface ConsumeGrantResponse {
+  requestId: string;
+  requesterRef: string;
+  /** Distinct principals who approved, oldest decision first. */
+  approvedBy: string[];
+}
+
+/**
  * Body for recording a decision.
  *
  * @public

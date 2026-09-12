@@ -21,6 +21,8 @@ import {
   approvalRequestDecidePermission,
   approvalRequestReadPermission,
   type ApprovalRequestStatus,
+  type ConsumeGrantRequest,
+  type ConsumeGrantResponse,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { parseGrant } from '@backstage-community/plugin-scaffolder-approvals-node';
 import type {
@@ -62,7 +64,9 @@ const decisionBody = z.object({
   comment: z.string().max(4096).optional(),
 });
 
-const consumeBody = z.object({
+// Typed against the shared wire contract, so the gate action and this schema
+// cannot drift apart without a type error.
+const consumeBody: ZodType<ConsumeGrantRequest> = z.object({
   grant: z.string().min(1),
   // Checked here so a malformed digest is a 400 rather than a TypeError from
   // the store's own guard.
@@ -337,7 +341,8 @@ export async function createRouter(
       throw new NotAllowedError('The approval grant is not valid');
     }
 
-    res.json({ requestId });
+    const consumeResponse: ConsumeGrantResponse = consumed;
+    res.json(consumeResponse);
   });
 
   return router;
