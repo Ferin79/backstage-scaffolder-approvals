@@ -25,6 +25,8 @@
 
 export * from './constants';
 export * from './types';
+export * from './entityRefs';
+export * from './eligibility';
 export * from './permissions';
 export * from './canonicalJson';
 export * from './gatePolicy';

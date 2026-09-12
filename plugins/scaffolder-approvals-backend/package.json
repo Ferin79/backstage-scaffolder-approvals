@@ -42,6 +42,7 @@
     "@backstage/catalog-client": "backstage:^",
     "@backstage/catalog-model": "backstage:^",
     "@backstage/errors": "backstage:^",
+    "@backstage/plugin-catalog-node": "backstage:^",
     "@backstage/plugin-events-node": "backstage:^",
     "@backstage/plugin-notifications-node": "backstage:^",
     "@backstage/plugin-permission-common": "backstage:^",
@@ -50,6 +51,8 @@
     "@backstage/plugin-scaffolder-node": "backstage:^",
     "@backstage/plugin-signals-node": "backstage:^",
     "@backstage/types": "backstage:^",
+    "ajv": "^8.12.0",
+    "ajv-formats": "^2.1.1",
     "express": "^4.17.1",
     "express-promise-router": "^4.1.0",
     "knex": "^3.0.0",
@@ -66,7 +69,9 @@
     "@types/uuid": "^9.0.0",
     "supertest": "^6.3.3"
   },
+  "configSchema": "config.d.ts",
   "files": [
+    "config.d.ts",
     "dist",
     "migrations/**/*.{js,d.ts}"
   ]

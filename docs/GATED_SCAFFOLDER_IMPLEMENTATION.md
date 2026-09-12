@@ -14,7 +14,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 0 — Proposal and scaffolding      | **Done**    |
 | 1 — Common package                | **Done**    |
 | 2 — Database and store            | **Done**    |
-| 3 — Approval service              | Not started |
+| 3 — Approval service              | **Done**    |
 | 4 — Router and permissions        | Not started |
 | 5 — Gate action                   | Not started |
 | 6 — Catalog processor             | Not started |
@@ -700,7 +700,7 @@ filter down.
 
 ---
 
-# Phase 3 — Approval service (state machine)
+# Phase 3 — Approval service (state machine) — **DONE**
 
 **Context.** The router should contain no business logic. Everything about quorum, transitions and
 launching lives here, so it is unit-testable without HTTP.
@@ -826,13 +826,124 @@ cannot change the terms of an in-flight request.
 
 ### Exit criteria
 
-- [ ] `quorum: 2` stays pending after one approval, moves to `approved` after a second from a
+- [x] `quorum: 2` stays pending after one approval, moves to `approved` after a second from a
       different principal.
-- [ ] A second vote from the same approver throws `ConflictError`.
-- [ ] One deny among three approvals still rejects.
-- [ ] `selfApprove: false` blocks the requester even when they are in an approver group.
-- [ ] A failing `scaffold()` leaves the request `approved` with no `task_id` (not `failed`).
-- [ ] Invalid values are rejected at submit and nothing is stored.
+- [x] A second vote from the same approver throws `ConflictError`, and does not reach the quorum.
+- [x] One deny among three approvals still rejects.
+- [x] `selfApprove: false` blocks the requester even when they are in an approver group
+      (mutation-tested: removing the guard fails this test in both packages).
+- [x] A failing `scaffold()` leaves the request `approved` with no `task_id` (not `failed`).
+- [x] Invalid values are rejected at submit and nothing is stored.
+- [x] 165 tests pass (41 common, 19 node, 105 backend); `tsc:full`, `lint:all`, `prettier:check`
+      clean; `build:api-reports` regenerated and idempotent.
+
+### What landed
+
+| File                                      | Purpose                                                  |
+| ----------------------------------------- | -------------------------------------------------------- |
+| `-backend/src/service/ApprovalService.ts` | Submit, decide, cancel, launch — the whole state machine |
+| `-backend/src/service/validateValues.ts`  | Ajv validation of values against `spec.parameters`       |
+| `-backend/config.d.ts`                    | The complete config surface (`grantTtl`, `retention`)    |
+| `-node/src/gateStep.ts`                   | `findGateStep`, `isGated` — one definition of "gated"    |
+| `-common/src/eligibility.ts`              | `isApprover`, `checkDecisionEligibility`                 |
+| `-common/src/entityRefs.ts`               | `normaliseEntityRef`, now shared with `readGatePolicy`   |
+
+### Decisions made while implementing
+
+**The gate must be the first step, and there must be exactly one.** The plan never said where the
+gate has to sit, and that turns out to matter: a gate at step 3 lets steps 1 and 2 run before anyone
+has approved, while the template still looks gated. `findGateStep` rejects both that and a template
+with two gates, whose policy would be ambiguous and whose second grant could never be satisfied.
+
+**`findGateStep` lives in `-node`, not in the service.** Phase 6's catalog processor has to decide
+"is this template gated" from the same evidence the service uses, or the derived annotation can drift
+from the gate. `isGated` is deliberately more permissive than `findGateStep`: a template with a
+malformed gate still counts as gated, because reading it as ungated would make it freely runnable.
+
+**`launch` refuses to mint a second live grant — a correction to the plan.** §3.2 is titled "Launch,
+and why it is idempotent", but the code in it mints a fresh grant on every call, which is _not_
+idempotent: a crash between `scaffold()` returning and the status transition leaves a running task
+whose id was never recorded, and Phase 7's retry would mint a new grant and run the template a second
+time. Single-use grants do not help, because the retry brings its own. So `launch` now declines while
+an unconsumed, unexpired grant exists, and `ApprovalStore.hasLiveGrant` was added for it. **Note for
+Phase 7:** the sweep should recover a lost `task_id` from the grant's `consumed_by_task_id` rather
+than relaunching; if the task never started, the grant expires and the request fails, which is the
+documented outcome anyway.
+
+**Approver matching uses `UserInfoService.ownershipEntityRefs`, not group expansion.** The catalog
+already computes transitive membership, so one call replaces walking group relations, and it is the
+same data the permission framework uses. This is also what makes "adding someone to an approver group
+takes effect immediately" true rather than aspirational.
+
+**Eligibility is one shared function returning a reason.** `checkDecisionEligibility` gives back
+`not-an-approver` / `self-approval` / `not-pending` / `already-voted`; the backend maps each onto an
+HTTP error and the UI will map them onto tooltips. Same argument as `computeQuorumProgress` — the
+disabled button and the server's refusal must never disagree, or give different explanations. The
+order matters too: someone outside the policy entirely hears that, rather than a confusing note about
+self-approval.
+
+**Self-approval and already-voted compare the caller's _user_ ref; approver membership compares their
+whole ownership set.** A request is submitted by a user and a vote is cast by a user, never by a
+group, so widening those two checks to the ownership set would be imprecise for no benefit.
+
+**Ajv runs with `strict: false`, and never coerces.** Scaffolder parameter schemas are also
+react-jsonschema-form UI descriptions carrying `ui:field`, `ui:options`, `enumNames` and friends.
+Ajv's strict mode rejects a schema containing those outright, which would fail every realistic
+template. Coercion and `useDefaults` are off because either would change what gets hashed, so the
+values an approver saw would stop matching the values that run.
+
+**A multi-page `parameters` array drops top-level `additionalProperties` per page.** Each entry
+describes one wizard page and knows only its own properties, so applying one page's
+`additionalProperties: false` to the whole value object would reject everything the other pages
+contributed. Single-page schemas keep it.
+
+**Unknown properties are accepted, matching the scaffolder.** Rejecting them would break templates
+that pass extra values through, and the scaffolder itself does not reject them. They are still bound
+by the values hash and shown to approvers, so what an approver sees is what runs.
+
+**Notifications, events and signals sit behind an `ApprovalObserver` interface.** All three are soft
+dependencies (§7.5), so the state machine must work with none of them installed, and payload shapes
+do not belong in it. Observer failures are caught and logged: a committed approval must not be
+reported as failed because a notification could not be sent. Phase 7 implements the interface without
+touching the service.
+
+**`cancel` is requester-only.** That is what `cancelled` means as distinct from `rejected`. Phase 4's
+permission check sits in front of this rather than replacing it; if admin-cancel is ever wanted, this
+is the rule to revisit.
+
+**A denial that loses the race to a quorum is recorded but logged as late.** If an approval reaches
+quorum first, the `pending → rejected` transition fails. The denial stays on record as part of the
+audit trail, and a warning says it arrived after the request had left `pending`. There is no way to
+do better — at the moment of approval there genuinely was no denial — and the compare-and-set
+guarantees the two outcomes can never both apply.
+
+**`launch` refuses a redacted request.** Retention only redacts long after a terminal state, so
+`approved` with null values means the retention window and the lifecycle disagree. Failing loudly
+beats launching a template with no parameters.
+
+### Verification note
+
+The self-approval guard was mutation-tested: removing it from `checkDecisionEligibility` fails one
+test in `-common` and one in `-backend`. That pairing is deliberate — the shared helper is unit-tested
+directly, and the service test proves the service actually consults it.
+
+Service tests run against the **real store on SQLite**, not a mocked store, so quorum counting, the
+one-vote-per-approver constraint and every transition are exercised through real SQL. Only the
+catalog, scaffolder and user-info services are faked, since those are the process boundaries.
+
+### Notes for the next phase
+
+Phase 4 wraps this in HTTP and permissions. The service already throws the right error types —
+`NotFoundError`, `InputError`, `NotAllowedError`, `ConflictError` — so the router needs no error
+mapping of its own beyond Backstage's default middleware.
+
+`ApprovalStore.listRequests` still takes only DB-shaped filters (`status`, `templateRef`,
+`requesterRef`, `ids`); the `role: 'approver'` view in `ListApprovalRequestsOptions` is where Phase 4
+turns a caller's `ownershipEntityRefs` into a filter, which is also where the permission rule's
+`toQuery` belongs.
+
+`config.d.ts` declares `grantTtl` and `retention.redactAfter`. Only `grantTtl` is read so far — it is
+passed to `ApprovalService` as a `HumanDuration`; Phase 7 reads `retention`.
 
 ---
 

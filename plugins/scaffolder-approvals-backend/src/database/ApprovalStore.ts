@@ -440,6 +440,24 @@ export class ApprovalStore {
     return affected === 1;
   }
 
+  /**
+   * Whether a request has a grant that is still redeemable.
+   *
+   * This is what makes relaunching safe. A crash between `scaffold()` returning
+   * and the status transition leaves a running task whose id was never
+   * recorded; without this check a retry would mint a second grant and run the
+   * template again. An outstanding grant means either that task is on its way
+   * to the gate, or nothing started and the grant should be left to expire.
+   */
+  async hasLiveGrant(requestId: string): Promise<boolean> {
+    const row = await this.db<ApprovalGrantRow>(TABLE_GRANTS)
+      .where({ request_id: requestId })
+      .whereNull('consumed_at')
+      .where('expires_at', '>', this.now())
+      .first();
+    return row !== undefined;
+  }
+
   /** Read a grant back, for tests and operator introspection. */
   async getGrant(id: string): Promise<ApprovalGrantRow | undefined> {
     return await this.db<ApprovalGrantRow>(TABLE_GRANTS).where({ id }).first();

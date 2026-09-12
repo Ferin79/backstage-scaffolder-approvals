@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import { parseEntityRef, stringifyEntityRef } from '@backstage/catalog-model';
+import { parseEntityRef } from '@backstage/catalog-model';
 import type { HumanDuration } from '@backstage/types';
 import { DEFAULT_QUORUM, DEFAULT_SELF_APPROVE } from './constants';
+import { normaliseEntityRef } from './entityRefs';
 import type { GatePolicy } from './types';
 
 /**
@@ -65,17 +66,13 @@ function readApprovers(raw: unknown): string[] {
 
     let normalised: string;
     try {
-      // Normalise through the catalog model rather than by hand. Refs are
-      // case-insensitive and the namespace is optional, so `Group:DevX` and
-      // `group:default/devx` denote the same group. These are later compared
-      // against the caller's ownership refs, which are lowercase and fully
-      // qualified, so anything less than real normalisation would silently
-      // fail to match and lock an approver out of their own gate.
+      // Normalised through the same helper the approver check uses, so the two
+      // can never disagree about whether a ref matches.
+      normalised = normaliseEntityRef(entry);
+
       const parsed = parseEntityRef(entry.trim(), {
         defaultNamespace: 'default',
       });
-      normalised = stringifyEntityRef(parsed);
-
       if (!APPROVER_KINDS.includes(parsed.kind.toLocaleLowerCase('en-US'))) {
         throw new GatePolicyError(
           `approvers[${index}] must be a group or user ref, got kind '${parsed.kind}'`,

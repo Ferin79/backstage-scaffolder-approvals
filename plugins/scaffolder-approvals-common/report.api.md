@@ -15,6 +15,14 @@ export const APPROVAL_GRANT_SECRET = 'APPROVAL_GRANT';
 export const APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[];
 
 // @public
+export interface ApprovalCaller {
+  // (undocumented)
+  ownershipEntityRefs?: readonly string[];
+  // (undocumented)
+  userEntityRef: string;
+}
+
+// @public
 export interface ApprovalDecision {
   approverRef: string;
   comment?: string;
@@ -96,6 +104,13 @@ export class CanonicalJsonError extends Error {
 }
 
 // @public
+export function checkDecisionEligibility(
+  request: Pick<ApprovalRequest, 'status' | 'requesterRef' | 'policySnapshot'>,
+  caller: ApprovalCaller,
+  decisions?: readonly ApprovalDecision[],
+): DecisionEligibility;
+
+// @public
 export function computeQuorumProgress(
   decisions: readonly ApprovalDecision[],
   policy: Pick<GatePolicy, 'quorum'>,
@@ -108,6 +123,23 @@ export interface DecideApprovalRequestOptions {
   // (undocumented)
   decision: ApprovalDecisionOutcome;
 }
+
+// @public
+export type DecisionEligibility =
+  | {
+      allowed: true;
+    }
+  | {
+      allowed: false;
+      reason: DecisionIneligibility;
+    };
+
+// @public
+export type DecisionIneligibility =
+  | 'not-an-approver'
+  | 'self-approval'
+  | 'not-pending'
+  | 'already-voted';
 
 // @public
 export const DEFAULT_QUORUM = 1;
@@ -141,6 +173,12 @@ export function isApprovalRequestStatus(
 ): value is ApprovalRequestStatus;
 
 // @public
+export function isApprover(
+  policy: Pick<GatePolicy, 'approvers'>,
+  caller: ApprovalCaller,
+): boolean;
+
+// @public
 export function isTerminalStatus(status: ApprovalRequestStatus): boolean;
 
 // @public
@@ -163,6 +201,9 @@ export interface ListApprovalRequestsResponse {
   items: ApprovalRequest[];
   totalItems: number;
 }
+
+// @public
+export function normaliseEntityRef(ref: string): string;
 
 // @public
 export interface QuorumProgress {
