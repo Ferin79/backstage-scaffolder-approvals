@@ -38,7 +38,8 @@
     "@backstage/backend-plugin-api": "backstage:^",
     "@backstage/errors": "backstage:^",
     "@backstage/plugin-permission-common": "backstage:^",
-    "@backstage/plugin-permission-node": "backstage:^"
+    "@backstage/plugin-permission-node": "backstage:^",
+    "@backstage/types": "backstage:^"
   },
   "devDependencies": {
     "@backstage/backend-test-utils": "backstage:^",

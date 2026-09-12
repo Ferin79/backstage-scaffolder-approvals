@@ -67,6 +67,7 @@
     "supertest": "^6.3.3"
   },
   "files": [
-    "dist"
+    "dist",
+    "migrations/**/*.{js,d.ts}"
   ]
 }

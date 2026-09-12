@@ -14,11 +14,6 @@
  * limitations under the License.
  */
 
-/**
- * Backend-shared types, permission rules and service refs for scaffolder-approvals.
- *
- * @packageDocumentation
- */
-
-export * from './hashes';
-export * from './grantToken';
+export * from './ApprovalStore';
+export * from './initStore';
+export * from './tables';

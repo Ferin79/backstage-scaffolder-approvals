@@ -12,8 +12,8 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | Phase                             | Status      |
 | --------------------------------- | ----------- |
 | 0 — Proposal and scaffolding      | **Done**    |
-| 1 — Common package                | Not started |
-| 2 — Database and store            | Not started |
+| 1 — Common package                | **Done**    |
+| 2 — Database and store            | **Done**    |
 | 3 — Approval service              | Not started |
 | 4 — Router and permissions        | Not started |
 | 5 — Gate action                   | Not started |
@@ -412,7 +412,7 @@ file.
 
 ---
 
-# Phase 2 — Database and store
+# Phase 2 — Database and store — **DONE**
 
 **Context.** Concurrency correctness lives here. Two backend replicas will race on decisions, grants
 and sweeps, and the only defence is compare-and-set at every transition. Getting this right now is far
@@ -429,17 +429,17 @@ That is the dominant convention (12 plugins vs 1); `announcements` is the outlie
 exports.up = async function up(knex) {
   await knex.schema.createTable('approval_requests', table => {
     table.uuid('id').primary().notNullable();
-    table.text('template_ref').notNullable();
-    table.text('values').nullable().comment('JSON; nulled on redaction');
+    table.string('template_ref', 255).notNullable();
+    table.text('values_json').nullable().comment('JSON; nulled on redaction');
     table.string('values_hash', 64).notNullable();
-    table.text('requester_ref').notNullable();
+    table.string('requester_ref', 255).notNullable();
     table.string('status', 32).notNullable();
     table.text('summary').nullable();
     table
       .text('policy_snapshot')
       .notNullable()
       .comment('JSON, frozen at submit');
-    table.uuid('task_id').nullable();
+    table.string('task_id', 255).nullable();
     table.dateTime('created_at').defaultTo(knex.fn.now()).notNullable();
     table.dateTime('updated_at').defaultTo(knex.fn.now()).notNullable();
     table.dateTime('expires_at').nullable();
@@ -463,7 +463,7 @@ exports.up = async function up(knex) {
       .inTable('approval_requests')
       .onDelete('CASCADE')
       .notNullable();
-    table.text('approver_ref').notNullable();
+    table.string('approver_ref', 255).notNullable();
     table.string('decision', 16).notNullable();
     table.text('comment').nullable();
     table.dateTime('created_at').defaultTo(knex.fn.now()).notNullable();
@@ -483,7 +483,7 @@ exports.up = async function up(knex) {
     table.string('values_hash', 64).notNullable();
     table.dateTime('expires_at').notNullable();
     table.dateTime('consumed_at').nullable();
-    table.uuid('consumed_by_task_id').nullable();
+    table.string('consumed_by_task_id', 255).nullable();
 
     table.unique(['request_id', 'token_hash'], 'ag_token_unique');
     table.index(['consumed_at', 'expires_at'], 'ag_sweep_idx');
@@ -584,13 +584,119 @@ export async function initStore(database: DatabaseService) {
 
 ### Exit criteria
 
-- [ ] Migrations run up **and down** cleanly on SQLite, Postgres and MySQL
-      (`TestDatabases.create()` from `@backstage/backend-test-utils`).
-- [ ] Test: two concurrent `transition(id, 'pending', 'approved')` calls — exactly one returns true.
-- [ ] Test: two concurrent grant consumes — exactly one succeeds.
-- [ ] Test: grant consume with a mismatched `values_hash` fails.
-- [ ] Test: grant consume after `expires_at` fails.
-- [ ] Test: `createOrCollapse` returns the same id for an identical pending request.
+- [x] Migrations run up **and down** cleanly, and up again after a rollback, via
+      `TestDatabases.create()` — **on SQLite only so far.** See "Postgres and MySQL are unverified
+      locally" below; this is the one exit criterion not fully met.
+- [x] Test: two concurrent `transition(id, 'pending', 'approved')` calls — exactly one returns true.
+- [x] Test: two concurrent grant consumes — exactly one succeeds.
+- [x] Test: grant consume with a mismatched `values_hash` fails.
+- [x] Test: grant consume after `expires_at` fails.
+- [x] Test: `createOrCollapse` returns the same id for an identical pending request.
+- [x] 64 tests pass in `-backend`, 11 in `-node`; `tsc:full`, `lint:all`, `prettier:check` clean;
+      `build:api-reports` generated and idempotent.
+
+### Postgres and MySQL are unverified locally
+
+This machine has no container runtime, so `TestDatabases` cannot start either engine and only SQLite
+actually ran. Two things close the gap as far as it can be closed without Docker:
+
+1. `migrations.test.ts` iterates `databases.eachSupportedId()`, so the same suite covers all three
+   engines wherever a runtime exists — CI included, with no changes needed.
+2. `migrationPortability.test.ts` compiles the migration to DDL for `better-sqlite3`, `pg` and
+   `mysql2` without connecting to anything, and asserts the portability rules that fail on exactly
+   one engine: no partial indexes, no index over an unbounded `text` column, JSON as `text` rather
+   than a native type, no reserved word as a column name, and MySQL index keys inside the 3072-byte
+   InnoDB budget. It needs no database, so it runs everywhere and guards later migrations too.
+
+What remains genuinely unproven locally is runtime behaviour that only a real server shows: actual
+row-level locking under true parallelism, and each driver's date round-tripping. **CI is the first
+place all three engines run.**
+
+Two environment notes, neither caused by this phase. `CI=true` — required on Windows to stop the
+Jest runner hanging — is also what makes `backend-test-utils` _attempt_ containers, since it decides
+via `Boolean(BACKSTAGE_TEST_DISABLE_DOCKER) || !Boolean(CI)`; run DB suites with
+`BACKSTAGE_TEST_DISABLE_DOCKER=1 CI=true`. And `better-sqlite3` had no compiled binding after
+`yarn install`, so even SQLite failed until `node node_modules/prebuild-install/bin.js` was run from
+inside `node_modules/better-sqlite3`.
+
+### What landed
+
+| File                                | Purpose                                                             |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `migrations/20260911000000_init.js` | The three tables, with `up` and `down`                              |
+| `src/database/tables.ts`            | Row types and table-name constants                                  |
+| `src/database/rowMapping.ts`        | Row → wire type, including the timestamp normaliser                 |
+| `src/database/ApprovalStore.ts`     | Compare-and-set transitions, grant mint/consume, duplicate collapse |
+| `src/database/initStore.ts`         | `resolvePackagePath` + `migrations?.skip` wiring                    |
+| `-node/src/hashes.ts`               | `sha256Hex`, `computeValuesHash`, `assertSha256Hex`                 |
+| `-node/src/grantToken.ts`           | `generateGrantToken`, `hashGrantToken`                              |
+
+The store is deliberately **not** exported from the package entry point — it is internal to the
+backend plugin, so its shape stays free to change. The `-backend` API report is empty as a result.
+
+### Decisions made while implementing
+
+**The `values` column is named `values_json`.** `VALUES` is reserved in MySQL and in standard SQL. A
+column called `values` does work, but only because knex quotes every identifier — an implicit
+dependency on the query builder that the first piece of hand-written SQL would trip over. The suffix
+also pairs it with `values_hash`. A test asserts no column is named a reserved word.
+
+**No `CURRENT_TIMESTAMP` in any predicate; the store takes an injected clock.** Postgres compiles
+`dateTime` to `timestamptz`, MySQL to a naive `datetime` and SQLite to a number, and their notions of
+"now" do not line up — a `WHERE expires_at > now()` would mean three different things. Every
+comparison binds an explicit JavaScript `Date` instead, so both sides go through the same driver
+conversion. The clock is constructor-injected, which also lets the expiry tests drive time rather
+than sleep on it.
+
+**Scaffolder task ids are `string(255)`, not `uuid`.** Postgres validates its native `uuid` type, and
+the task id format belongs to the scaffolder rather than to us. Our own ids stay `uuid`, where that
+validation is a benefit.
+
+**A timestamp normaliser was needed, and this was measured rather than assumed.** better-sqlite3
+returns epoch milliseconds, pg and mysql2 return a `Date`, and mysql2 with `dateStrings` returns a
+naive datetime string — which `new Date(...)` would read in the server's local zone and silently
+shift. `timestampToIso` handles all three and treats a zoneless string as UTC.
+
+**The store never sees a raw grant token.** It stores and matches hashes only, so store code cannot
+log a usable credential. `assertSha256Hex` guards the boundary, because the failure without it is
+silent: passing a raw token where a hash belongs would persist the token in plaintext and still
+appear to work.
+
+**`createOrCollapse` verifies that the values and their hash agree.** The hash is what binds a grant
+to what was approved, so a stored mismatch would mean approving one thing while being able to run
+another. One SHA-256 per create makes that inconsistency unrepresentable in the database.
+
+**Collapse ignores a pending request that has already timed out.** Collapsing into one the sweep is
+about to bin would hand the requester a request nothing will ever act on.
+
+**`recordDecision` settles its outcome by reading the row back, not from an affected-row count.**
+`onConflict().ignore()` compiles to `INSERT IGNORE` on MySQL, whose counts also swallow unrelated
+failures such as a foreign key violation. Comparing the stored id to the one generated is
+dialect-independent, and an absent row after the insert is reported as "the request may not exist".
+It returns the vote that _stands_, so a caller can tell an approver what they already decided instead
+of silently dropping the second vote.
+
+**`ar_retention_idx` on `(redacted_at, updated_at)` was added for Phase 7.** The retention sweep will
+look for old requests not yet redacted; the index costs nothing now and saves a migration later. Its
+query methods are Phase 7's.
+
+### Verification note
+
+The two concurrency guards were mutation-tested rather than assumed: `transition` was temporarily
+rewritten as a read-then-write and `consumeGrant` as a check-then-consume, and in both cases the
+corresponding test failed and then passed again once reverted. `Promise.all` interleaves the calls at
+their `await` boundaries, which is what makes that detectable even on synchronous SQLite. True
+parallelism still only happens on Postgres and MySQL.
+
+### Notes for the next phase
+
+Phase 3's service owns everything the store deliberately does not: expanding group refs to decide who
+may vote, computing quorum from `listDecisions` via `computeQuorumProgress`, generating and hashing
+grant tokens, and choosing which transitions to attempt. `ApprovalStore.listRequests` takes only
+DB-shaped filters (`status`, `templateRef`, `requesterRef`, `ids`) — the `role: 'approver'` view in
+`ListApprovalRequestsOptions` needs catalog group expansion, so it resolves to an `ids` or
+`templateRef` filter a layer up, which is also where Phase 4's permission `toQuery` will push its
+filter down.
 
 ---
 
