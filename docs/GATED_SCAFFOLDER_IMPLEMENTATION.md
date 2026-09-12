@@ -17,7 +17,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 3 — Approval service              | **Done**    |
 | 4 — Router and permissions        | **Done**    |
 | 5 — Gate action                   | **Done**    |
-| 6 — Catalog processor             | Not started |
+| 6 — Catalog processor             | **Done**    |
 | 7 — Sweeps, events, notifications | Not started |
 | 8 — Frontend                      | Not started |
 | 9 — End-to-end verification       | Not started |
@@ -1399,7 +1399,7 @@ ingestion rather than at the moment someone tries to run the thing.
 
 ---
 
-# Phase 6 — Catalog processor
+# Phase 6 — Catalog processor — **DONE**
 
 **Context.** The processor **derives** the `gated` annotation from the presence of an `approval:gate`
 step (Q18). It does not inject anything and does not read config. One source of truth means the
@@ -1443,10 +1443,53 @@ Deliberately minimal. Optionally warn (do not error) when a gated template's lat
 
 ### Exit criteria
 
-- [ ] A template with an `approval:gate` step gets the annotation.
-- [ ] A template without one is returned byte-identical.
-- [ ] Non-Template kinds pass through untouched.
-- [ ] An already-annotated entity is unchanged (idempotent across refresh cycles).
+- [x] A template with an `approval:gate` step gets the annotation, and keeps the annotations it
+      already had.
+- [x] A template without one is returned byte-identical — the same object, not merely an equal one.
+- [x] Non-Template kinds pass through untouched.
+- [x] An already-annotated entity is unchanged, by object identity, across refresh cycles.
+- [x] 254 tests pass (41 common, 34 node, 143 backend, 18 scaffolder module, 18 catalog module);
+      `tsc:full`, `lint:all`, `prettier:check` clean; `build:api-reports` regenerated and idempotent.
+
+### What landed
+
+| File                                           | Purpose                                       |
+| ---------------------------------------------- | --------------------------------------------- |
+| `catalog-module/src/ApprovalsGateProcessor.ts` | Derives the annotation, warns about bad gates |
+| `catalog-module/src/module.ts`                 | `createBackendModule` registering it          |
+| `catalog-module/README.md`                     | What it does, and what the annotation is not  |
+
+### Decisions made while implementing
+
+**The processor strips the annotation as well as stamping it — a change from the plan's code.** The
+plan only adds. That leaves open the one mismatch the whole "derive it" decision (Q18) exists to
+prevent: a hand-written `gated: 'true'` on a template with no gate step. Nobody would be _unsafe_ —
+the approvals backend refuses to submit a request for an ungated template, so the flow just breaks —
+but people would be routed into an approval flow for something they could simply run. Deriving a
+value only works if one thing owns it in both directions.
+
+**A malformed gate still counts as gated.** The annotation follows `isGated` (the step is present)
+rather than `findGateStep` (the step is usable), because a template trying to be gated and failing
+must not read as freely runnable.
+
+**Warnings are logged, never emitted as entity errors.** An error that kept a template out of the
+catalog would make _deleting the gate_ the way to make it appear again — exactly the wrong incentive
+for the one step that enforces anything. Four warnings: gate not first, more than one gate, a gate
+with no `values` input, and a later step using `secrets.USER_OAUTH_TOKEN` (§10.2 — that token belongs
+to the requester and is long dead after a multi-day wait). The `values` warning is new, and comes
+straight out of Phase 5: without it the gate refuses every run, so catching it at ingestion beats
+catching it when somebody finally tries to use the template.
+
+**Unchanged entities come back by reference.** The catalog re-processes every entity on each refresh
+cycle; rebuilding an identical object each time is pure churn. Both the "already correct" and the
+"nothing to do" paths return the input object, and a test asserts identity rather than equality.
+
+### A note on what this does not do
+
+The annotation is not an enforcement mechanism and should never be mistaken for one — it tells the UI
+which templates to route through the approvals page. Enforcement is the gate step. A template that
+lost its annotation but kept its step is still gated; one that kept its annotation but lost its step
+is not, and the processor will now correct that on the next refresh.
 
 ---
 

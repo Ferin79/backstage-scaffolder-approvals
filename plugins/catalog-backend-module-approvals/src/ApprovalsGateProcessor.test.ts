@@ -1,0 +1,263 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import {
+  GATE_ACTION_ID,
+  GATED_ANNOTATION,
+} from '@backstage-community/plugin-scaffolder-approvals-common';
+import { mockServices } from '@backstage/backend-test-utils';
+import type { Entity } from '@backstage/catalog-model';
+import { ApprovalsGateProcessor } from './ApprovalsGateProcessor';
+
+const GATE = {
+  id: 'gate',
+  action: GATE_ACTION_ID,
+  input: {
+    approvers: ['group:default/devx-team'],
+    values: { repository: 'backstage' },
+  },
+};
+
+const PUBLISH = { id: 'publish', action: 'publish:github' };
+
+function template(
+  steps: unknown[],
+  annotations?: Record<string, string>,
+): Entity {
+  return {
+    apiVersion: 'scaffolder.backstage.io/v1beta3',
+    kind: 'Template',
+    metadata: {
+      name: 'request-github-admin',
+      ...(annotations ? { annotations } : {}),
+    },
+    spec: { type: 'service', steps },
+  } as Entity;
+}
+
+describe('ApprovalsGateProcessor', () => {
+  let logger: ReturnType<typeof mockServices.logger.mock>;
+  let processor: ApprovalsGateProcessor;
+
+  beforeEach(() => {
+    logger = mockServices.logger.mock();
+    processor = new ApprovalsGateProcessor(logger);
+  });
+
+  it('names itself', () => {
+    expect(processor.getProcessorName()).toBe('ApprovalsGateProcessor');
+  });
+
+  describe('deriving the annotation', () => {
+    it('stamps a gated template', async () => {
+      const result = await processor.preProcessEntity(
+        template([GATE, PUBLISH]),
+      );
+
+      expect(result.metadata.annotations).toEqual({
+        [GATED_ANNOTATION]: 'true',
+      });
+    });
+
+    it('keeps the annotations the template already had', async () => {
+      const result = await processor.preProcessEntity(
+        template([GATE], { 'backstage.io/source-location': 'url:https://x' }),
+      );
+
+      expect(result.metadata.annotations).toEqual({
+        'backstage.io/source-location': 'url:https://x',
+        [GATED_ANNOTATION]: 'true',
+      });
+    });
+
+    it('returns an ungated template untouched', async () => {
+      const entity = template([PUBLISH]);
+      const result = await processor.preProcessEntity(entity);
+
+      // The very same object, not merely an equal one: the catalog re-processes
+      // every entity on each refresh, and rebuilding it would be pure churn.
+      expect(result).toBe(entity);
+    });
+
+    it('leaves a non-Template kind alone', async () => {
+      const component = {
+        apiVersion: 'backstage.io/v1alpha1',
+        kind: 'Component',
+        metadata: { name: 'svc' },
+        // Even one that somehow carries a gate step.
+        spec: { steps: [GATE] },
+      } as Entity;
+
+      expect(await processor.preProcessEntity(component)).toBe(component);
+    });
+
+    it('is idempotent across refresh cycles', async () => {
+      const first = await processor.preProcessEntity(template([GATE]));
+      const second = await processor.preProcessEntity(first);
+
+      expect(second).toBe(first);
+      expect(second).toEqual(first);
+    });
+
+    it('strips a hand-written annotation from a template with no gate', async () => {
+      // The mismatch that matters: annotated but ungated would send people
+      // through an approval flow for something they can simply run. Deriving
+      // the annotation only works if the processor owns it in both directions.
+      const result = await processor.preProcessEntity(
+        template([PUBLISH], { [GATED_ANNOTATION]: 'true' }),
+      );
+
+      expect(result.metadata.annotations).toEqual({});
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringMatching(/Removing a .* annotation/),
+      );
+    });
+
+    it('leaves other annotations in place when stripping', async () => {
+      const result = await processor.preProcessEntity(
+        template([PUBLISH], {
+          [GATED_ANNOTATION]: 'true',
+          'backstage.io/source-location': 'url:https://x',
+        }),
+      );
+
+      expect(result.metadata.annotations).toEqual({
+        'backstage.io/source-location': 'url:https://x',
+      });
+    });
+
+    it('corrects an annotation that says the wrong thing', async () => {
+      const result = await processor.preProcessEntity(
+        template([GATE], { [GATED_ANNOTATION]: 'false' }),
+      );
+
+      expect(result.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
+    });
+
+    it('treats a malformed gate as gated', async () => {
+      // A template trying to be gated and failing must not read as freely
+      // runnable, so the annotation follows the presence of the step rather
+      // than its validity.
+      const lateGate = await processor.preProcessEntity(
+        template([PUBLISH, GATE]),
+      );
+      expect(lateGate.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
+
+      const twoGates = await processor.preProcessEntity(template([GATE, GATE]));
+      expect(twoGates.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
+    });
+
+    it('survives a template with no spec or malformed steps', async () => {
+      const bare = {
+        apiVersion: 'scaffolder.backstage.io/v1beta3',
+        kind: 'Template',
+        metadata: { name: 'bare' },
+      } as Entity;
+
+      expect(await processor.preProcessEntity(bare)).toBe(bare);
+      await expect(
+        processor.preProcessEntity(template([null, undefined] as unknown[])),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('warning about gates that will bite later', () => {
+    it('never blocks ingestion, whatever is wrong', async () => {
+      // An error that kept a template out of the catalog would make deleting
+      // the gate the way to make it appear again — the wrong incentive for the
+      // one step that enforces anything.
+      for (const steps of [
+        [PUBLISH, GATE],
+        [GATE, GATE],
+        [{ id: 'gate', action: GATE_ACTION_ID, input: {} }],
+      ]) {
+        const result = await processor.preProcessEntity(template(steps));
+        expect(result.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
+      }
+      expect(logger.warn).toHaveBeenCalled();
+    });
+
+    it('warns about a gate that is not the first step', async () => {
+      await processor.preProcessEntity(template([PUBLISH, GATE]));
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/unusable gate.*must be the first step/),
+      );
+    });
+
+    it('warns about more than one gate', async () => {
+      await processor.preProcessEntity(template([GATE, GATE]));
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/unusable gate.*exactly one is allowed/),
+      );
+    });
+
+    it('warns when the gate does not pass the parameters', async () => {
+      // Without `values`, the gate cannot check the run against what was
+      // approved, so the action refuses every run. Saying so at ingestion beats
+      // finding out when somebody finally uses the template.
+      await processor.preProcessEntity(
+        template([
+          { id: 'gate', action: GATE_ACTION_ID, input: { approvers: ['g'] } },
+        ]),
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/no 'values' input/),
+      );
+    });
+
+    it('says nothing about a well-formed gate', async () => {
+      await processor.preProcessEntity(template([GATE, PUBLISH]));
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('warns when a later step depends on the requester OAuth token', async () => {
+      // §10.2: the token belongs to whoever submitted the request and will be
+      // dead by the time a multi-day approval completes.
+      await processor.preProcessEntity(
+        template([
+          GATE,
+          {
+            id: 'publish',
+            action: 'publish:github',
+            input: { token: '${{ secrets.USER_OAUTH_TOKEN }}' },
+          },
+        ]),
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/USER_OAUTH_TOKEN.*will have expired/s),
+      );
+    });
+
+    it('does not warn about user tokens on an ungated template', async () => {
+      // Nothing waits, so nothing expires.
+      await processor.preProcessEntity(
+        template([
+          {
+            id: 'publish',
+            action: 'publish:github',
+            input: { token: '${{ secrets.USER_OAUTH_TOKEN }}' },
+          },
+        ]),
+      );
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@backstage-community/plugin-scaffolder-approvals-common": "workspace:^",
+    "@backstage-community/plugin-scaffolder-approvals-node": "workspace:^",
     "@backstage/backend-plugin-api": "backstage:^",
     "@backstage/catalog-model": "backstage:^",
     "@backstage/plugin-catalog-node": "backstage:^",
