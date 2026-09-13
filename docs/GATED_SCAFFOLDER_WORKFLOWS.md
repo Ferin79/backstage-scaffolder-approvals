@@ -404,6 +404,11 @@ Structural notes:
 - **Keep the launch call behind a single interface in `-node`.** That is the one seam that changes if
   BEP-0016 lands (§12).
 
+  > **Not yet implemented.** As built, launching lives in `ApprovalService.launch` in the backend
+  > package and calls `scaffolderService.scaffold()` directly; there is no launcher interface in
+  > `-node`. A BEP-0016 migration would therefore change the backend, not only `-node`. See Phase 10
+  > of the implementation guide.
+
 ### Backend conventions (verified against the repo)
 
 ```ts
@@ -683,7 +688,11 @@ POST /api/scaffolder/v2/tasks/:taskId/resume                  // resume a parked
 ```
 
 Data model, permissions, rules, notifications and UI are unchanged — which is why the launch call
-lives behind a single interface in `-node`.
+was meant to live behind a single interface in `-node`.
+
+> **As built, it does not.** `ApprovalService.launch` in the backend calls `scaffold()` directly, so
+> today the migration touches the backend service as well as `-node`. Extracting the interface is a
+> small refactor, and is recorded as outstanding in Phase 10 of the implementation guide.
 
 The upgrade also buys the thing a pre-execution gate cannot do: gating _mid_-template, so step 5 of 9
 can wait while steps 1–4 have already run.

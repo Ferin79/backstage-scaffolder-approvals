@@ -13,7 +13,9 @@ backend.add(
 );
 ```
 
-Optional. Without it, gated templates are still gated — the gate step is what enforces that — but the UI cannot tell which templates need an approval, so it will offer to launch them directly and people will meet the gate as a failure rather than as a form.
+The catalog also needs `@backstage/plugin-catalog-backend-module-scaffolder-entity-model`, which most apps with a scaffolder already have. Without it the catalog does not recognise the `Template` kind and drops those entities **silently**. Nothing reaches this processor, and nothing reports an error either.
+
+This module is optional. Without it, gated templates are still gated — the gate step is what enforces that — but the UI cannot tell which templates need an approval, so it will offer to launch them directly and people will meet the gate as a failure rather than as a form.
 
 ## What it does
 

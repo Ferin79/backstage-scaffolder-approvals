@@ -9,19 +9,19 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 
 ## Progress
 
-| Phase                             | Status      |
-| --------------------------------- | ----------- |
-| 0 — Proposal and scaffolding      | **Done**    |
-| 1 — Common package                | **Done**    |
-| 2 — Database and store            | **Done**    |
-| 3 — Approval service              | **Done**    |
-| 4 — Router and permissions        | **Done**    |
-| 5 — Gate action                   | **Done**    |
-| 6 — Catalog processor             | **Done**    |
-| 7 — Sweeps, events, notifications | **Done**    |
-| 8 — Frontend                      | **Done**    |
-| 9 — End-to-end verification       | **Done**    |
-| 10 — Upstream preparation         | Not started |
+| Phase                             | Status   |
+| --------------------------------- | -------- |
+| 0 — Proposal and scaffolding      | **Done** |
+| 1 — Common package                | **Done** |
+| 2 — Database and store            | **Done** |
+| 3 — Approval service              | **Done** |
+| 4 — Router and permissions        | **Done** |
+| 5 — Gate action                   | **Done** |
+| 6 — Catalog processor             | **Done** |
+| 7 — Sweeps, events, notifications | **Done** |
+| 8 — Frontend                      | **Done** |
+| 9 — End-to-end verification       | **Done** |
+| 10 — Upstream preparation         | **Done** |
 
 Branch: `feat/scaffolder-approvals`. Phase 0.1 (proposal issue) and 0.2 (BEP comment) are
 outward-facing GitHub actions and are deliberately **not** done — see Phase 0 below.
@@ -1928,17 +1928,135 @@ otherwise — one drops the template, the other refuses every run.
 
 ---
 
-# Phase 10 — Upstream preparation
+# Phase 10 — Upstream preparation — **DONE**
 
-- [ ] `yarn build:api-reports` for every package.
-- [ ] Changeset per package (`yarn changeset` from the workspace, not the repo root).
-- [ ] Apache-2.0 headers on all new `.ts`/`.tsx`, current year.
-- [ ] READMEs: workspace-level with a worked example, plus one per package.
-- [ ] Document the §10.1 identity consequence and the §10.2 OAuth-token caveat prominently — both
-      will otherwise become support questions.
-- [ ] CODEOWNERS entry; org membership request for maintainer rights.
-- [ ] `yarn lint --since origin/main`, `yarn tsc`, `yarn test` clean.
-- [ ] Link the proposal issue in the PR description.
+- [x] `yarn build:api-reports` for every package — no warnings, and a second run changes nothing.
+- [x] A changeset per package — six, each `minor`. Package versions were reset from `0.1.0` to
+      `0.0.0` to make that correct; see below.
+- [x] Apache-2.0 headers, 2026, on every source file. The only files without one are the one-line
+      `.eslintrc.js` files, which the donor workspaces do not header either.
+- [x] READMEs: a rewritten workspace README with a worked example, and one per package.
+- [x] §10.1 (the task runs as the plugin) and §10.2 (user OAuth tokens expire) documented under
+      "Things to know before you rely on it" in the workspace README.
+- [x] CODEOWNERS entry — added in Phase 0.
+- [ ] **Org membership request for maintainer rights — not done.** That is a request only you can
+      make, to the Backstage org.
+- [x] `tsc:full` clean; 335 tests pass; lint clean — but via `lint:all`, because
+      `lint --since origin/main` turned out to check nothing here. See below.
+- [ ] **Link the proposal issue in the PR description — not possible yet.** Phase 0.1 was skipped at
+      your request, so there is no issue to link. The draft below leaves a placeholder for it.
+
+### Findings
+
+**The package versions were wrong for a first release.** Upstream precedent — the Akeyless and
+healert workspaces — starts new packages at `0.0.0` with a `minor` changeset, so the first published
+version is `0.1.0`. These packages were created at `0.1.0`, which would have made the first published
+version `0.2.0`. They are now at `0.0.0`, and `changeset status` confirms all six will release as
+`0.1.0`, with the private `backend` package excluded.
+
+**`yarn lint --since origin/main` checks nothing in this workspace — and CI runs exactly that.** It
+exited 0 with no output at all, despite ten commits of changes. To be sure it was not simply passing,
+a deliberate `.toLowerCase()` violation was planted in a changed file: `lint --since` still exited 0,
+while `lint:all` caught it and exited 1. `lint:all` was used as the real gate. **It is not known
+whether this is Windows-specific** (plausibly how changed paths map to packages) or also true on
+CI's Linux runners. If it is the latter, CI would not be linting this workspace at all, which is
+worth checking on the PR's first run.
+
+**CI's publish check fails on Windows, for a reason that is not real.** `backstage-cli repo fix
+--check --publish` reported all seven packages out of sync. Applying `fix` showed why: the only thing
+it changed was `repository.directory`, which it rewrote with a **backslash**
+(`plugins\\scaffolder-approvals-common`) — a Windows path separator. Every donor workspace uses forward
+slashes, so the committed values are correct and applying the fix would have broken the manifests
+for CI. The change was reverted and each `directory` verified exactly. Expect this check to pass on
+Linux; it was not possible to confirm that here.
+
+**Three pieces of documentation described things that do not exist:**
+
+- The workspace README's example gate had **no `values: ${{ parameters }}`**. Anyone copying it would
+  have got a gate that refuses every run. It had been written in Phase 0, before Phase 5 made that
+  input mandatory.
+- The workspace README listed a homepage card and a scaffolder decorator as frontend features, and
+  its getting-started told you to run `yarn start`, which needs a frontend app this workspace does
+  not have.
+- The `-node` README, and the design document in two places, described a **launcher interface in
+  `-node`** that was never built — see the gaps below. All three are corrected to describe what exists.
+
+### Gaps from earlier phases, found while writing the docs
+
+These were decided in the design review and **not built**, and were not recorded as missing when the
+phase that should have built them finished. They are recorded here instead, and are your call:
+
+| Gap                                        | Decided in                                                                 | What was built instead                                                                                            | Size                                                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Homepage card** showing pending requests | Q22 ("page + nav item + homepage card"); Phase 8 §8.1 lists `PendingCard/` | Nothing. The approvals page is the only surface.                                                                  | Small–medium: a card component, a home-plugin extension for each frontend system, tests |
+| **Nav item** for the new frontend system   | Q22                                                                        | Nothing for the new system. The legacy system relies on the app adding a sidebar link, which the README now says. | Small: a `NavItemBlueprint` in `alpha.ts`                                               |
+| **Launcher interface in `-node`**          | Design §7 and §12 — the BEP-0016 migration seam                            | `ApprovalService.launch` calls `scaffolderService.scaffold()` directly                                            | Small refactor, no behaviour change                                                     |
+| **Scaffolder API decorator**               | Phase 8 §8.4                                                               | Already recorded as not built, in Phases 8 and 9                                                                  | Medium, needs a real app                                                                |
+
+None of them affects whether the gate holds — that is a property of the gate step, verified in Phase 9.
+The first two affect whether approvers find their inbox, and the third makes a stated design claim
+true.
+
+### Draft PR description
+
+Not submitted — opening a PR is an outward-facing step and yours to take. The issue link is a
+placeholder because Phase 0.1 was skipped.
+
+```markdown
+## Hey, I just made a Pull Request!
+
+Adds `scaffolder-approvals`: approval gates for Backstage software templates. A gated template does
+not run when someone submits it — it creates an approval request, and runs only once designated
+approvers agree.
+
+Proposal: <!-- TODO: link the proposal issue (Phase 0.1 was deferred) -->
+
+### How the gate holds
+
+The gate is a step in the template, not a check in the UI. `scaffolder.task.create` is a basic
+permission with no template reference, so a UI-only gate is bypassable with one `curl`; a task's steps
+come from the catalog, so a step is the one part of a run the caller cannot change. The
+`approval:gate` action refuses to continue without a single-use grant bound to a hash of the exact
+parameters that were approved.
+
+Verified against a running backend: calling the scaffolder directly with a gated template fails at
+the gate with every later step skipped. `workspaces/scaffolder-approvals/scripts/verify-gate.sh`
+repeats the check.
+
+### Packages
+
+- `@backstage-community/plugin-scaffolder-approvals` — approvals page (legacy and new frontend system)
+- `@backstage-community/plugin-scaffolder-approvals-backend` — requests, decisions, grants, sweeps, API
+- `@backstage-community/plugin-scaffolder-backend-module-approvals` — the `approval:gate` action
+- `@backstage-community/plugin-catalog-backend-module-approvals` — derives the `gated` annotation
+- `@backstage-community/plugin-scaffolder-approvals-common` / `-node` — shared code
+
+### Worth a reviewer's attention
+
+- The launched task runs as the plugin's service principal, not the requester; the gate publishes
+  `requestedBy` / `approvedBy` as outputs. Documented in the workspace README.
+- Gated templates must not use `secrets.USER_OAUTH_TOKEN`, which expires during the wait.
+- Locally, `lint --since origin/main` linted nothing and the publish check failed only on a Windows
+  path separator. Please check both behave on this PR's CI run.
+- Not in v1: homepage card, new-frontend-system nav item, scaffolder form decorator, mid-template
+  gating (needs BEP-0016).
+
+#### :heavy_check_mark: Checklist
+
+- [x] A changeset describing the change and affected packages. ([more info](https://github.com/backstage/community-plugins/blob/master/CONTRIBUTING.md#creating-changesets))
+- [x] Added or updated documentation
+- [x] Tests for new functionality and regression tests for bug fixes
+- [ ] Screenshots attached (for UI changes)
+- [ ] All your commits have a `Signed-off-by` line in the message. ([more info](https://github.com/backstage/community-plugins/blob/master/CONTRIBUTING.md#developer-certificate-of-origin))
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+Two items in that checklist need checking before submitting: **no screenshots exist**, because the
+frontend has never been opened in a browser, and **none of the branch's commits carry a `Signed-off-by` line**. The PR template requires one
+(Developer Certificate of Origin) and upstream commits have them, so before submitting, the branch
+needs rewriting with `git rebase --signoff origin/main`. That is left to you: it rewrites every
+commit on the branch, and signing off certifies the DCO in your name.
 
 ---
 
@@ -1946,11 +2064,11 @@ otherwise — one drops the template, the other refuses every run.
 
 Recorded so they are not mistaken for oversights:
 
-| Item                           | Why deferred                                                      |
-| ------------------------------ | ----------------------------------------------------------------- |
-| Slack approvals                | Out of scope for v1. Events already emitted, so additive later.   |
-| Entity card on Templates       | Q22 — page, nav and home card first.                              |
-| "Expiring soon" notification   | Q20 — needs its own tick; easy to get wrong.                      |
-| `requireGate` config allowlist | Q17 — declined; accepted risk documented in Phase 6.              |
-| Mid-workflow gating            | Needs core `ctx.suspend` (BEP-0016). One seam in `-node` changes. |
-| Restricting reads              | Q12 — open for now; `toQuery` already exists to tighten it.       |
+| Item                           | Why deferred                                                                                              |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Slack approvals                | Out of scope for v1. Events already emitted, so additive later.                                           |
+| Entity card on Templates       | Q22 — page, nav and home card first.                                                                      |
+| "Expiring soon" notification   | Q20 — needs its own tick; easy to get wrong.                                                              |
+| `requireGate` config allowlist | Q17 — declined; accepted risk documented in Phase 6.                                                      |
+| Mid-workflow gating            | Needs core `ctx.suspend` (BEP-0016). Intended as one seam in `-node`; as built, it is not — see Phase 10. |
+| Restricting reads              | Q12 — open for now; `toQuery` already exists to tighten it.                                               |
