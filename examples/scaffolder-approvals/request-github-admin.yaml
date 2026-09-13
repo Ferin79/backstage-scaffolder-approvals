@@ -1,0 +1,70 @@
+# A gated template.
+#
+# The only thing that makes it gated is the `approval:gate` step. There is no
+# annotation to add: the catalog module derives
+# `scaffolder-approvals.backstage.io/gated` from the step's presence, so the two
+# cannot drift apart.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: request-github-admin
+  title: Request GitHub admin access
+  description: |
+    Asks devx-team for admin on a repository. Two of them have to agree, and the
+    template does not run until they do.
+spec:
+  type: service
+  owner: group:default/devx-team
+
+  parameters:
+    - title: What do you need?
+      required:
+        - repository
+        - justification
+      properties:
+        repository:
+          title: Repository
+          type: string
+          description: The repository you need admin on
+        justification:
+          title: Why
+          type: string
+          description: What you need it for, and roughly for how long
+          minLength: 10
+          ui:widget: textarea
+
+  steps:
+    # Must be the first step. Anything before it would run before anyone had
+    # approved, while the template still looked gated.
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers:
+          - group:default/devx-team
+        quorum: 2
+        selfApprove: false
+        timeout: { hours: 72 }
+        summary: 'Admin on ${{ parameters.repository }}'
+        # Not optional. This is how the gate checks that the run matches what
+        # was approved; without it the gate refuses every run.
+        values: ${{ parameters }}
+
+    # Stands in for whatever really grants the access. It echoes the actors the
+    # gate published, because the task itself cannot say who asked: it was
+    # launched by the approvals plugin's service principal.
+    - id: grant
+      name: Grant the access
+      action: debug:log
+      input:
+        message: |
+          Granting admin on ${{ parameters.repository }}
+          Requested by: ${{ steps.gate.output.requestedBy }}
+          Approved by:  ${{ steps.gate.output.approvedBy }}
+          Request:      ${{ steps.gate.output.requestId }}
+
+  output:
+    text:
+      - title: Approval
+        content: |
+          Approved by ${{ steps.gate.output.approvedBy }}.

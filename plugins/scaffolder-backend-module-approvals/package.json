@@ -47,8 +47,10 @@
     "zod": "^3.25.76 || ^4.0.0"
   },
   "devDependencies": {
+    "@backstage-community/plugin-scaffolder-approvals-backend": "workspace:^",
     "@backstage/backend-test-utils": "backstage:^",
     "@backstage/cli": "backstage:^",
+    "@backstage/plugin-catalog-node": "backstage:^",
     "@backstage/plugin-scaffolder-node-test-utils": "backstage:^"
   },
   "files": [

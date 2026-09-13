@@ -24,13 +24,15 @@ import type { ApprovalSweeps } from './ApprovalSweeps';
 /**
  * The topic the scaffolder publishes task lifecycle events on.
  *
- * Not verifiable from this workspace — `@backstage/plugin-scaffolder-backend`
- * is not a dependency here, and nothing in the packages that are declares it.
- * Treat this subscription as an optimisation rather than a guarantee: if the
- * topic or payload shape is wrong, nothing throws, no event ever matches, and
- * the reconciliation sweep remains the sole source of task status. That costs a
- * request one sweep interval of staleness and nothing else, which is why the
- * sweep is written to be sufficient on its own.
+ * Verified against `DatabaseTaskStore`, which publishes to `scaffolder.task`
+ * with an `eventPayload` carrying `{ id, status, ... }` — on task creation, on
+ * claim, on every status change and on cancellation.
+ *
+ * The subscription is still written defensively, and stays an optimisation
+ * rather than a guarantee: another plugin's payload shape is not this plugin's
+ * to depend on. If it ever changes, nothing throws, no event matches, and the
+ * reconciliation sweep remains the sole source of task status — costing a
+ * request one sweep interval of staleness and nothing else.
  */
 export const SCAFFOLDER_TASK_TOPIC = 'scaffolder.task';
 
@@ -45,9 +47,10 @@ interface TaskEventPayload {
  * Read a task id and status out of an event payload, defensively.
  *
  * The payload comes from another plugin's contract, so this reads what it needs
- * and ignores everything else rather than assuming a shape. Both `id` and
- * `taskId` are accepted because the two spellings are equally plausible and
- * guessing wrong would silently disable the fast path.
+ * and ignores everything else rather than assuming a shape. The scaffolder
+ * spells it `id`; `taskId` is accepted too, because that is what the field
+ * would plausibly be renamed to and guessing wrong would silently disable the
+ * fast path rather than failing loudly.
  */
 export function readTaskEvent(
   payload: unknown,

@@ -233,6 +233,9 @@ export interface QuorumProgress {
 export function readGatePolicy(input: unknown): GatePolicy;
 
 // @public
+export function renderGateSummary(summary: string, values: JsonObject): string;
+
+// @public
 export const RESOURCE_TYPE_APPROVAL_REQUEST = 'scaffolder-approval-request';
 
 // @public

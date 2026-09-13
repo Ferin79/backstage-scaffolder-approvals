@@ -20,7 +20,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 6 — Catalog processor             | **Done**    |
 | 7 — Sweeps, events, notifications | **Done**    |
 | 8 — Frontend                      | **Done**    |
-| 9 — End-to-end verification       | Not started |
+| 9 — End-to-end verification       | **Done**    |
 | 10 — Upstream preparation         | Not started |
 
 Branch: `feat/scaffolder-approvals`. Phase 0.1 (proposal issue) and 0.2 (BEP comment) are
@@ -1821,7 +1821,7 @@ the diversion actually works end to end.
 
 ---
 
-# Phase 9 — End-to-end verification
+# Phase 9 — End-to-end verification — **DONE**
 
 **Context.** The point of keeping `packages/backend` (Q16). Unit tests cannot prove the gate holds
 across four packages and two backends; this can.
@@ -1843,9 +1843,88 @@ Step 7 is the one that proves the feature works. Script it and keep it.
 
 ### Exit criteria
 
-- [ ] All seven steps pass by hand.
-- [ ] Steps 1–7 scripted as an integration test.
-- [ ] A backend restart mid-`pending` loses nothing.
+- [x] Steps 1, 2, 3 and **7** pass against a running backend, and are scripted as
+      `scripts/verify-gate.sh`. Steps 4–6 need a group-member identity, which guest auth cannot
+      provide — they are covered instead by `gate.integration.test.ts` against a real backend over
+      real HTTP. See below.
+- [x] Scripted: `scripts/verify-gate.sh` plus `plugins/scaffolder-backend-module-approvals/src/gate.integration.test.ts`.
+- [x] A backend restart mid-`pending` loses nothing — verified by hard-killing the process and
+      re-reading the request, with values, summary and policy snapshot intact.
+- [x] 335 tests pass (50 common, 34 node, 187 backend, 25 scaffolder module, 18 catalog module,
+      21 frontend); `tsc:full`, `lint:all`, `prettier:check` clean; `build:api-reports` idempotent.
+
+### The one that matters
+
+Running the gated template straight through the scaffolder, with no approval:
+
+```
+task status: failed
+[log] processing  Beginning step Await approval
+[log] failed      Error: This template requires approval before it can run. Submit it
+                  from the approvals page instead of running it directly...
+[log] skipped     Skipping step grant because a previous step failed
+```
+
+Asserted on the **step**, not just the task: a task that failed for some other reason would prove
+nothing. `scripts/verify-gate.sh` checks exactly this and prints "The gate holds."
+
+### What landed
+
+| File                                 | Purpose                                                           |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| `packages/backend/`                  | A backend wiring catalog, scaffolder, approvals and their modules |
+| `examples/request-github-admin.yaml` | A gated template — one `approval:gate` step and nothing else      |
+| `examples/org.yaml`                  | The users and groups its gate refers to                           |
+| `app-config.yaml`                    | Enough to start it: SQLite, guest auth, the examples              |
+| `scripts/verify-gate.sh`             | The bypass check, scripted and repeatable                         |
+| `.../src/gate.integration.test.ts`   | The action against a real backend over real HTTP                  |
+| `-common/src/renderSummary.ts`       | **A bug fix** — see below                                         |
+
+### Two things only a running system found
+
+**The gate summary was never rendered.** A template author writes
+`summary: 'Admin on ${{ parameters.repository }}'`, and the design says it "may reference
+parameters". It did not: the approvals backend reads the gate step **straight from the catalog
+entity**, and the scaffolder's templating only runs when a task executes — which, for a gated
+template, is _after_ the approval the summary exists to inform. Approvers were being shown the
+literal `${{ parameters.repository }}`. Found by submitting a request against a real catalog and
+reading it back.
+
+`renderGateSummary` now fills `${{ parameters.<path> }}` at submit time, from the submitted values.
+Deliberately not a templating engine: it resolves that one form and leaves everything else exactly as
+written. Running a real engine over catalog-authored text with user-supplied values is a far larger
+surface than a one-line label justifies, and half an engine invites people to expect the other half.
+
+**Template entities need `catalog-backend-module-scaffolder-entity-model`.** Without it the catalog
+does not know the `Template` kind and drops those entities **silently** — no error on the location,
+no error in the log, just nothing ingested. This cost real time to find and is worth documenting for
+anyone installing the plugin.
+
+### What could not be verified, and why
+
+Steps 4–6 — quorum behaviour, self-approval refusal and a task running through to `completed` —
+need an identity that belongs to `group:default/devx-team`. The guest provider issues
+`user:development/guest`, which belongs to nothing, so `/decision` correctly answers
+_"You are not an approver for this request"_. Rather than add a fake auth provider to work around it,
+those paths are covered by `gate.integration.test.ts`, which starts the real approvals backend and
+drives the real gate action against it over HTTP: happy path with actors published, replay refused,
+tamper refused, forged grant refused, no-grant refused, user principal refused at
+`/grants/consume`, and the decision history readable afterwards.
+
+The **frontend was still not opened in a browser.** Phase 8 left that open and it remains open: the
+backend here serves no app, because `plugin-app-backend` needs a frontend package this workspace does
+not have. `yarn start` inside `plugins/scaffolder-approvals` runs the dev harness against a mock API,
+which is the nearest thing available.
+
+§8.4's scaffolder decorator is still **not built**. It is UX only by the plan's own words — the gate
+holds without it, as step 7 now demonstrates — and it needs a real app to override `scaffolderApiRef`
+in, which this workspace still does not have.
+
+### Notes for the next phase
+
+Phase 10 should carry two things into the README: the `scaffolder-entity-model` module requirement,
+and that `values: ${{ parameters }}` on the gate step is mandatory. Both are silent failures
+otherwise — one drops the template, the other refuses every run.
 
 ---
 

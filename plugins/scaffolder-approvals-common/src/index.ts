@@ -30,3 +30,4 @@ export * from './eligibility';
 export * from './permissions';
 export * from './canonicalJson';
 export * from './gatePolicy';
+export * from './renderSummary';

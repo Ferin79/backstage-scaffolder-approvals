@@ -26,6 +26,7 @@ import {
   type DecisionIneligibility,
   type GatePolicy,
   readGatePolicy,
+  renderGateSummary,
   type SubmitApprovalRequestResponse,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
@@ -205,12 +206,20 @@ export class ApprovalService {
       );
     }
 
+    // The gate step comes from the catalog, where the scaffolder's templating
+    // has not run — and for a gated template it would not run until after the
+    // approval this summary exists to inform. Fill the parameter references in
+    // here, or approvers read a literal `${{ parameters.repository }}`.
+    const summary = policy.summary
+      ? renderGateSummary(policy.summary, values)
+      : undefined;
+
     const created = await this.store.createOrCollapse({
       templateRef,
       values,
       valuesHash: computeValuesHash(values),
       requesterRef,
-      summary: policy.summary,
+      summary,
       policySnapshot: policy,
       expiresAt: policy.timeout
         ? new Date(
