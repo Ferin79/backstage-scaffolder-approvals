@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import type {
-  ApprovalDecision,
-  ApprovalDecisionOutcome,
-  ApprovalRequest,
-  ApprovalRequestStatus,
-  ApprovalRequestWithDecisions,
-  GatePolicy,
+import {
+  type ApprovalDecision,
+  type ApprovalDecisionOutcome,
+  type ApprovalRequest,
+  type ApprovalRequestStatus,
+  type ApprovalRequestWithDecisions,
+  type GatePolicy,
+  TERMINAL_APPROVAL_REQUEST_STATUSES,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
   assertSha256Hex,
@@ -508,6 +509,113 @@ export class ApprovalStore {
       .where('expires_at', '>', this.now())
       .first();
     return row !== undefined;
+  }
+
+  /** Every grant minted for a request, oldest first. */
+  async listGrants(requestId: string): Promise<ApprovalGrantRow[]> {
+    return await this.db<ApprovalGrantRow>(TABLE_GRANTS)
+      .where({ request_id: requestId })
+      .orderBy('expires_at', 'asc');
+  }
+
+  /**
+   * The request a scaffolder task belongs to.
+   *
+   * Used by the task-event subscription, which knows a task id and nothing
+   * else. An event for a task this plugin did not launch finds nothing, which
+   * is the correct outcome rather than an error.
+   */
+  async findRequestByTaskId(
+    taskId: string,
+  ): Promise<ApprovalRequest | undefined> {
+    const row = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .where({ task_id: taskId })
+      .first();
+    return row ? rowToApprovalRequest(row) : undefined;
+  }
+
+  /**
+   * Approved requests whose task has not been recorded.
+   *
+   * Either the launch never happened, or it happened and the status transition
+   * was lost. The reconciliation sweep tells those apart from the grant.
+   */
+  async findApprovedAwaitingLaunch(limit: number): Promise<ApprovalRequest[]> {
+    const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .where({ status: 'approved' satisfies ApprovalRequestStatus })
+      .whereNull('task_id')
+      // Oldest first: whatever has been stuck longest deserves the attention.
+      .orderBy('updated_at', 'asc')
+      .limit(limit);
+    return rows.map(rowToApprovalRequest);
+  }
+
+  /** Requests with a task in flight, for status reconciliation. */
+  async findRunning(limit: number): Promise<ApprovalRequest[]> {
+    const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .where({ status: 'running' satisfies ApprovalRequestStatus })
+      .whereNotNull('task_id')
+      .orderBy('updated_at', 'asc')
+      .limit(limit);
+    return rows.map(rowToApprovalRequest);
+  }
+
+  /** Pending requests whose timeout has passed. */
+  async findPendingPastExpiry(
+    now: Date,
+    limit: number,
+  ): Promise<ApprovalRequest[]> {
+    const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .where({ status: 'pending' satisfies ApprovalRequestStatus })
+      .whereNotNull('expires_at')
+      .where('expires_at', '<=', now)
+      .orderBy('expires_at', 'asc')
+      .limit(limit);
+    return rows.map(rowToApprovalRequest);
+  }
+
+  /**
+   * Requests eligible for redaction: settled, old enough, not yet redacted.
+   *
+   * Only terminal requests, because redacting the values of something still in
+   * flight would leave a request that can never be launched.
+   */
+  async findRedactable(
+    before: Date,
+    limit: number,
+  ): Promise<ApprovalRequest[]> {
+    const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .whereIn('status', TERMINAL_APPROVAL_REQUEST_STATUSES as string[])
+      .whereNull('redacted_at')
+      .where('updated_at', '<', before)
+      .orderBy('updated_at', 'asc')
+      .limit(limit);
+    return rows.map(rowToApprovalRequest);
+  }
+
+  /**
+   * Drop the personal data from a settled request, keeping the request itself.
+   *
+   * Redacts, never deletes (Q6). The row and every decision on it are the audit
+   * trail this plugin exists to produce; what goes is the submitted values and
+   * the rendered summary, which may carry personal data such as an access
+   * justification. The values *hash* stays, so a grant could still be checked.
+   *
+   * Guarded on `redacted_at IS NULL` so two replicas sweeping at once do not
+   * both count it.
+   */
+  async redact(id: string): Promise<boolean> {
+    const now = this.now();
+    const affected = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .where({ id })
+      .whereNull('redacted_at')
+      .update({
+        values_json: null,
+        summary: null,
+        redacted_at: now,
+        updated_at: now,
+      });
+    return affected === 1;
   }
 
   /** Read a grant back, for tests and operator introspection. */

@@ -18,7 +18,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 4 — Router and permissions        | **Done**    |
 | 5 — Gate action                   | **Done**    |
 | 6 — Catalog processor             | **Done**    |
-| 7 — Sweeps, events, notifications | Not started |
+| 7 — Sweeps, events, notifications | **Done**    |
 | 8 — Frontend                      | Not started |
 | 9 — End-to-end verification       | Not started |
 | 10 — Upstream preparation         | Not started |
@@ -1493,7 +1493,7 @@ is not, and the processor will now correct that on the next refresh.
 
 ---
 
-# Phase 7 — Sweeps, events and notifications
+# Phase 7 — Sweeps, events and notifications — **DONE**
 
 **Context.** Three scheduled jobs, each with a per-tick batch cap so a mass expiry after an outage
 cannot stampede the scaffolder.
@@ -1554,10 +1554,96 @@ That is the entire config surface (Q8, Q17). Gate policy is per-template, never 
 
 ### Exit criteria
 
-- [ ] `approved` with no `task_id` is retried, then fails once the grant expires.
-- [ ] Retention nulls `values` but leaves the row and decisions intact.
-- [ ] A dropped event still converges via the sweep.
-- [ ] The backend starts and functions with notifications and signals absent.
+- [x] `approved` with no `task_id` is retried, then fails once the grant expires — and, when the
+      grant was in fact consumed, the lost task id is recovered instead of relaunching.
+- [x] Retention nulls `values` and `summary` but leaves the row, its decisions and the values hash
+      intact, and redacts once rather than on every tick.
+- [x] A dropped event still converges via the sweep — `applyTaskStatus` is shared by both paths and
+      is compare-and-set, so whichever signal arrives second does nothing.
+- [x] The backend starts and functions with notifications and signals absent.
+- [x] 298 tests pass (41 common, 34 node, 187 backend, 18 scaffolder module, 18 catalog module);
+      `tsc:full`, `lint:all`, `prettier:check` clean; `build:api-reports` idempotent.
+
+### What landed
+
+| File                                   | Purpose                                           |
+| -------------------------------------- | ------------------------------------------------- |
+| `src/service/ApprovalSweeps.ts`        | The three scheduled jobs                          |
+| `src/service/ApprovalNotifier.ts`      | Notifications, signals and events behind one seam |
+| `src/service/subscribeToTaskEvents.ts` | The task-event fast path                          |
+| `src/plugin.ts`                        | Scheduler wiring, config, soft dependencies       |
+| `src/database/ApprovalStore.ts`        | Seven sweep queries plus `redact`                 |
+
+### A correction to the plan
+
+**Notifications and signals cannot be "absent" in the way §7.5 implies.** Both `notificationService`
+and `signalsServiceRef` carry a `defaultFactory`, so they always resolve — declaring them as ordinary
+deps does not stop a backend without those plugins from starting. The soft-dependency behaviour comes
+from tolerating _call-time_ failure, not from conditional resolution: `ApprovalNotifier` treats every
+channel as optional, attempts each independently, and swallows and logs what fails. An earlier draft
+here hand-rolled an `optional()` resolver against an `env.getService` that does not exist; the ref
+definitions made that unnecessary.
+
+### Decisions made while implementing
+
+**Reconciliation distinguishes three situations, and that distinction is the whole job.** Approved
+with no task id can mean the launch never happened, that it happened and the status write was lost,
+or that the grant expired unused. The grant tells them apart: a _consumed_ grant names the task that
+consumed it, so the id is recovered rather than the template being run a second time — this is what
+`consumed_by_task_id` was added for in Phase 2 and promised in Phase 3. A _live_ grant means
+something is in flight, so the sweep waits. No usable grant and no grant ever minted means retry; no
+usable grant but one was minted means the approval is spent and the request fails (Q9).
+
+**A cancelled task maps to `failed`, not `cancelled`.** In this lifecycle `cancelled` means the
+requester withdrew _before anyone decided_. A task cancelled mid-run was approved and then stopped,
+which is a failure to deliver what was approved — calling it `cancelled` would blur the one
+distinction the audit trail needs to keep.
+
+**`applyTaskStatus` is shared by the sweep and the event handler.** Both paths therefore reach the
+same state, and because the transition is compare-and-set the second signal to arrive does nothing.
+A test asserts that applying `completed` then `failed` leaves the request `completed`.
+
+**Redaction only touches terminal requests.** Redacting the values of something still in flight would
+leave a request that can never be launched. It is also guarded on `redacted_at IS NULL`, so two
+replicas sweeping at once do not both count it, and a second tick does not move `redactedAt`.
+
+**Signals go only to users; notifications go to groups too.** An open page belongs to a person, so a
+group ref is dropped rather than silently expanded — and when that leaves nobody, the signal is
+skipped while the notification still goes.
+
+**Notifications are scoped per request and action**, so a re-notification replaces rather than piling
+up in somebody's inbox, and the requester is excluded from the "submitted" notification even when
+they are also an approver.
+
+**The notifier falls back to the template ref once the summary is redacted.** A failure notification
+can outlive the summary it would rather have quoted.
+
+### The task-event topic is unverified
+
+`SCAFFOLDER_TASK_TOPIC` is `'scaffolder.task'`, which this workspace cannot confirm —
+`@backstage/plugin-scaffolder-backend` is not a dependency here and nothing that is declares it. The
+subscription is therefore built as an optimisation rather than a guarantee: `readTaskEvent` accepts
+either `id` or `taskId`, ignores any payload it cannot read, and never throws. If the topic or shape
+is wrong, no event ever matches, nothing breaks, and the reconciliation sweep remains the sole source
+of task status — costing a request one sweep interval of staleness. **Phase 9 should confirm the
+topic against a real scaffolder.**
+
+### An intermittent test failure, recorded rather than dismissed
+
+Running all five package suites back to back reported exactly 3 failures in the backend suite — the
+second time this has happened (the first was at the end of Phase 4). It did not reproduce in roughly
+ten subsequent runs, including the identical loop, and both times the output had been piped through
+`grep` so the failing names were lost. The suspicion is contention over the many per-test SQLite
+databases rather than a defect, but that is a suspicion. Full logs are now captured when running the
+whole workspace, so the next occurrence is diagnosable.
+
+### Notes for the next phase
+
+Phase 8's frontend has everything it needs on the API: `GET /requests?role=approver` is an indexed
+query against the approvers table, `checkDecisionEligibility` in `-common` gives the same reasons the
+backend refuses with (so a disabled button and a server error can agree), and `computeQuorumProgress`
+gives "1 of 2". Signals arrive on the `scaffolder-approvals` channel carrying
+`{ action, requestId, status }`, which is enough for an open page to know it should refetch.
 
 ---
 
