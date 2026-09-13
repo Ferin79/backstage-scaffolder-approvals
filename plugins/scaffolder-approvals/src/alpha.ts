@@ -17,13 +17,55 @@
 /**
  * New frontend system entrypoint for the scaffolder-approvals plugin.
  *
- * This package dual-ships: the default export carries the legacy
- * `createPlugin` definition and this entrypoint carries the
- * `createFrontendPlugin` one. Both mount the same components, so only the
- * wiring is duplicated.
+ * This package dual-ships (Q14). Both entrypoints mount the same components —
+ * only the wiring differs (Q23), so there is one implementation to maintain and
+ * two ways to install it.
  *
  * @packageDocumentation
  */
 
-// Populated in the frontend phase; see GATED_SCAFFOLDER_IMPLEMENTATION.md.
-export {};
+import {
+  ApiBlueprint,
+  createFrontendPlugin,
+  PageBlueprint,
+} from '@backstage/frontend-plugin-api';
+import { convertLegacyRouteRef } from '@backstage/core-compat-api';
+import { discoveryApiRef, fetchApiRef } from '@backstage/core-plugin-api';
+import { createElement } from 'react';
+import { ApprovalsClient, approvalsApiRef } from './api';
+import { requestRouteRef, rootRouteRef } from './routes';
+
+const approvalsApi = ApiBlueprint.make({
+  name: 'approvals',
+  params: define =>
+    define({
+      api: approvalsApiRef,
+      deps: { discoveryApi: discoveryApiRef, fetchApi: fetchApiRef },
+      factory: ({ discoveryApi, fetchApi }) =>
+        new ApprovalsClient({ discoveryApi, fetchApi }),
+    }),
+});
+
+const approvalsPage = PageBlueprint.make({
+  params: {
+    path: '/scaffolder-approvals',
+    routeRef: convertLegacyRouteRef(rootRouteRef),
+    // `createElement` rather than JSX, so this entrypoint stays a `.ts` file
+    // and the `./alpha` export in package.json needs no special casing.
+    loader: () => import('./components').then(m => createElement(m.Router)),
+  },
+});
+
+/**
+ * The scaffolder-approvals frontend plugin, for the new frontend system.
+ *
+ * @public
+ */
+export default createFrontendPlugin({
+  pluginId: 'scaffolder-approvals',
+  extensions: [approvalsApi, approvalsPage],
+  routes: {
+    root: convertLegacyRouteRef(rootRouteRef),
+    request: convertLegacyRouteRef(requestRouteRef),
+  },
+});

@@ -19,7 +19,7 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 | 5 — Gate action                   | **Done**    |
 | 6 — Catalog processor             | **Done**    |
 | 7 — Sweeps, events, notifications | **Done**    |
-| 8 — Frontend                      | Not started |
+| 8 — Frontend                      | **Done**    |
 | 9 — End-to-end verification       | Not started |
 | 10 — Upstream preparation         | Not started |
 
@@ -1647,7 +1647,7 @@ gives "1 of 2". Signals arrive on the `scaffolder-approvals` channel carrying
 
 ---
 
-# Phase 8 — Frontend
+# Phase 8 — Frontend — **DONE**
 
 **Context.** Dual-shipped (Q14) with BUI components inside core-components page chrome (Q15, Q24).
 Write components **once** as plain React; both plugin definitions mount the same components, so the
@@ -1729,10 +1729,95 @@ import needed with this harness (unlike the new-frontend-system `createApp` patt
 
 ### Exit criteria
 
-- [ ] Both exports construct and expose the expected route refs (smoke test, Q23).
-- [ ] Component tests via `renderInTestApp` + `TestApiProvider` cover: empty inbox, pending list,
-      approve flow, deny-with-comment, and a **redacted** request rendering without error.
-- [ ] `yarn start` in the plugin shows a working, styled page.
+- [x] Both exports construct and expose the same route refs (smoke test, Q23), and the new-system
+      plugin's extension ids are asserted by `getExtension`, which type-checks them.
+- [x] Component tests via `renderInTestApp` + `TestApiProvider` cover: empty inbox, pending list,
+      approve flow, deny-with-comment, a **redacted** request in both the list and the detail, every
+      reason the decide buttons are withheld, and a backend refusal being surfaced verbatim.
+- [ ] `yarn start` shows a working, styled page — **not verified.** See below.
+- [x] 319 tests pass across six packages (41 common, 34 node, 187 backend, 18 scaffolder module,
+      18 catalog module, 21 frontend); `tsc:full`, `lint:all`, `prettier:check` clean;
+      `build:api-reports` idempotent.
+
+### The one criterion not met
+
+`yarn start` was not run, and no page was looked at. The dev harness is written and type-checks, and
+the components are covered by tests that assert on rendered text — but nobody has seen this render.
+Styling in particular is unverified: the status pill reads BUI CSS variables, and whether those
+resolve correctly inside core-components page chrome is exactly the kind of thing a test that queries
+text will not tell you. **Phase 9 should open it.**
+
+### What landed
+
+| File                              | Purpose                                          |
+| --------------------------------- | ------------------------------------------------ |
+| `src/api/`                        | `approvalsApiRef`, `ApprovalsClient`             |
+| `src/components/ApprovalsPage/`   | Two tabs over one server-paged table             |
+| `src/components/RequestDetail/`   | One request, its history, and the decide dialog  |
+| `src/components/StatusPill/`      | Hand-rolled pill + CSS module                    |
+| `src/components/Router.tsx`       | Written once, mounted by both plugin definitions |
+| `src/plugin.tsx` / `src/alpha.ts` | The two wirings (Q14, Q23)                       |
+| `dev/index.tsx`                   | Mock-backed harness                              |
+
+### Things the BUI API forced, and one it did not
+
+**The plan's BUI claims held up.** `Badge` and `Tag` really do take only `icon`, `size` and
+`children` — there is no colour or status prop — so the hand-rolled pill was necessary rather than
+preference. `Table` + `useTable`, `Dialog`, `DialogFooter` and `TextAreaField` all exist as described.
+
+**Four corrections, all found by the compiler or a failing test:**
+
+- `CellText.title` is typed `string`, so a status pill cannot go in one. The generic `Cell` wrapper
+  takes children, and the table still requires a cell component at the top level.
+- `useTable`'s pagination option is `pageSize`, not `initialPageSize`.
+- BUI exports no `Heading`. `Text` carries the type scale (`title-small`, `title-x-small`) instead.
+- **`Dialog` is itself the modal overlay** — `DialogProps extends ModalOverlayProps` — so a bare
+  `<Dialog>` renders nothing. It needs `isOpen`, and `DialogHeader` / `DialogBody` exist to structure
+  it. This was caught by a test that clicked Approve and could not find the confirmation.
+
+### Decisions made while implementing
+
+**The list prop is `viewAs`, not `role`.** A React prop named `role` is the ARIA attribute's name, so
+`jsx-a11y` flagged it as an invalid ARIA role — correctly, in the sense that anyone skimming the JSX
+would read it the same way. The API query parameter stays `role`; only the component prop changed.
+
+**Server-side paging (`mode: 'offset'`).** The backend already reports a total independent of the
+page size, and an approvals inbox is exactly the thing that grows.
+
+**Status labels are written for people.** `approved` displays as "Starting", because it is transient
+— the template is launching — and a requester seeing "Approved" with nothing happening would
+reasonably wonder what went wrong. `rejected` reads "Denied" and `cancelled` reads "Withdrawn", which
+is what those states mean to the person looking at them.
+
+**The pill carries a dot as well as colour**, so status does not depend on colour alone.
+
+**Deciding goes through a confirmation dialog.** Both outcomes are hard to take back: an approval
+starts the template immediately, and a denial is terminal. The deny copy says plainly that the
+comment is all the requester will see.
+
+**A backend refusal is shown verbatim.** Those messages were written to be read by a person, so
+replacing them with "something went wrong" would throw away the most useful thing about them.
+
+**`Router` is exported from the entry point.** API Extractor flagged `ae-forgotten-export` because
+`ApprovalsIndexPage`'s inferred type refers to it — and exporting it is right anyway, since an app
+can then mount the page itself.
+
+**`alpha.ts` uses `createElement` rather than JSX**, so the entrypoint stays a `.ts` file and the
+`./alpha` export in `package.json` needs no special casing.
+
+### A dependency the plan did not mention
+
+`@testing-library/react` v16 makes `@testing-library/dom` an explicit peer, and without it every
+component test fails to even load. Other frontend plugins in this repo declare it; this one now does
+too.
+
+### Notes for the next phase
+
+§8.4's scaffolder decorator — overriding `scaffolderApiRef` so the wizard diverts a gated template to
+the approvals API — is **not built**. It is UX only, by the plan's own words: the gate holds without
+it, and a user who runs a gated template directly meets a clear refusal telling them to use the
+approvals page. It belongs with Phase 9, where a real app exists to override the API in and to verify
+the diversion actually works end to end.
 
 ---
 
