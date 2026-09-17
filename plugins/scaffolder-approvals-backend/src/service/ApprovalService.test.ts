@@ -59,6 +59,33 @@ function gatedTemplate(gateInput: JsonObject, parameters?: unknown): Entity {
 }
 
 /**
+ * A gated template carrying one of the shapes that let a direct scaffolder
+ * call reach a real step without an approval.
+ */
+function bypassTemplate(extra: {
+  gate?: JsonObject;
+  grant?: JsonObject;
+}): Entity {
+  return {
+    apiVersion: 'scaffolder.backstage.io/v1beta3',
+    kind: 'Template',
+    metadata: { name: 'request-github-admin' },
+    spec: {
+      type: 'service',
+      steps: [
+        {
+          id: 'gate',
+          action: GATE_ACTION_ID,
+          input: { approvers: ['group:default/devx-team'] },
+          ...extra.gate,
+        },
+        { id: 'grant', action: 'github:admin:grant', ...extra.grant },
+      ],
+    },
+  } as Entity;
+}
+
+/**
  * A caller, as `UserInfoService` would describe them.
  *
  * Group membership is resolved by the catalog rather than expanded by the
@@ -245,6 +272,44 @@ describe('ApprovalService', () => {
         } as Entity;
 
         await expect(submit()).rejects.toThrow(/must be the first step/);
+        expect((await store.listRequests()).totalItems).toBe(0);
+      });
+
+      it('refuses the template shapes that let a direct run past the gate', async () => {
+        // Each of these still looks gated — the step is there, the derived
+        // annotation is there — while a direct POST /v2/tasks runs real steps
+        // with no approval. Refusing them at submit is what stops the
+        // approvals API from blessing a template that cannot actually be
+        // gated.
+        const shapes: Array<[string, Entity, RegExp]> = [
+          [
+            'a falsy `if:` switches the gate off',
+            bypassTemplate({ gate: { if: '${{ parameters.gate }}' } }),
+            /must not carry an 'if:'/,
+          ],
+          [
+            'an empty `each:` runs the gate zero times',
+            bypassTemplate({ gate: { each: '${{ parameters.items }}' } }),
+            /must not carry an 'each:'/,
+          ],
+          [
+            'a later step runs after the gate throws',
+            bypassTemplate({ grant: { if: '${{ always() }}' } }),
+            /run even after an earlier step fails/,
+          ],
+          [
+            'a step-read policy can drop the gate but keep the step',
+            bypassTemplate({
+              grant: { 'backstage:permissions': { tags: ['admin'] } },
+            }),
+            /missing the 'backstage:permissions.tags'/,
+          ],
+        ];
+
+        for (const [, shape, message] of shapes) {
+          entity = shape;
+          await expect(submit()).rejects.toThrow(message);
+        }
         expect((await store.listRequests()).totalItems).toBe(0);
       });
 

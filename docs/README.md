@@ -27,6 +27,38 @@ task status: failed
 
 `scripts/verify-gate.sh` repeats that check against any running instance.
 
+### Template shapes that are refused
+
+"The gate throws, so nothing after it runs" is only true of a template whose shape allows it. Scaffolder 4.1.0 will happily run real steps around a gate that throws, so the plugin refuses four shapes outright — at submit, and with a warning at catalog ingestion:
+
+| Shape                                                         | What the runner does                                            |
+| ------------------------------------------------------------- | --------------------------------------------------------------- |
+| `if:` on the gate                                             | Skips a step whose condition is falsy, so the caller chooses    |
+| `each:` on the gate                                           | Runs the step once per entry — an empty list runs it zero times |
+| A later step with `if: ${{ always() }}` or `${{ failure() }}` | Runs it anyway after the gate throws                            |
+| A later step tagged where the gate is not                     | A `HAS_TAG` step-read policy drops the gate but keeps that step |
+
+The last one is why a gated template's gate must carry every `backstage:permissions.tags` value any other step carries: then no step-read policy can admit a real step without also admitting the gate.
+
+### Defence in depth: deny the actions to user principals
+
+These four shapes are author-controlled, as is deleting the gate altogether. If a gated template grants something with real blast radius, add a `scaffolder.action.execute` policy that denies those actions to **user** principals:
+
+```ts
+if (isPermission(request.permission, actionExecutePermission)) {
+  if (request.principal.type !== 'user') {
+    return { result: AuthorizeResult.ALLOW };
+  }
+  return createScaffolderActionConditionalDecision(request.permission, {
+    not: scaffolderActionConditions.hasActionId({
+      actionId: 'github:repo:collaborator:add',
+    }),
+  });
+}
+```
+
+An approved run launches as a service principal, and `ServerPermissionClient` allows service principals without consulting any policy, so only approved runs can execute those actions. A direct `POST /v2/tasks` is refused with "Unauthorized action" whatever the template's shape. This was verified against a real scaffolder: the policy stopped an `always()` bypass while the approved run of the same template completed.
+
 ## A worked example
 
 A template that needs two members of `devx-github-team` to agree before it grants admin access:

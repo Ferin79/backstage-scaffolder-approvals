@@ -68,6 +68,68 @@ describe('findGateStep', () => {
     );
   });
 
+  it('rejects an `if:` on the gate', () => {
+    // The runner skips a step whose condition is falsy, so whoever starts the
+    // run would choose whether the gate applied to them.
+    expect(() =>
+      findGateStep(
+        template([{ ...GATE, if: '${{ parameters.gate }}' }, PUBLISH]),
+      ),
+    ).toThrow(/must not carry an 'if:' condition/);
+  });
+
+  it('rejects an `each:` on the gate', () => {
+    // An `each:` over an empty list runs the gate zero times and still reports
+    // the step as completed.
+    expect(() =>
+      findGateStep(
+        template([{ ...GATE, each: '${{ parameters.items }}' }, PUBLISH]),
+      ),
+    ).toThrow(/must not carry an 'each:' loop/);
+  });
+
+  it('rejects a later step that runs after a failure', () => {
+    // The gate throws on an unapproved run, and the runner goes on to execute
+    // every failure-aware step after it.
+    for (const condition of ['${{ always() }}', '${{ failure() }}']) {
+      expect(() =>
+        findGateStep(template([GATE, { ...PUBLISH, if: condition }])),
+      ).toThrow(/run even after an earlier step fails/);
+    }
+  });
+
+  it('allows an ordinary condition on a later step', () => {
+    expect(
+      findGateStep(
+        template([GATE, { ...PUBLISH, if: '${{ parameters.publish }}' }]),
+      ).step,
+    ).toEqual(GATE);
+  });
+
+  it('rejects a later step tagged where the gate is not', () => {
+    // Under a `HAS_TAG` step-read policy an untagged gate is dropped from the
+    // caller's run while the tagged step survives.
+    expect(() =>
+      findGateStep(
+        template([
+          GATE,
+          { ...PUBLISH, 'backstage:permissions': { tags: ['admin'] } },
+        ]),
+      ),
+    ).toThrow(/is missing the 'backstage:permissions.tags' value\(s\) 'admin'/);
+  });
+
+  it('allows tags a gate also carries', () => {
+    expect(
+      findGateStep(
+        template([
+          { ...GATE, 'backstage:permissions': { tags: ['admin', 'extra'] } },
+          { ...PUBLISH, 'backstage:permissions': { tags: ['admin'] } },
+        ]),
+      ).index,
+    ).toBe(0);
+  });
+
   it('tolerates a template with no spec or malformed steps', () => {
     expect(
       findGateStep({

@@ -44,8 +44,14 @@ const NO_GRANT_MESSAGE =
  *
  * **This is the security boundary of the whole plugin.** Everything else —
  * the inbox, the notifications, the request page — is user experience. A
- * template is gated because this step stands in front of it and throws, and a
- * throw on step one means no later step runs.
+ * template is gated because this step stands in front of it and throws.
+ *
+ * A throw stops the run only for a template whose shape lets it. Scaffolder
+ * 4.1.0 skips a step with a falsy `if:`, runs an `each:` over an empty list
+ * zero times, still executes later `always()`/`failure()` steps after a
+ * failure, and drops steps a caller's step-read policy rejects. `findGateStep`
+ * refuses all four shapes, at submit and at catalog ingestion, which is what
+ * makes "the gate throws" mean "nothing else runs".
  *
  * It is an action rather than a check in the approvals backend because
  * `taskSpec.steps` is read from the catalog while callers supply only `values`

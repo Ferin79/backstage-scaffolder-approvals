@@ -27,7 +27,7 @@ const GATE = {
   action: GATE_ACTION_ID,
   input: {
     approvers: ['group:default/devx-team'],
-    values: { repository: 'backstage' },
+    values: '${{ parameters }}',
   },
 };
 
@@ -243,6 +243,139 @@ describe('ApprovalsGateProcessor', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringMatching(/USER_OAUTH_TOKEN.*will have expired/s),
       );
+    });
+
+    it('warns about an `if:` or an `each:` on the gate', async () => {
+      // Both let a direct run past the gate: a falsy condition skips the step,
+      // and a loop over an empty list runs it zero times.
+      await processor.preProcessEntity(
+        template([{ ...GATE, if: '${{ parameters.gate }}' }, PUBLISH]),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/unusable gate.*must not carry an 'if:'/),
+      );
+
+      await processor.preProcessEntity(
+        template([{ ...GATE, each: '${{ parameters.items }}' }, PUBLISH]),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/unusable gate.*must not carry an 'each:'/),
+      );
+    });
+
+    it('warns about a later step that runs after a failure', async () => {
+      await processor.preProcessEntity(
+        template([GATE, { ...PUBLISH, if: '${{ always() }}' }]),
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/run even after an earlier step fails/),
+      );
+    });
+
+    it('warns about a later step tagged where the gate is not', async () => {
+      await processor.preProcessEntity(
+        template([
+          GATE,
+          { ...PUBLISH, 'backstage:permissions': { tags: ['admin'] } },
+        ]),
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/missing the 'backstage:permissions.tags'/),
+      );
+    });
+
+    it('warns about a policy that could never be satisfied', async () => {
+      // gatePolicy.ts promises a template that ingests cleanly cannot then
+      // fail at submit, which only holds if the policy is read here too.
+      await processor.preProcessEntity(
+        template([{ ...GATE, input: { ...GATE.input, quorum: 0 } }]),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/unusable gate policy.*quorum/),
+      );
+
+      await processor.preProcessEntity(
+        template([
+          { ...GATE, input: { ...GATE.input, approvers: ['component:x/y'] } },
+        ]),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/unusable gate policy.*group or user ref/),
+      );
+    });
+
+    it('warns when the gate is handed less than the whole parameters', async () => {
+      // The gate hashes what it is handed, so a subset never matches what was
+      // approved and every run is refused.
+      await processor.preProcessEntity(
+        template([
+          {
+            ...GATE,
+            input: {
+              ...GATE.input,
+              values: { repository: '${{ parameters.repository }}' },
+            },
+          },
+        ]),
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/passes something other than/),
+      );
+    });
+
+    it('warns when a later step reads the user context', async () => {
+      // §10.1: an approved run launches as a service principal, so there is no
+      // user on the task and the reference renders empty.
+      await processor.preProcessEntity(
+        template([
+          GATE,
+          {
+            id: 'grant',
+            action: 'github:repo:collaborator:add',
+            input: { username: '${{ user.entity.metadata.name }}' },
+          },
+        ]),
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/render empty/),
+      );
+    });
+
+    it('says each thing once, not on every refresh cycle', async () => {
+      // The catalog re-processes every entity on every cycle; a repeated
+      // warning becomes a permanent stream that nobody reads.
+      const entity = template([PUBLISH, GATE]);
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await processor.preProcessEntity(entity);
+      }
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses the processor cache to remember what it has said', async () => {
+      const store = new Map<string, string>();
+      const cache = {
+        get: async (key: string) => store.get(key),
+        set: async (key: string, value: string) => void store.set(key, value),
+      };
+      const entity = template([PUBLISH, GATE]);
+
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await processor.preProcessEntity(
+          entity,
+          undefined,
+          undefined,
+          undefined,
+          cache as any,
+        );
+      }
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(store.size).toBe(1);
     });
 
     it('does not warn about user tokens on an ungated template', async () => {
