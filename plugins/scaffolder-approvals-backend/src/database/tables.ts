@@ -42,6 +42,10 @@ export interface ApprovalRequestRow {
   /** JSON. */
   policy_snapshot: string;
   task_id: string | null;
+  /** How many times a launch has been claimed, for diagnostics. */
+  launch_attempt: number;
+  /** When a launch was last claimed; null means never. */
+  launch_attempted_at: DbTimestamp | null;
   created_at: DbTimestamp;
   updated_at: DbTimestamp;
   expires_at: DbTimestamp | null;
@@ -74,4 +78,6 @@ export interface ApprovalGrantRow {
   expires_at: DbTimestamp;
   consumed_at: DbTimestamp | null;
   consumed_by_task_id: string | null;
+  /** When a failed launch withdrew this grant; null means live. */
+  revoked_at: DbTimestamp | null;
 }

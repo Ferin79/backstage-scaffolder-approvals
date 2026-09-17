@@ -608,10 +608,11 @@ describe('ApprovalService', () => {
         expect(decided.taskId).toBeUndefined();
       });
 
-      it('refuses to mint a second grant while one is outstanding', async () => {
-        // What makes a retry safe. A crash between scaffold() returning and the
-        // status transition leaves a task whose id was never recorded; minting
-        // a fresh grant on retry would run the template twice.
+      it('declines a second launch while one is in flight', async () => {
+        // C2: a decision's launch and a sweep tick can overlap. The claim is
+        // compare-and-set, so only one of them mints a grant; a read of the
+        // grants table followed by a write would let both through and run the
+        // template twice.
         const { id } = await submit();
         await service.decide({
           requestId: id,
@@ -632,7 +633,35 @@ describe('ApprovalService', () => {
         ).toHaveLength(1);
       });
 
-      it('mints a new grant once the old one has expired', async () => {
+      it('lets only one of two concurrent launches through', async () => {
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+        // Back to the moment just after the approval: nothing claimed, nothing
+        // minted.
+        await knex('approval_requests').where({ id }).update({
+          status: 'approved',
+          task_id: null,
+          launch_attempted_at: null,
+        });
+        await knex('approval_grants').where({ request_id: id }).delete();
+        scaffold.mockClear();
+
+        await Promise.all([service.launch(id), service.launch(id)]);
+
+        expect(scaffold).toHaveBeenCalledTimes(1);
+        expect(
+          await knex('approval_grants').where({ request_id: id }),
+        ).toHaveLength(1);
+      });
+
+      it('revokes the unredeemed grant and relaunches after a failure', async () => {
+        // C1/Q9: the grant a failed launch left behind is what used to block
+        // every retry. Revoking it is what lets a new one be minted, and the
+        // old one must stop being redeemable at that moment.
         scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
         const { id } = await submit();
         await service.decide({
@@ -642,12 +671,140 @@ describe('ApprovalService', () => {
         });
         expect((await store.getRequest(id))?.status).toBe('approved');
 
-        // Past the one-hour grant TTL.
-        clock = new Date('2026-09-12T11:30:00.000Z');
+        const [first] = await knex('approval_grants').where({ request_id: id });
+        expect(first.revoked_at).toBeNull();
+
+        // Past the grace period on the claim, but well inside the grant TTL.
+        clock = new Date('2026-09-12T10:15:00.000Z');
         await service.launch(id);
 
         expect(scaffold).toHaveBeenCalledTimes(2);
         expect((await store.getRequest(id))?.status).toBe('running');
+
+        const grants = await knex('approval_grants')
+          .where({ request_id: id })
+          .orderBy('id');
+        expect(grants).toHaveLength(2);
+        expect(grants.filter(grant => grant.revoked_at !== null)).toHaveLength(
+          1,
+        );
+      });
+
+      it('gives every later grant the same deadline as the first', async () => {
+        // Otherwise each retry would push the deadline out by a full TTL and a
+        // scaffolder that stayed down would be retried forever, so the request
+        // would never reach `failed`.
+        scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        clock = new Date('2026-09-12T10:15:00.000Z');
+        await service.launch(id);
+
+        const expiries = (
+          await knex('approval_grants').where({ request_id: id })
+        ).map(grant => new Date(grant.expires_at).toISOString());
+        expect(new Set(expiries).size).toBe(1);
+      });
+
+      it('stops launching once the approval is no longer redeemable', async () => {
+        // Q9: `failed` only once the grant lapses. Past that point the approval
+        // is spent, and a retry needs a fresh one.
+        scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+        expect(scaffold).toHaveBeenCalledTimes(1);
+
+        // Past the one-hour grant TTL.
+        clock = new Date('2026-09-12T11:30:00.000Z');
+        await service.launch(id);
+
+        expect(scaffold).toHaveBeenCalledTimes(1);
+        expect((await store.getRequest(id))?.status).toBe('approved');
+      });
+
+      it('recovers the task id rather than launching twice', async () => {
+        // The crash-after-scaffold case: a task is running and holds the
+        // grant, but the transition that records its id was lost.
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        const [grant] = await knex('approval_grants').where({ request_id: id });
+        await knex('approval_grants').where({ id: grant.id }).update({
+          consumed_at: clock,
+          consumed_by_task_id: 'task-from-the-lost-launch',
+        });
+        await knex('approval_requests')
+          .where({ id })
+          .update({ status: 'approved', task_id: null });
+        scaffold.mockClear();
+
+        clock = new Date('2026-09-12T10:15:00.000Z');
+        await service.launch(id);
+
+        expect(scaffold).not.toHaveBeenCalled();
+        const request = await store.getRequest(id);
+        expect(request?.status).toBe('running');
+        expect(request?.taskId).toBe('task-from-the-lost-launch');
+      });
+
+      it('refuses a grant that was revoked', async () => {
+        // Revoking has to stop the old grant being redeemable, or a task
+        // holding it could still run the template alongside its replacement.
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        const [grant] = await knex('approval_grants').where({ request_id: id });
+        expect(await store.revokeGrant(grant.id)).toBe(true);
+
+        expect(
+          await store.consumeGrant({
+            requestId: id,
+            tokenHash: grant.token_hash,
+            valuesHash: grant.values_hash,
+            taskId: 'task-9',
+          }),
+        ).toBe(false);
+      });
+
+      it('loses the revoke race to a task that redeems the grant', async () => {
+        // The reason revoking is compare-and-set: zero rows changed means a
+        // task holds the grant, and the caller must recover its id instead of
+        // launching a second time.
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        const [grant] = await knex('approval_grants').where({ request_id: id });
+        expect(
+          await store.consumeGrant({
+            requestId: id,
+            tokenHash: grant.token_hash,
+            valuesHash: grant.values_hash,
+            taskId: 'task-9',
+          }),
+        ).toBe(true);
+
+        expect(await store.revokeGrant(grant.id)).toBe(false);
       });
 
       it('does nothing for a request that is not approved', async () => {

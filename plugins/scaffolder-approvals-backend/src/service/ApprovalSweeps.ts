@@ -97,19 +97,19 @@ export class ApprovalSweeps {
   /**
    * Reconcile requests that are mid-flight.
    *
-   * Three situations, and telling them apart is the whole job:
+   * For a request that was approved but has no task, three outcomes, and
+   * telling them apart is the whole job:
    *
-   * 1. **Approved, no task, and a grant was consumed.** The task started but
-   *    the status transition was lost — a crash between `scaffold()` returning
-   *    and the write. The grant records which task consumed it, so the id is
-   *    recovered rather than the template being run a second time. This is why
-   *    `consumed_by_task_id` exists.
-   * 2. **Approved, no task, and a grant is still live.** Something is in
-   *    flight. Do nothing: relaunching now is exactly the double-execution the
-   *    grant guard prevents, and it will resolve or expire on its own.
-   * 3. **Approved, no task, and no usable grant.** Either the launch never got
-   *    as far as minting one, in which case retry it, or the grant expired
-   *    unused, in which case the approval is spent and the request fails (Q9).
+   * 1. **A grant was consumed.** The task started but the status transition was
+   *    lost — a crash between `scaffold()` returning and the write. The grant
+   *    records which task consumed it, so the id is recovered rather than the
+   *    template being run a second time.
+   * 2. **The approval is still redeemable.** Hand it to `launch`, which claims
+   *    it, revokes whatever a failed attempt left behind and tries again (Q9).
+   *    A launch that is genuinely in flight keeps its claim and `launch`
+   *    declines, so this is safe to call on every tick.
+   * 3. **The approval has lapsed.** Nothing redeemed it before the deadline, so
+   *    it is spent and the request fails. A retry needs a fresh approval.
    *
    * Plus the simple case: a running request whose task has since finished.
    */
@@ -125,42 +125,32 @@ export class ApprovalSweeps {
 
     for (const request of requests) {
       try {
-        const grants = await this.store.listGrants(request.id);
-        const consumed = grants.find(grant => grant.consumed_at !== null);
+        const deadline = await this.store.launchDeadline(request.id);
 
-        if (consumed?.consumed_by_task_id) {
-          // The task is already running; only our record of it was lost.
-          const healed = await this.store.transition(
-            request.id,
-            'approved',
-            'running',
-            { taskId: consumed.consumed_by_task_id },
-          );
-          if (healed) {
-            this.logger.info(
-              `Recovered task ${consumed.consumed_by_task_id} for approval request ${request.id} from its consumed grant`,
-            );
+        if (
+          deadline &&
+          deadline.getTime() <= this.now().getTime() &&
+          !(await this.store.hasLiveGrant(request.id))
+        ) {
+          // Nothing redeemed the approval in time. Check once more for a task
+          // before giving up on it, since a grant consumed moments ago is
+          // still a template that ran.
+          const consumed = await this.store.findConsumedGrant(request.id);
+          if (consumed?.consumed_by_task_id) {
+            await this.service.launch(request.id);
+            continue;
           }
+
+          await this.fail(
+            request,
+            'the approval grant expired before the template could start',
+          );
           continue;
         }
 
-        if (await this.store.hasLiveGrant(request.id)) {
-          continue;
-        }
-
-        if (grants.length === 0) {
-          // Never launched at all. `launch` mints the grant and is safe to call
-          // again, since it declines while one is outstanding.
-          await this.service.launch(request.id);
-          continue;
-        }
-
-        // A grant was minted and expired without being redeemed. The approval
-        // cannot be spent twice, so this is terminal and needs a fresh request.
-        await this.fail(
-          request,
-          'the approval grant expired before the template could start',
-        );
+        // Covers all of "never launched", "launched and failed" and "launched
+        // and in flight": `launch` claims the request and decides which it is.
+        await this.service.launch(request.id);
       } catch (error) {
         // One bad request must not stop the sweep for the rest.
         this.logger.warn(

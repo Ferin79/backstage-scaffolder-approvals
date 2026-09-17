@@ -115,6 +115,23 @@ const INELIGIBILITY_MESSAGES: Record<DecisionIneligibility, string> = {
 };
 
 /**
+ * How long a claimed launch is left alone before another caller may take it
+ * over.
+ *
+ * It bounds two things at once: how long a launcher that crashed mid-flight
+ * blocks its request, and how long a task that was started but has not yet
+ * reached its gate is safe from having its grant revoked underneath it. The
+ * second is why it is minutes rather than seconds — a gate is the first step of
+ * a gated template, so a task that has not reached it in ten minutes is queued
+ * behind a saturated worker pool, and revoking its grant would fail a run that
+ * was about to succeed.
+ *
+ * Not configurable, deliberately: Q17 keeps app-config to `grantTtl` and
+ * `retention`.
+ */
+const LAUNCH_CLAIM_GRACE_MS = 10 * 60 * 1000;
+
+/**
  * The approval state machine.
  *
  * Everything about quorum, transitions and launching lives here so that the
@@ -368,20 +385,32 @@ export class ApprovalService {
   /**
    * Mint a grant and start the scaffolder task.
    *
-   * Safe to call more than once, which the reconciliation sweep relies on. Two
-   * things make that true:
+   * Safe to call more than once, which the reconciliation sweep relies on, and
+   * the four steps below are what make that true.
    *
-   * - **It refuses to mint a second live grant.** Otherwise a crash between
-   *   `scaffold()` returning and the status transition would leave a running
-   *   task with no recorded `task_id`, and a retry would mint a fresh grant and
-   *   run the template a second time. With this guard the retry declines, and
-   *   the first grant's `consumed_by_task_id` is how the sweep recovers the
-   *   task id it lost. If the task never started, the grant simply expires and
-   *   the request fails — which is the documented outcome.
-   * - **A launch failure leaves the request `approved`.** Nothing executed and
-   *   the grant is unconsumed, so retrying is both safe and correct. This is
-   *   deliberately different from a task that ran and failed (Q5), which is
-   *   terminal and needs a fresh approval.
+   * **1. Claim the launch.** A compare-and-set on the request, so that a
+   * decision and a sweep tick racing each other produce exactly one launch
+   * rather than two grants and two tasks (§6 forbids read-then-write here). A
+   * claim goes stale after {@link LAUNCH_CLAIM_GRACE_MS}, so a launcher that
+   * crashed mid-flight does not block the request forever.
+   *
+   * **2. Recover a task that already started.** If a grant has been consumed,
+   * the template is running and only this plugin's record of it was lost — a
+   * crash between `scaffold()` returning and the status transition. Its
+   * `consumed_by_task_id` is the task id, which is the whole reason that column
+   * exists.
+   *
+   * **3. Revoke a grant a previous attempt left behind.** Q9 asks for the
+   * launch to be retried, and it cannot be while the old grant is still
+   * redeemable: two live grants is two possible runs. Revoking is itself
+   * compare-and-set, so a task redeeming the grant at the same moment wins and
+   * this caller recovers its id instead.
+   *
+   * **4. Stop at the deadline.** The first grant's expiry is when the approval
+   * stops being redeemable. Past it, `launch` does nothing and the sweep fails
+   * the request — Q9's "`failed` only once the grant lapses". This is
+   * deliberately different from a task that ran and failed (Q5), which is
+   * terminal and needs a fresh approval.
    */
   async launch(requestId: string): Promise<void> {
     const request = await this.store.getRequest(requestId);
@@ -405,9 +434,43 @@ export class ApprovalService {
       );
     }
 
-    if (await this.store.hasLiveGrant(requestId)) {
+    const now = this.now();
+    const staleBefore = new Date(now.getTime() - LAUNCH_CLAIM_GRACE_MS);
+
+    if (!(await this.store.claimLaunch(requestId, staleBefore))) {
       this.logger.info(
-        `Not launching approval request ${requestId}; a grant is already outstanding`,
+        `Not launching approval request ${requestId}; another launch is already in flight`,
+      );
+      return;
+    }
+
+    if (await this.recoverStartedTask(requestId)) {
+      return;
+    }
+
+    const live = await this.store.findLiveGrant(requestId);
+    if (live) {
+      // We hold the claim, so the attempt that minted this grant has had its
+      // grace period and is not coming back. Withdraw the grant so a new one
+      // can be minted — unless a task beats us to redeeming it.
+      if (!(await this.store.revokeGrant(live.id))) {
+        await this.recoverStartedTask(requestId);
+        return;
+      }
+      this.logger.info(
+        `Revoked the unredeemed grant of approval request ${requestId}; retrying the launch`,
+      );
+    }
+
+    // Every grant after the first expires when the first one would have, so
+    // that retrying cannot push the deadline out indefinitely.
+    const deadline =
+      (await this.store.launchDeadline(requestId)) ??
+      new Date(now.getTime() + this.grantTtlMs);
+
+    if (deadline.getTime() <= now.getTime()) {
+      this.logger.info(
+        `Not launching approval request ${requestId}; the approval is no longer redeemable`,
       );
       return;
     }
@@ -417,7 +480,7 @@ export class ApprovalService {
       requestId,
       tokenHash: hashGrantToken(token),
       valuesHash: request.valuesHash,
-      expiresAt: new Date(this.now().getTime() + this.grantTtlMs),
+      expiresAt: deadline,
     });
 
     // Service credentials, not the requester's: `AuthService` cannot mint
@@ -458,11 +521,17 @@ export class ApprovalService {
       );
       taskId = response.taskId;
     } catch (error) {
-      // Q9: a launch failure is not a task failure. Leave the request
-      // `approved` with no task id; the reconciliation sweep retries while the
-      // grant is still valid, and fails the request once it is not.
+      // Q9: a launch failure is not a task failure, so the request stays
+      // `approved` and the next sweep retries it.
+      //
+      // The grant is deliberately left live rather than revoked here. The
+      // error does not say whether a task was created: `ScaffolderClient`
+      // throws a plain `Error` for a non-2xx answer as well as for a timeout,
+      // and a task that exists is on its way to the gate holding this grant.
+      // Waiting out the grace period costs at most one sweep interval, while
+      // guessing wrong would fail a run that was about to succeed.
       this.logger.warn(
-        `Failed to launch approval request ${requestId}; will retry while the grant is valid`,
+        `Failed to launch approval request ${requestId}; the next sweep will retry it until ${deadline.toISOString()}`,
         error instanceof Error ? error : undefined,
       );
       return;
@@ -478,6 +547,30 @@ export class ApprovalService {
         `Launched task ${taskId} for approval request ${requestId}, but the request had already left 'approved'`,
       );
     }
+  }
+
+  /**
+   * Move a request to `running` on the strength of a grant a task has already
+   * redeemed.
+   *
+   * Returns true when there was such a task, whether or not this call was the
+   * one that recorded it.
+   */
+  private async recoverStartedTask(requestId: string): Promise<boolean> {
+    const consumed = await this.store.findConsumedGrant(requestId);
+    if (!consumed?.consumed_by_task_id) {
+      return false;
+    }
+
+    const taskId = consumed.consumed_by_task_id;
+    if (
+      await this.store.transition(requestId, 'approved', 'running', { taskId })
+    ) {
+      this.logger.info(
+        `Recovered task ${taskId} for approval request ${requestId} from its consumed grant`,
+      );
+    }
+    return true;
   }
 
   /**

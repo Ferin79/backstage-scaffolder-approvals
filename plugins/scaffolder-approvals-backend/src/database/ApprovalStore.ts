@@ -30,7 +30,11 @@ import {
 import type { JsonObject } from '@backstage/types';
 import type { Knex } from 'knex';
 import { v4 as uuid } from 'uuid';
-import { rowToApprovalDecision, rowToApprovalRequest } from './rowMapping';
+import {
+  rowToApprovalDecision,
+  rowToApprovalRequest,
+  timestampToIso,
+} from './rowMapping';
 import {
   type ApprovalDecisionRow,
   type ApprovalGrantRow,
@@ -448,8 +452,119 @@ export class ApprovalStore {
       expires_at: input.expiresAt,
       consumed_at: null,
       consumed_by_task_id: null,
+      revoked_at: null,
     });
     return id;
+  }
+
+  /**
+   * Claim the right to launch a request, so that exactly one caller does.
+   *
+   * Deciding a request launches it, and so does the reconciliation sweep. Both
+   * used to read the grants table and then write to it, which two replicas can
+   * interleave: each sees no live grant, each mints one, and the template runs
+   * twice. This is the compare-and-set that §6 asks for, and it is what every
+   * launch now goes through first.
+   *
+   * `staleBefore` is how the claim is also a retry window. A claim held by an
+   * attempt that has not finished is honoured until it is that old; after that
+   * the next caller may take over, which is what makes a launcher that crashed
+   * mid-flight recoverable rather than permanent.
+   *
+   * Returns true for exactly one caller.
+   */
+  async claimLaunch(requestId: string, staleBefore: Date): Promise<boolean> {
+    const now = this.now();
+
+    const affected = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .where({
+        id: requestId,
+        status: 'approved' satisfies ApprovalRequestStatus,
+      })
+      .whereNull('task_id')
+      .where(builder =>
+        builder
+          .whereNull('launch_attempted_at')
+          .orWhere('launch_attempted_at', '<=', staleBefore),
+      )
+      .update({
+        launch_attempt: this.db.raw('launch_attempt + 1'),
+        launch_attempted_at: now,
+        updated_at: now,
+      });
+
+    return affected === 1;
+  }
+
+  /**
+   * Withdraw an unconsumed grant, so a new one can be minted.
+   *
+   * Compare-and-set, because the task this grant was minted for may be
+   * redeeming it at this very moment. Losing that race is the point: zero rows
+   * changed means a task holds the grant, and the caller must recover its id
+   * rather than launch the template a second time.
+   */
+  async revokeGrant(grantId: string): Promise<boolean> {
+    const affected = await this.db<ApprovalGrantRow>(TABLE_GRANTS)
+      .where({ id: grantId })
+      .whereNull('consumed_at')
+      .whereNull('revoked_at')
+      .update({ revoked_at: this.now() });
+
+    return affected === 1;
+  }
+
+  /**
+   * The grant a task redeemed, if any.
+   *
+   * A request has at most one, since consuming is single-use and a new grant is
+   * only ever minted once the previous one is dead. Recovering
+   * `consumed_by_task_id` from it is how a launch that crashed after
+   * `scaffold()` returned finds the task it started.
+   */
+  async findConsumedGrant(
+    requestId: string,
+  ): Promise<ApprovalGrantRow | undefined> {
+    return await this.db<ApprovalGrantRow>(TABLE_GRANTS)
+      .where({ request_id: requestId })
+      .whereNotNull('consumed_at')
+      .orderBy('consumed_at', 'asc')
+      .first();
+  }
+
+  /** The grant that is still redeemable, if any. */
+  async findLiveGrant(
+    requestId: string,
+  ): Promise<ApprovalGrantRow | undefined> {
+    return await this.db<ApprovalGrantRow>(TABLE_GRANTS)
+      .where({ request_id: requestId })
+      .whereNull('consumed_at')
+      .whereNull('revoked_at')
+      .where('expires_at', '>', this.now())
+      .first();
+  }
+
+  /**
+   * When the approval stops being redeemable, whatever happens to the launch.
+   *
+   * The *first* grant's expiry, not the newest one's. Q9 retries a launch
+   * "while the grant is valid" and fails the request once it lapses; if each
+   * retry minted a grant with a fresh TTL, a scaffolder that stayed down would
+   * be retried forever and the request would never reach `failed`. Every grant
+   * after the first therefore expires when the first one would have.
+   *
+   * Undefined means nothing has been minted yet, so the launch has its full
+   * TTL ahead of it.
+   */
+  async launchDeadline(requestId: string): Promise<Date | undefined> {
+    const row = await this.db<ApprovalGrantRow>(TABLE_GRANTS)
+      .where({ request_id: requestId })
+      .orderBy('expires_at', 'asc')
+      .first();
+
+    return row
+      ? new Date(timestampToIso(row.expires_at, 'expires_at'))
+      : undefined;
   }
 
   /**
@@ -484,6 +599,7 @@ export class ApprovalStore {
         values_hash: input.valuesHash,
       })
       .whereNull('consumed_at')
+      .whereNull('revoked_at')
       .where('expires_at', '>', now)
       .update({
         consumed_at: now,
@@ -503,19 +619,7 @@ export class ApprovalStore {
    * to the gate, or nothing started and the grant should be left to expire.
    */
   async hasLiveGrant(requestId: string): Promise<boolean> {
-    const row = await this.db<ApprovalGrantRow>(TABLE_GRANTS)
-      .where({ request_id: requestId })
-      .whereNull('consumed_at')
-      .where('expires_at', '>', this.now())
-      .first();
-    return row !== undefined;
-  }
-
-  /** Every grant minted for a request, oldest first. */
-  async listGrants(requestId: string): Promise<ApprovalGrantRow[]> {
-    return await this.db<ApprovalGrantRow>(TABLE_GRANTS)
-      .where({ request_id: requestId })
-      .orderBy('expires_at', 'asc');
+    return (await this.findLiveGrant(requestId)) !== undefined;
   }
 
   /**

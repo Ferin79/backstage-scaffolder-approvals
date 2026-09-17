@@ -166,19 +166,23 @@ describe('ApprovalSweeps', () => {
         const id = await approved();
         expect((await store.getRequest(id))?.status).toBe('approved');
 
-        // The failed launch still minted a grant, so nothing is retried until
-        // it expires. Clear it to model the crash-before-mint case.
+        // Model the crash-before-mint case: the launch was claimed and then
+        // died without leaving a grant behind.
         await knex('approval_grants').where({ request_id: id }).delete();
 
+        // A tick after the claim has gone stale, which is when another caller
+        // may take the launch over.
+        clock = new Date('2026-09-13T10:15:00.000Z');
         await sweeps.reconcile();
 
         expect(scaffold).toHaveBeenCalledTimes(2);
         expect((await store.getRequest(id))?.status).toBe('running');
       });
 
-      it('waits while a grant is still outstanding, rather than relaunching', async () => {
-        // Relaunching here is exactly the double execution the grant guard
-        // exists to prevent.
+      it('waits out the grace period before touching a launch in flight', async () => {
+        // A task may have started and be on its way to its gate holding this
+        // grant. Relaunching now is exactly the double execution the grant
+        // guard exists to prevent.
         scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
         const id = await approved();
 
@@ -186,6 +190,25 @@ describe('ApprovalSweeps', () => {
 
         expect(scaffold).toHaveBeenCalledTimes(1);
         expect((await store.getRequest(id))?.status).toBe('approved');
+      });
+
+      it('revokes the grant and relaunches once the grace period has passed', async () => {
+        // C1/Q9: the launch is retried while the approval is still
+        // redeemable. Before this, the live grant made the sweep wait until it
+        // expired and then fail the request, so a failed launch was never
+        // retried at all.
+        scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
+        const id = await approved();
+
+        clock = new Date('2026-09-13T10:15:00.000Z');
+        await sweeps.reconcile();
+
+        expect(scaffold).toHaveBeenCalledTimes(2);
+        expect((await store.getRequest(id))?.status).toBe('running');
+
+        const grants = await knex('approval_grants').where({ request_id: id });
+        expect(grants).toHaveLength(2);
+        expect(grants.filter(g => g.revoked_at !== null)).toHaveLength(1);
       });
 
       it('recovers a lost task id from the consumed grant', async () => {
@@ -208,6 +231,7 @@ describe('ApprovalSweeps', () => {
           .where({ id })
           .update({ status: 'approved', task_id: null });
 
+        clock = new Date('2026-09-13T10:15:00.000Z');
         await sweeps.reconcile();
 
         const healed = await store.getRequest(id);
@@ -255,6 +279,7 @@ describe('ApprovalSweeps', () => {
         });
         await knex('approval_grants').where({ request_id: second }).delete();
 
+        clock = new Date('2026-09-13T10:15:00.000Z');
         await expect(sweeps.reconcile()).resolves.toBeUndefined();
         // Both were attempted, neither stopped the other.
         expect(scaffold.mock.calls.length).toBeGreaterThanOrEqual(3);
@@ -523,9 +548,11 @@ describe('ApprovalSweeps', () => {
             decision: 'approve',
             credentials: ALICE.credentials,
           });
-          await knex('approval_requests')
-            .where({ id })
-            .update({ status: 'approved', task_id: null });
+          await knex('approval_requests').where({ id }).update({
+            status: 'approved',
+            task_id: null,
+            launch_attempted_at: null,
+          });
           await knex('approval_grants').where({ request_id: id }).delete();
         }
 

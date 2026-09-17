@@ -79,6 +79,8 @@ async function compile(client: string): Promise<string[]> {
     dropTableIfExists: (
       ...args: Parameters<Knex.SchemaBuilder['dropTableIfExists']>
     ) => capture(knex.schema.dropTableIfExists(...args)),
+    alterTable: (...args: Parameters<Knex.SchemaBuilder['alterTable']>) =>
+      capture(knex.schema.alterTable(...args)),
   };
   recorder.fn = knex.fn;
   recorder.batchInsert = async () => [];
@@ -191,6 +193,13 @@ describe('migration portability', () => {
     for (const dialect of DIALECTS) {
       for (const body of tableBodies(compiled.get(dialect)!).values()) {
         expect(body).not.toMatch(/[`"]values[`"]/);
+      }
+      // Columns added by a later migration never appear in a `create table`
+      // body, so they need checking where they are declared.
+      for (const statement of compiled
+        .get(dialect)!
+        .filter(s => /^alter table/i.test(s))) {
+        expect(statement).not.toMatch(/add [`"]values[`"]/i);
       }
     }
   });
