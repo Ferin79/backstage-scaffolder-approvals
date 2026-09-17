@@ -422,10 +422,23 @@ export class ApprovalService {
 
     // Service credentials, not the requester's: `AuthService` cannot mint
     // credentials for an arbitrary user from an entity ref, and by the time an
-    // approval lands there is no request from the requester in flight. The
-    // consequence is that `task.createdBy` is the service principal, which is
-    // why the request page rather than the scaffolder task list is the
-    // canonical view of who asked for what.
+    // approval lands there is no request from the requester in flight.
+    //
+    // Three consequences, all deliberate and all documented in the README:
+    //
+    // - `task.createdBy` is the service principal, which is why the request
+    //   page rather than the scaffolder task list is the canonical view of who
+    //   asked for what, and why `${{ user.* }}` renders empty in the template.
+    // - `ServerPermissionClient` answers ALLOW for a service principal without
+    //   consulting any policy, so the run is not permission-checked. An
+    //   approval can grant more than the requester could have run themselves;
+    //   the approver list is the access-control boundary.
+    // - Steps that call other plugins act as this plugin, not as the
+    //   requester.
+    //
+    // A deployment that needs the tighter property adds a
+    // `scaffolder.action.execute` policy denying the action to user
+    // principals, which reaches every direct run and no approved one.
     const credentials = await this.auth.getOwnServiceCredentials();
 
     let taskId: string;

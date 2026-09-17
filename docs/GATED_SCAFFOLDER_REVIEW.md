@@ -173,7 +173,7 @@ that admits a real step now always admits the gate too. Regression tests: A3 in 
 A4 in `ApprovalsGateProcessor.test.ts`, and a submit-level test in `ApprovalService.test.ts`. The
 `actionExecutePermission` defence in depth is documented in the workspace README.
 
-### <a id="s2"></a>S2 — An approved run is not the requester's run (🟡)
+### <a id="s2"></a>S2 — An approved run is not the requester's run (🟡) — ✅ documented
 
 `launch` uses `auth.getOwnServiceCredentials()` ([backend/src/service/ApprovalService.ts:L429](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L429)). `ServerPermissionClient` answers ALLOW for service principals without asking any policy (`plugin-permission-node` `ServerPermissionClient.cjs.js` L24–L45, L69–L82). Three things follow:
 
@@ -185,6 +185,27 @@ A4 in `ApprovalsGateProcessor.test.ts`, and a submit-level test in `ApprovalServ
 
 - whether an approval may grant _more_ than the requester could run (if not, check the requester's step and parameter permissions at submit);
 - how to document `${{ user.* }}`, ideally with a processor warning.
+
+**Decided and documented.** Both decisions are recorded in the workspace README and in a comment on
+`ApprovalService.launch`:
+
+1. **An approval may grant more than the requester could run, deliberately.** The approvers' assent
+   is the authority, and an approval that silently did less than it said would be worse than one
+   that does what it says. The consequence is stated plainly: the approver list, not the requester's
+   own permissions, is the access-control boundary for a gated template.
+2. **`${{ user.* }}` is documented as rendering empty**, and the catalog processor now warns when a
+   gated template's later steps read the `user` context (part of [G9](#g9)).
+
+The `scaffolder.action.execute` policy is written out in full in the README, with the two things
+that trip people up: `permission.enabled: true` has to be set or no policy runs at all, and `anyOf`
+needs a `NonEmptyArray`, so building it with `.map()` over a `string[]` does not type-check. The
+snippet was compiled against the installed packages rather than transcribed — the first draft, taken
+from this review, was wrong in three ways: `actionExecutePermission` lives in
+`@backstage/plugin-scaffolder-common/alpha`, the conditions in
+`@backstage/plugin-scaffolder-backend/alpha`, and `PolicyQuery` has no `principal` field, so the
+`request.principal.type !== 'user'` guard neither compiles nor is needed —
+`ServerPermissionClient.#servicePrincipalDecision` short-circuits before any policy is consulted
+(verified in `ServerPermissionClient.cjs.js` L24-L45).
 
 ### <a id="s3"></a>S3 — Any service principal can redeem a grant (🟡)
 
@@ -286,6 +307,8 @@ The code is good. `canonicalJson` throws rather than coerce. `normaliseEntityRef
 - <a id="c7"></a>**C7** [backend/src/database/ApprovalStore.ts:L590](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/ApprovalStore.ts#L590): 🔵 nit: retention counts from `updated_at`, while §6 says from `decided_at`, or `created_at` for undecided requests. [E3](#e3) confirms that a request decided 200 days ago but updated yesterday is kept. The deviation is conservative, but record it as a decision or align the code.
 - <a id="c15"></a>**C15** cross-engine: 🔵 nit: MySQL's default `utf8mb4_0900_ai_ci` collation makes every `where` equality case-insensitive, while SQLite and Postgres compare bytes. [C5](#c5)'s collapse test passes on MySQL for that reason alone. Normalise refs before storing them, so the engines stop disagreeing.
 - <a id="t1"></a>**T1** [backend/src/database/migrations.test.ts:L27](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/migrations.test.ts#L27): 🔵 nit: `jest.setTimeout(60_000)` also bounds the `TestDatabases` teardown hook, which dropped about nine MySQL databases. That hook timed out on a slow disk ([E1](#e1)). CI's tmpfs will likely hide it, but consider raising the timeout for the DB suites.
+- <a id="t6"></a>**T6** [backend/src/database/migrations.test.ts:L185](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/migrations.test.ts#L185), [L250](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/migrations.test.ts#L250), [L285](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/migrations.test.ts#L285): 🟡 risk: **new finding, raised while fixing.** Under `backstage-cli repo test` (all six packages at once) the three "a duplicate insert must be refused" tests intermittently fail with `Received function did not throw` on `SQLITE_3`, while every schema test in the same file passes. Reproduced twice in a row, then not again in five further runs; never once under `backstage-cli package test` for the backend package alone, including three runs at `--maxWorkers=100%`. It reproduces with all fix work stashed, so it predates these fixes. The mechanism is not yet established: `TestDatabases`' SQLite engine gives each `init()` a fresh `:memory:` database, so cross-suite sharing is ruled out, and instrumenting the assertion to dump the schema and pool state made it stop reproducing. It matters because a green CI run here would be luck rather than evidence. Fix: find it before relying on these three tests — they are the only coverage of the composite primary key and the two unique constraints.
+
 - <a id="p9"></a>**P9** [backend/migrations/20260912000000_request_approvers.js:L60-L92](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/migrations/20260912000000_request_approvers.js#L60-L92): 🔵 nit: backfills data that cannot exist, since nothing was ever released. Fold the table into the init migration before first publish, and record the fourth table against §6's "three tables".
 
 ### Phase 3 — Approval service
@@ -718,7 +741,7 @@ Each row lands in its own commit. **Status** tracks progress against this review
 | #   | Fix                                                                                                                                                                                                           | Closes                    | Effort | Status  |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------ | ------- |
 | 1   | Reject `if` and `each` on the gate, later `always()`/`failure()` steps, and gate tags narrower than other steps' tags. Do it in `findGateStep`, at submit and in the processor; add A3/A4 as regression tests | S1, G9                    | M      | ✅ Done |
-| 2   | Document and recommend the user-principal `scaffolder.action.execute` policy (proven in E2)                                                                                                                   | S1 (defence in depth), S2 | S      | ⬜ Open |
+| 2   | Document and recommend the user-principal `scaffolder.action.execute` policy (proven in E2)                                                                                                                   | S1 (defence in depth), S2 | S      | ✅ Done |
 | 3   | Revoke-then-relaunch with compare-and-set, and claim launches with compare-and-set                                                                                                                            | C1, C2                    | M      | ⬜ Open |
 | 4   | Re-read the request before notifying; add `launched` and `completed` events; broadcast signals                                                                                                                | C3, G4, G12               | S      | ⬜ Open |
 | 5   | Bind grants to the template; restrict consume to `plugin:scaffolder`                                                                                                                                          | S4, S3                    | S      | ⬜ Open |

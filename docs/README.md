@@ -42,22 +42,57 @@ The last one is why a gated template's gate must carry every `backstage:permissi
 
 ### Defence in depth: deny the actions to user principals
 
-These four shapes are author-controlled, as is deleting the gate altogether. If a gated template grants something with real blast radius, add a `scaffolder.action.execute` policy that denies those actions to **user** principals:
+These four shapes are author-controlled, as is deleting the gate altogether. The plugin refuses them, but all four live in a file the template's own team can edit. If a gated template grants something with real blast radius, do not rely on the template's shape alone.
+
+**`scaffolder.action.execute` is the one permission that carries enough context to help.** Unlike `scaffolder.task.create`, it is a resource permission and its rules see the action id and the resolved input. And a policy is only ever consulted for **user** principals: `ServerPermissionClient` answers ALLOW for a service principal without asking one. An approved run launches as the approvals plugin's own service principal, so a policy that denies an action reaches every direct run and no approved run.
+
+Register a policy that denies the high-blast-radius actions:
 
 ```ts
-if (isPermission(request.permission, actionExecutePermission)) {
-  if (request.principal.type !== 'user') {
+import {
+  AuthorizeResult,
+  isPermission,
+} from '@backstage/plugin-permission-common';
+import type {
+  PermissionPolicy,
+  PolicyQuery,
+} from '@backstage/plugin-permission-node';
+import { actionExecutePermission } from '@backstage/plugin-scaffolder-common/alpha';
+import {
+  createScaffolderActionConditionalDecision,
+  scaffolderActionConditions,
+} from '@backstage/plugin-scaffolder-backend/alpha';
+
+export class ApprovalOnlyActionsPolicy implements PermissionPolicy {
+  async handle(request: PolicyQuery) {
+    if (isPermission(request.permission, actionExecutePermission)) {
+      return createScaffolderActionConditionalDecision(request.permission, {
+        not: {
+          anyOf: [
+            scaffolderActionConditions.hasActionId({
+              actionId: 'github:repo:collaborator:add',
+            }),
+            scaffolderActionConditions.hasActionId({
+              actionId: 'github:repo:create',
+            }),
+          ],
+        },
+      });
+    }
+
     return { result: AuthorizeResult.ALLOW };
   }
-  return createScaffolderActionConditionalDecision(request.permission, {
-    not: scaffolderActionConditions.hasActionId({
-      actionId: 'github:repo:collaborator:add',
-    }),
-  });
 }
 ```
 
-An approved run launches as a service principal, and `ServerPermissionClient` allows service principals without consulting any policy, so only approved runs can execute those actions. A direct `POST /v2/tasks` is refused with "Unauthorized action" whatever the template's shape. This was verified against a real scaffolder: the policy stopped an `always()` bypass while the approved run of the same template completed.
+Two things to get right:
+
+- **`permission.enabled: true` must be set in app-config.** Without it every request is allowed and no policy runs at all.
+- **`anyOf` needs at least one condition.** Building it with `.map()` over a plain `string[]` does not type-check, because the array is not a `NonEmptyArray`. Write the conditions out, or assert the tuple.
+
+A direct `POST /v2/tasks` is then refused with "Unauthorized action: github:repo:collaborator:add" whatever the template's shape, while the approved run of the same template completes. This was verified against a real scaffolder, where the policy stopped an `always()` bypass.
+
+The cost is that the action becomes unusable from an ungated template too. That is the point — it is what makes "this action only ever runs with an approval" a property of the deployment rather than of a YAML file.
 
 ## A worked example
 
@@ -130,8 +165,10 @@ An approval can land days after the request was made, with no session from the r
 
 What that means in practice:
 
-- **The requester will not see the task under "my tasks"** in the scaffolder, because the task's `createdBy` names the plugin. The approvals page is the place to follow a gated request — it shows who asked, who agreed, and links to the task.
-- **Templates that use the task's creator get the wrong answer.** Use `${{ steps.gate.output.requestedBy }}` and `${{ steps.gate.output.approvedBy }}` instead, which carry the real people.
+- **`${{ user.* }}` renders empty.** The task has no user on it at all — `spec.user` is `{}` and there is no `createdBy` — so `${{ user.entity.metadata.name }}` passes an empty string rather than the requester's name. This bites silently: the step succeeds and writes nothing. Use `${{ steps.gate.output.requestedBy }}` and `${{ steps.gate.output.approvedBy }}`, which carry the real people. The catalog module warns when it sees a gated template whose later steps read the `user` context.
+- **An approved run is not permission-checked.** `ServerPermissionClient` answers ALLOW for a service principal without consulting any policy, so an approved run executes every step and every parameter — including ones the requester's own `scaffolder.template.step.read` or `scaffolder.template.parameter.read` policy would have removed, and regardless of any `scaffolder.action.execute` policy. **An approval can therefore grant more than the requester could have run themselves.** That is deliberate: the approvers' assent is the authority, and an approval that silently did less than it said would be worse. But it means the approver list is the real access-control boundary for a gated template — choose it accordingly.
+- **Downstream calls run as the plugin.** A step that calls another Backstage plugin "on behalf of the person who started this" acts as the approvals plugin, not as the requester.
+- **The requester will not see the task under "my tasks"** in the scaffolder, because there is no `createdBy` to match. The approvals page is the place to follow a gated request — it shows who asked, who agreed, and links to the task.
 - **The audit trail is the approvals database, not the task.** It records the request, every decision and the task that consumed the grant — the decision as well as the execution.
 
 Launching as the approver instead was considered and rejected: it misattributes the work, fails whenever an approver lacks the access being granted, and makes a task's identity depend on who happened to click first.
