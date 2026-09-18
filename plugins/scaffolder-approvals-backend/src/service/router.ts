@@ -26,6 +26,8 @@ import {
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { parseGrant } from '@backstage-community/plugin-scaffolder-approvals-node';
 import type {
+  BackstageCredentials,
+  BackstageServicePrincipal,
   HttpAuthService,
   LoggerService,
   PermissionsService,
@@ -52,7 +54,17 @@ export interface RouterOptions {
   userInfo: UserInfoService;
   permissions: PermissionsService;
   logger: LoggerService;
+  /**
+   * Service principal subjects allowed to redeem a grant (S3).
+   *
+   * Defaults to the scaffolder alone. See `assertGrantConsumer` for why this is
+   * configurable rather than a hard-coded equality.
+   */
+  grantConsumers?: string[];
 }
+
+/** The only caller that has any business redeeming a grant. */
+export const DEFAULT_GRANT_CONSUMERS = ['plugin:scaffolder'];
 
 const submitBody = z.object({
   templateRef: z.string().min(1),
@@ -74,6 +86,7 @@ const consumeBody: ZodType<ConsumeGrantRequest> = z.object({
     .string()
     .regex(/^[0-9a-f]{64}$/, 'must be a hex SHA-256 digest'),
   taskId: z.string().min(1),
+  templateRef: z.string().min(1),
 });
 
 const listQuery = z.object({
@@ -150,7 +163,15 @@ function readStatuses(
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { service, store, httpAuth, userInfo, permissions, logger } = options;
+  const {
+    service,
+    store,
+    httpAuth,
+    userInfo,
+    permissions,
+    logger,
+    grantConsumers = DEFAULT_GRANT_CONSUMERS,
+  } = options;
 
   const router = Router();
   router.use(express.json());
@@ -304,16 +325,54 @@ export async function createRouter(
     res.json(await service.cancel({ requestId: id, credentials }));
   });
 
+  /**
+   * Refuse a service principal that is not the scaffolder.
+   *
+   * `allow: ['service']` on its own lets in every service principal, including
+   * a static `external:` token an adopter issued for something unrelated. Such
+   * a caller cannot forge a grant, but it can *spend* one it has seen: a
+   * redeemed grant is single-use, so the legitimate task then fails at its own
+   * gate. That is a denial of service against approved runs.
+   *
+   * The framework documents `principal.subject` as informational, so this is
+   * deliberately a configurable allow-list rather than a hard-coded equality:
+   * a split deployment, a renamed plugin id or a gateway in front of the
+   * backend can present something else, and widening it must not need a code
+   * change. The grant's own guards remain the real control; this is the outer
+   * fence.
+   */
+  function assertGrantConsumer(credentials: BackstageCredentials): void {
+    const { subject } = credentials.principal as BackstageServicePrincipal;
+    if (grantConsumers.includes(subject)) {
+      return;
+    }
+    // Logged rather than returned: the caller learns only that it was refused,
+    // but an operator who widened the deployment can see what to allow.
+    logger.warn(
+      `Refused an approval grant redemption from '${subject}'; only ${grantConsumers.join(
+        ', ',
+      )} may redeem grants. Set scaffolderApprovals.grantConsumers to widen this.`,
+    );
+    throw new NotAllowedError(
+      'This endpoint may only be called by the scaffolder',
+    );
+  }
+
   router.post('/grants/consume', async (req, res) => {
     // Service principals only. The caller is the gate action running inside the
     // scaffolder backend, and a grant is a capability to run an approved
     // template — a user must never be able to redeem one directly, which is the
     // difference between a gate and a suggestion.
     //
-    // Note this trusts the caller's `valuesHash` to describe the task it is
-    // actually running. Nothing else can: only the task knows its own values.
-    // That is exactly why this route refuses user principals.
-    await httpAuth.credentials(req, { allow: ['service'] });
+    // Note this trusts the caller's `valuesHash` and `templateRef` to describe
+    // the task it is actually running. Nothing else can: only the task knows
+    // what it is running. That is exactly why this route refuses user
+    // principals — and why it refuses service principals other than the
+    // scaffolder too.
+    const credentials = await httpAuth.credentials(req, {
+      allow: ['service'],
+    });
+    assertGrantConsumer(credentials);
 
     const body = parseOrBadRequest(consumeBody, req.body, 'request body');
 
@@ -330,6 +389,7 @@ export async function createRouter(
       token,
       valuesHash: body.valuesHash,
       taskId: body.taskId,
+      templateRef: body.templateRef,
     });
 
     if (!consumed) {

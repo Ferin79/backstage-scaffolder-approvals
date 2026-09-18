@@ -41,12 +41,14 @@ const POLICY: GatePolicy = {
 
 const VALUES = { repository: 'backstage', justification: 'on-call' };
 
+const TEMPLATE_REF = 'template:default/request-github-admin';
+
 function newRequest(
   overrides: Partial<NewApprovalRequest> = {},
 ): NewApprovalRequest {
   const values = overrides.values ?? VALUES;
   return {
-    templateRef: 'template:default/request-github-admin',
+    templateRef: TEMPLATE_REF,
     values,
     valuesHash: computeValuesHash(values),
     requesterRef: 'user:default/requester',
@@ -395,6 +397,7 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(token),
             valuesHash,
             taskId,
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(true);
 
@@ -414,12 +417,14 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(token),
             valuesHash,
             taskId: 'task-a',
+            templateRef: TEMPLATE_REF,
           }),
           store.consumeGrant({
             requestId: id,
             tokenHash: hashGrantToken(token),
             valuesHash,
             taskId: 'task-b',
+            templateRef: TEMPLATE_REF,
           }),
         ]);
 
@@ -434,6 +439,7 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(token),
             valuesHash,
             taskId,
+            templateRef: TEMPLATE_REF,
           });
 
         expect(await consume()).toBe(true);
@@ -451,6 +457,7 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(token),
             valuesHash: computeValuesHash({ repository: 'something-else' }),
             taskId,
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(false);
       });
@@ -468,6 +475,7 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(token),
             valuesHash,
             taskId,
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(false);
       });
@@ -484,6 +492,7 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(first.token),
             valuesHash: second.valuesHash,
             taskId,
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(false);
       });
@@ -497,6 +506,7 @@ describe('ApprovalStore', () => {
             tokenHash: hashGrantToken(generateGrantToken()),
             valuesHash,
             taskId,
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(false);
       });
@@ -512,6 +522,7 @@ describe('ApprovalStore', () => {
             tokenHash: generateGrantToken(),
             valuesHash,
             taskId,
+            templateRef: TEMPLATE_REF,
           }),
         ).rejects.toThrow(/tokenHash must be a lowercase hex SHA-256 digest/);
       });

@@ -207,17 +207,41 @@ from this review, was wrong in three ways: `actionExecutePermission` lives in
 `ServerPermissionClient.#servicePrincipalDecision` short-circuits before any policy is consulted
 (verified in `ServerPermissionClient.cjs.js` L24-L45).
 
-### <a id="s3"></a>S3 — Any service principal can redeem a grant (🟡)
+### <a id="s3"></a>S3 — Any service principal can redeem a grant (🟡) — ✅ fixed
 
 `/grants/consume` accepts `allow: ['service']` ([backend/src/service/router.ts:L316](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/router.ts#L316)). In [E2](#e2) a user was refused at the principal check ("This endpoint does not allow 'user' credentials"). An `external:ci-bot` static-token principal got past that check and reached grant validation ("The approval grant is not valid"). In [E3](#e3) an `external:some-ci-job` principal, which is not the scaffolder, **redeemed a real grant** and got 200. That spends the approval: the legitimate task then fails at its gate.
 
 Only the scaffolder's gate needs this route, so also require `credentials.principal.subject === 'plugin:scaffolder'` (configurable for split deployments).
 
-### <a id="s4"></a>S4 — Grants are not bound to the template (🟡)
+**Fixed, as a configurable allow-list rather than an equality.** `backend-plugin-api` documents
+`BackstageServicePrincipal.subject` as "only informational … should never be used to drive actual
+logic in code", so hard-coding the comparison would make every approved run depend on an unstable
+string: if the format ever changed, every gated template would fail closed at once. The route now
+checks the subject against `scaffolderApprovals.grantConsumers`, defaulting to `['plugin:scaffolder']`,
+and logs the subject it refused so an operator can see what to widen it to. The grant's own guards
+remain the real control; this is the outer fence.
+
+The integration test found the same dependency from the other side: it built the gate action with
+`mockServices.auth()`, whose subject is `plugin:test`, and the backend refused it. It now uses
+`pluginId: 'scaffolder'`, which is what the action really has — it is a module of the scaffolder
+backend — so the test exercises the real arrangement instead of a permissive mock. Mutant M50, which
+drops the check, breaks four tests.
+
+### <a id="s4"></a>S4 — Grants are not bound to the template (🟡) — ✅ fixed
 
 §3 says a grant is "bound to `(request_id, template_ref, values_hash)`" ([L167](GATED_SCAFFOLDER_WORKFLOWS.md#L167)). The consume path checks the request, the token and the values hash, but not the template ([backend/src/database/ApprovalStore.ts:L480-L487](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/ApprovalStore.ts#L480-L487)), and the action does not send one ([gate-module/src/createApprovalGateAction.ts:L191-L195](workspaces/scaffolder-approvals/plugins/scaffolder-backend-module-approvals/src/createApprovalGateAction.ts#L191-L195)).
 
 A leaked grant would therefore redeem inside _any_ gated template given identical values. Send `ctx.templateInfo.entityRef` and compare it, normalised, with the request's `template_ref` inside the same `UPDATE`.
+
+**Fixed, exactly that.** The action sends `ctx.templateInfo?.entityRef`, the service normalises it,
+and `consumeGrant` compares it against the request inside the one statement, with a sub-select rather
+than a denormalised copy on the grant — one source of truth, and the whole check stays atomic.
+
+**[C5](#c5) came with it, ahead of fix 7.** The comparison is only meaningful if both sides are
+spelled the same way, so `submit` now stores `normaliseEntityRef(templateRef)` instead of the ref as
+sent. Mutant M49 (drop the binding) and M51 (send a fixed ref from the action) each break tests, and
+an end-to-end test through the real approvals backend confirms both halves: a grant presented under
+another template is refused, **and survives the attempt**, so the legitimate run still succeeds.
 
 ### <a id="s5"></a>S5 — Template drift is neither detected nor shown (🟡)
 
@@ -371,7 +395,7 @@ one and three tests.
 - <a id="c2"></a>**C2** ✅ fixed: [backend/src/service/ApprovalService.ts:L408-L421](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L408-L421): 🟡 risk: `launch()` checks `hasLiveGrant`, then inserts a grant, which is read-then-write (§6 forbids it). A `decide()` whose launch overlaps a sweep tick mints **two grants and starts two tasks**, and each task redeems its own grant, so the template runs twice. [E3](#e3) reproduces it on all three engines. The Spec pass reproduced it independently. Fix: claim the launch with a guarded `UPDATE`, such as a `launch_attempt` compare-and-increment, before minting. Do it together with C1. **Done:** `claimLaunch` is a guarded `UPDATE` on `(status, task_id, launch_attempted_at)` that increments `launch_attempt`, and every launch goes through it first. A claim goes stale after the grace period, so a launcher that crashed mid-flight does not block its request forever.
 - <a id="c3"></a>**C3** ✅ fixed: [backend/src/service/ApprovalService.ts:L295-L297](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L295-L297), [L325-L327](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L325-L327): 🔴 bug: `onDecided` receives the request as it was _before_ the transition. Every `decided` event and signal therefore carries `status: 'pending'`, whether the request is now approved or rejected. [E2](#e2) captured `{"action":"decided",…,"status":"pending","decision":"approve"}` from the real event bus, and [E3](#e3) shows the same on three engines. External subscribers, such as the deferred Slack integration, would act on a wrong status. Fix: re-read the request after the transition. **Done:** both notify sites in `decide` now go through `notifyDecided`, which reads the request back after the transition. Mutating it to announce the stale `pending` status (M45) breaks two tests.
 - <a id="c4"></a>**C4** [backend/src/service/ApprovalService.ts:L262](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L262): 🟡 risk: eligibility ignores `expiresAt`. A request whose timeout has passed can still be approved and launched until the next five-minute sweep. [E3](#e3) shows `decidedAt` a minute after `expiresAt`. `createOrCollapse` already treats such a request as dead ([ApprovalStore.ts:L206-L208](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/database/ApprovalStore.ts#L206-L208)). Fix: guard `pending → approved` on `expires_at`.
-- <a id="c5"></a>**C5** [backend/src/service/ApprovalService.ts:L217-L218](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L217-L218): 🟡 risk: `templateRef` is stored exactly as sent. `Template:Default/Gated` and `template:default/gated` therefore create two requests on SQLite and Postgres ([E3](#e3)), which defeats Q13 and misses `?templateRef=` filters. Fix: store `stringifyEntityRef(template)`.
+- <a id="c5"></a>**C5** ✅ fixed (with [S4](#s4), which depends on it): [backend/src/service/ApprovalService.ts:L217-L218](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L217-L218): 🟡 risk: `templateRef` is stored exactly as sent. `Template:Default/Gated` and `template:default/gated` therefore create two requests on SQLite and Postgres ([E3](#e3)), which defeats Q13 and misses `?templateRef=` filters. Fix: store `stringifyEntityRef(template)`.
 - <a id="c16"></a>**C16** [backend/src/service/validateValues.ts:L33-L46](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/validateValues.ts#L33-L46): 🔵 nit: this uses Ajv, while the scaffolder validates with `jsonschema` against each page _without_ relaxing `additionalProperties`. The two can disagree, so Q3's "never spend an approval on an unrunnable request" can still fail at the edges. Note it.
 - <a id="c17"></a>**C17** [backend/src/service/ApprovalService.ts:L256](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L256): 🔵 nit: the load-or-`NotFoundError` pattern is written out three times (L256, L346, L387), although `requireRequest` (L524) exists. Use it.
 - [S2](#s2) and [S5](#s5) also belong to this phase.
@@ -768,7 +792,7 @@ Each row lands in its own commit. **Status** tracks progress against this review
 | 2   | Document and recommend the user-principal `scaffolder.action.execute` policy (proven in E2)                                                                                                                   | S1 (defence in depth), S2 | S      | ✅ Done |
 | 3   | Revoke-then-relaunch with compare-and-set, and claim launches with compare-and-set                                                                                                                            | C1, C2                    | M      | ✅ Done |
 | 4   | Re-read the request before notifying; add `launched` and `completed` events; broadcast signals                                                                                                                | C3, G4, G12               | S      | ✅ Done |
-| 5   | Bind grants to the template; restrict consume to `plugin:scaffolder`                                                                                                                                          | S4, S3                    | S      | ⬜ Open |
+| 5   | Bind grants to the template; restrict consume to `plugin:scaffolder`                                                                                                                                          | S4, S3                    | S      | ✅ Done |
 | 6   | Store the template uid and a steps hash; show drift to approvers                                                                                                                                              | S5                        | M      | ⬜ Open |
 | 7   | Validate ids as UUIDs; add a migration with `precision: 3` timestamps and a `task_id` index; normalise `templateRef`                                                                                          | C8, C9, C10, C5, C15      | S      | ⬜ Open |
 | 8   | Guard approval on `expires_at`; rotate the running sweep                                                                                                                                                      | C4, C6                    | S      | ⬜ Open |

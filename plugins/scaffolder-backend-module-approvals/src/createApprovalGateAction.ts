@@ -198,6 +198,9 @@ export function createApprovalGateAction(options: {
             grant,
             valuesHash,
             taskId: ctx.task.id,
+            // What this task is really running, so the backend can refuse a
+            // grant that was approved for a different template.
+            templateRef: ctx.templateInfo?.entityRef ?? '',
           } satisfies ConsumeGrantRequest),
         });
       } catch (error) {

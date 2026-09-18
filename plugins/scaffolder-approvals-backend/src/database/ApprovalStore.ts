@@ -107,6 +107,11 @@ export interface ConsumeApprovalGrant {
    */
   valuesHash: string;
   taskId: string;
+  /**
+   * The template the task is running, normalised; must match the one the
+   * request was raised against (§3).
+   */
+  templateRef: string;
 }
 
 /** Filters for {@link ApprovalStore.listRequests}. */
@@ -578,6 +583,11 @@ export class ApprovalStore {
    * - `values_hash` — the task is running the values that were approved (Q10).
    *   Without this, an approved request could be redeemed to run different
    *   parameters.
+   * - `template_ref` — the task is running the template that was approved
+   *   (§3). Checked with a sub-select against the request rather than a
+   *   denormalised copy, so there is one source of truth and the whole check
+   *   stays inside the one statement. Without it a leaked grant would redeem
+   *   inside any gated template that took the same values.
    * - `consumed_at IS NULL` — single use, so a leaked token cannot be replayed.
    * - `expires_at > now` — the grant TTL (Q7).
    *
@@ -601,6 +611,12 @@ export class ApprovalStore {
       .whereNull('consumed_at')
       .whereNull('revoked_at')
       .where('expires_at', '>', now)
+      .whereIn('request_id', builder =>
+        builder
+          .select('id')
+          .from(TABLE_REQUESTS)
+          .where({ id: input.requestId, template_ref: input.templateRef }),
+      )
       .update({
         consumed_at: now,
         consumed_by_task_id: input.taskId,

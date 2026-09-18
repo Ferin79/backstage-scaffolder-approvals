@@ -120,6 +120,7 @@ export function computeQuorumProgress(
 export interface ConsumeGrantRequest {
   grant: string;
   taskId: string;
+  templateRef: string;
   valuesHash: string;
 }
 

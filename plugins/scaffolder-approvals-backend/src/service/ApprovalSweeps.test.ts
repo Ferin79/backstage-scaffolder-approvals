@@ -228,6 +228,7 @@ describe('ApprovalSweeps', () => {
           tokenHash: hashGrantToken(parseGrant(grant).token),
           valuesHash: request!.valuesHash,
           taskId: 'task-actually-running',
+          templateRef: TEMPLATE_REF,
         });
 
         // Model the lost write.

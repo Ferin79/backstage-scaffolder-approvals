@@ -377,6 +377,19 @@ export interface ConsumeGrantRequest {
 
   /** The scaffolder task presenting the grant. */
   taskId: string;
+
+  /**
+   * The template the task is running, as the scaffolder knows it.
+   *
+   * §3 binds a grant to `(request_id, template_ref, values_hash)`. Without
+   * this a leaked grant would redeem inside *any* gated template that happened
+   * to take the same values, which is a real possibility when several
+   * access-request templates share a parameter shape.
+   *
+   * Like `valuesHash`, it describes what is actually running and is therefore
+   * taken from the task rather than from anything the backend said.
+   */
+  templateRef: string;
 }
 
 /**

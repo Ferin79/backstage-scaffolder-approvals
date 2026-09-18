@@ -26,6 +26,7 @@ import {
   type DecisionIneligibility,
   type GatePolicy,
   readGatePolicy,
+  normaliseEntityRef,
   renderGateSummary,
   type SubmitApprovalRequestResponse,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
@@ -239,7 +240,12 @@ export class ApprovalService {
       : undefined;
 
     const created = await this.store.createOrCollapse({
-      templateRef,
+      // Stored in one spelling, not as sent. `Template:Default/Gated` and
+      // `template:default/gated` are the same template, and storing them as
+      // written created two requests where Q13 wants one — and let a grant
+      // approved for one spelling be refused for the other now that consuming
+      // checks the template too.
+      templateRef: normaliseEntityRef(templateRef),
       values,
       valuesHash: computeValuesHash(values),
       requesterRef,
@@ -625,12 +631,23 @@ export class ApprovalService {
     token: string;
     valuesHash: string;
     taskId: string;
+    templateRef: string;
   }): Promise<ConsumeGrantResponse | undefined> {
+    // An unparseable ref cannot match anything, and saying so here would tell
+    // a bearer-token holder which part of their guess was wrong.
+    let templateRef: string;
+    try {
+      templateRef = normaliseEntityRef(options.templateRef);
+    } catch {
+      return undefined;
+    }
+
     const consumed = await this.store.consumeGrant({
       requestId: options.requestId,
       tokenHash: hashGrantToken(options.token),
       valuesHash: options.valuesHash,
       taskId: options.taskId,
+      templateRef,
     });
 
     if (!consumed) {

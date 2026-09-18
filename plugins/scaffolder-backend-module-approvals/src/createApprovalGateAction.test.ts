@@ -25,6 +25,7 @@ import { createApprovalGateAction } from './createApprovalGateAction';
 
 const VALUES = { repository: 'backstage', justification: 'on-call rotation' };
 const GRANT = '3f1e4c8a-0000-4000-8000-000000000001.a-token-value';
+const TEMPLATE_REF = 'template:default/request-github-admin';
 
 /**
  * The gate is the security boundary: a template is gated because this step
@@ -43,6 +44,7 @@ describe('approval:gate', () => {
     overrides: {
       secrets?: Record<string, string>;
       values?: unknown;
+      templateInfo?: { entityRef: string } | undefined;
     } = {},
   ) {
     return createMockActionContext({
@@ -55,6 +57,10 @@ describe('approval:gate', () => {
           ? { [APPROVAL_GRANT_SECRET]: GRANT }
           : overrides.secrets,
       task: { id: 'task-1' },
+      templateInfo:
+        'templateInfo' in overrides
+          ? overrides.templateInfo
+          : { entityRef: TEMPLATE_REF },
     });
   }
 
@@ -136,7 +142,31 @@ describe('approval:gate', () => {
         // match what it was minted for.
         valuesHash: computeValuesHash(VALUES),
         taskId: 'task-1',
+        // §3 binds a grant to the template as well as the values, so a leaked
+        // grant cannot redeem inside a different gated template.
+        templateRef: TEMPLATE_REF,
       });
+    });
+
+    it('sends the template this task is running, not one it was told about', async () => {
+      respond(200, { requestId: 'r1', requesterRef: 'u', approvedBy: [] });
+
+      await action.handler(
+        context({ templateInfo: { entityRef: 'template:default/other' } }),
+      );
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).templateRef).toBe(
+        'template:default/other',
+      );
+    });
+
+    it('sends an empty template ref when the runner supplies none', async () => {
+      // Which the backend refuses, because an empty ref matches no request.
+      respond(200, { requestId: 'r1', requesterRef: 'u', approvedBy: [] });
+
+      await action.handler(context({ templateInfo: undefined }));
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).templateRef).toBe('');
     });
 
     it('hashes independently of the key order the parameters arrived in', async () => {

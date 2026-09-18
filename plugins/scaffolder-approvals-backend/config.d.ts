@@ -33,6 +33,23 @@ export interface Config {
      */
     grantTtl?: HumanDuration;
 
+    /**
+     * Service principal subjects allowed to redeem an approval grant.
+     *
+     * Only the scaffolder's gate action has any business calling
+     * `POST /grants/consume`, and the default is `['plugin:scaffolder']`. A
+     * grant cannot be forged, but any service principal that has seen one
+     * could *spend* it, and a spent grant makes the legitimate task fail at
+     * its own gate.
+     *
+     * It is configurable because the framework treats a principal's subject as
+     * informational rather than as stable API: a split deployment, a renamed
+     * plugin id or a gateway in front of the backend can present a different
+     * one, and widening this must not need a code change. The refused subject
+     * is logged, so an operator can see what to add.
+     */
+    grantConsumers?: string[];
+
     retention?: {
       /**
        * How long submitted values and the rendered summary are kept before

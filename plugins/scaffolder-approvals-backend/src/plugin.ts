@@ -162,6 +162,9 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
             userInfo,
             permissions,
             logger,
+            grantConsumers: config.getOptionalStringArray(
+              'scaffolderApprovals.grantConsumers',
+            ),
           }),
         );
 

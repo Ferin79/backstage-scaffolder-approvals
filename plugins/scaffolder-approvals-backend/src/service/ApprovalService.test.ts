@@ -848,6 +848,7 @@ describe('ApprovalService', () => {
             tokenHash: grant.token_hash,
             valuesHash: grant.values_hash,
             taskId: 'task-9',
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(false);
       });
@@ -870,6 +871,7 @@ describe('ApprovalService', () => {
             tokenHash: grant.token_hash,
             valuesHash: grant.values_hash,
             taskId: 'task-9',
+            templateRef: TEMPLATE_REF,
           }),
         ).toBe(true);
 

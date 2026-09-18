@@ -468,6 +468,21 @@ describe('createRouter', () => {
       });
     });
 
+    /**
+     * A service token whose principal is the scaffolder, which is the only
+     * caller allowed to redeem a grant (S3). `mockCredentials.service()`
+     * defaults to `external:test-service`, which is exactly the principal that
+     * must be refused.
+     */
+    function asScaffolder(): string {
+      return mockCredentials.service.header({
+        onBehalfOf: mockCredentials.service('plugin:scaffolder'),
+        // The mock auth service refuses a token aimed at another plugin, and
+        // its own id defaults to `test`.
+        targetPluginId: 'test',
+      });
+    }
+
     describe('POST /grants/consume', () => {
       async function approvedGrant(): Promise<{ id: string; grant: string }> {
         const id = await submit();
@@ -483,11 +498,12 @@ describe('createRouter', () => {
 
         const response = await request(app)
           .post('/grants/consume')
-          .set('authorization', mockCredentials.service.header())
+          .set('authorization', asScaffolder())
           .send({
             grant,
             valuesHash: computeValuesHash(VALUES),
             taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
           });
 
         expect(response.status).toBe(200);
@@ -517,11 +533,12 @@ describe('createRouter', () => {
         const grant = scaffold.mock.calls[0][0].secrets.APPROVAL_GRANT;
         const response = await request(app)
           .post('/grants/consume')
-          .set('authorization', mockCredentials.service.header())
+          .set('authorization', asScaffolder())
           .send({
             grant,
             valuesHash: computeValuesHash(VALUES),
             taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
           });
 
         expect(response.body.approvedBy).toEqual([
@@ -542,6 +559,7 @@ describe('createRouter', () => {
             grant,
             valuesHash: computeValuesHash(VALUES),
             taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
           });
 
         expect(response.status).toBe(403);
@@ -556,6 +574,7 @@ describe('createRouter', () => {
             grant,
             valuesHash: computeValuesHash(VALUES),
             taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
           });
 
         expect(response.status).toBe(401);
@@ -566,20 +585,22 @@ describe('createRouter', () => {
 
         const mismatched = await request(app)
           .post('/grants/consume')
-          .set('authorization', mockCredentials.service.header())
+          .set('authorization', asScaffolder())
           .send({
             grant,
             valuesHash: computeValuesHash({ repository: 'something-else' }),
             taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
           });
 
         const unknownToken = await request(app)
           .post('/grants/consume')
-          .set('authorization', mockCredentials.service.header())
+          .set('authorization', asScaffolder())
           .send({
             grant: `${parseGrant(grant).requestId}.${'x'.repeat(43)}`,
             valuesHash: computeValuesHash(VALUES),
             taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
           });
 
         // Telling a token holder which part failed would be an oracle.
@@ -590,21 +611,113 @@ describe('createRouter', () => {
         );
       });
 
+      it('refuses a service principal that is not the scaffolder', async () => {
+        // S3: `allow: ['service']` lets in every service principal, including a
+        // static `external:` token issued for something unrelated. It cannot
+        // forge a grant, but spending one makes the legitimate task fail at its
+        // own gate — a denial of service against approved runs.
+        const { grant } = await approvedGrant();
+
+        const response = await request(app)
+          .post('/grants/consume')
+          .set(
+            'authorization',
+            mockCredentials.service.header({
+              onBehalfOf: mockCredentials.service('external:ci-bot'),
+              targetPluginId: 'test',
+            }),
+          )
+          .send({
+            grant,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
+          });
+
+        expect(response.status).toBe(403);
+
+        // And crucially the grant is still redeemable by the real task.
+        const real = await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send({
+            grant,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
+          });
+        expect(real.status).toBe(200);
+      });
+
+      it('refuses a grant redeemed under a different template', async () => {
+        // S4: §3 binds a grant to (request, template, values). Without the
+        // template a leaked grant would redeem inside any gated template that
+        // happened to take the same values.
+        const { grant } = await approvedGrant();
+
+        const response = await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send({
+            grant,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+            templateRef: 'template:default/some-other-gated-template',
+          });
+
+        expect(response.status).toBe(403);
+      });
+
+      it('accepts a template ref spelled differently', async () => {
+        // Refs are case-insensitive and the namespace is optional, so the
+        // binding has to compare meaning rather than spelling.
+        const { grant } = await approvedGrant();
+
+        const response = await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send({
+            grant,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+            templateRef: 'Template:Default/Request-GitHub-Admin',
+          });
+
+        expect(response.status).toBe(200);
+      });
+
+      it('refuses a template ref that is not a ref at all', async () => {
+        const { grant } = await approvedGrant();
+
+        const response = await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send({
+            grant,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+            templateRef: 'not a ref',
+          });
+
+        expect(response.status).toBe(403);
+      });
+
       it('refuses a second redemption of the same grant', async () => {
         const { grant } = await approvedGrant();
         const body = {
           grant,
           valuesHash: computeValuesHash(VALUES),
           taskId: 'task-1',
+          templateRef: TEMPLATE_REF,
         };
 
         const first = await request(app)
           .post('/grants/consume')
-          .set('authorization', mockCredentials.service.header())
+          .set('authorization', asScaffolder())
           .send(body);
         const second = await request(app)
           .post('/grants/consume')
-          .set('authorization', mockCredentials.service.header())
+          .set('authorization', asScaffolder())
           .send(body);
 
         expect(first.status).toBe(200);
@@ -619,7 +732,7 @@ describe('createRouter', () => {
         ]) {
           const response = await request(app)
             .post('/grants/consume')
-            .set('authorization', mockCredentials.service.header())
+            .set('authorization', asScaffolder())
             .send(body);
           expect(response.status).toBe(400);
         }

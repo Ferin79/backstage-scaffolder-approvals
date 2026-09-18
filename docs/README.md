@@ -40,6 +40,19 @@ task status: failed
 
 The last one is why a gated template's gate must carry every `backstage:permissions.tags` value any other step carries: then no step-read policy can admit a real step without also admitting the gate.
 
+### What a grant is bound to
+
+A grant is a single-use capability, and it unlocks exactly one run:
+
+- **the request** it was minted for;
+- **the template** that request was raised against, so a grant cannot redeem inside a different gated template that happens to take the same parameters;
+- **a hash of the parameters** that were approved, so it cannot unlock a run with different inputs;
+- **a TTL**, and it is refused once revoked or consumed.
+
+All six conditions are checked in a single `UPDATE` whose affected-row count must be exactly one, so two tasks racing on the same grant cannot both win.
+
+`POST /grants/consume` is also restricted to the scaffolder's own service principal. Any service principal could already be refused a forged grant, but one that had _seen_ a grant could spend it, and a spent grant makes the legitimate task fail at its own gate. See `grantConsumers` under [Configuration](#configuration) for split deployments.
+
 ### Defence in depth: deny the actions to user principals
 
 These four shapes are author-controlled, as is deleting the gate altogether. The plugin refuses them, but all four live in a file the template's own team can edit. If a gated template grants something with real blast radius, do not rely on the template's shape alone.
@@ -236,6 +249,10 @@ scaffolderApprovals:
     # How long submitted values are kept before being redacted. The request and
     # its decisions are kept indefinitely. Default: 180 days.
     redactAfter: { days: 180 }
+  # Which service principals may redeem an approval grant. Default:
+  # ['plugin:scaffolder'], which is the only caller that should ever need to.
+  # Widen it only for a split deployment that presents a different subject.
+  grantConsumers: ['plugin:scaffolder']
 ```
 
 ### Events and signals
