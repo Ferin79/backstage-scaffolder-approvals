@@ -238,6 +238,25 @@ scaffolderApprovals:
     redactAfter: { days: 180 }
 ```
 
+### Events and signals
+
+If the events backend is installed, every state change is published on the `scaffolder-approvals` topic. The payload always carries `action`, `requestId`, `templateRef`, `requesterRef` and `status`, plus a little more for some actions:
+
+| `action`    | When                                    | Notification | Also carries              |
+| ----------- | --------------------------------------- | ------------ | ------------------------- |
+| `requested` | A request is submitted                  | Approvers    | —                         |
+| `decided`   | An approver approves or denies          | Requester    | `decision`, `approverRef` |
+| `launched`  | The template starts                     | None         | `taskId`                  |
+| `completed` | The task finished successfully          | None         | `taskId`                  |
+| `failed`    | The task failed, or the approval lapsed | Both         | `reason`                  |
+| `expired`   | Nobody decided in time                  | Both         | —                         |
+
+`launched` and `completed` carry no notification on purpose: four notifications is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
+
+`status` is the status the request has **after** the change, so a `decided` event on an approved request says `approved`, not `pending`.
+
+If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`, so an open request page can refresh itself. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
+
 ## Packages
 
 | Package                                                                              | What it is                                                               |

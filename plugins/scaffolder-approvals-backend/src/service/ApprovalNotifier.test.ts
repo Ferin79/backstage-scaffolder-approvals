@@ -212,15 +212,14 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('signals', () => {
-    it('go only to users, since a page belongs to a person', async () => {
+    it('broadcast, because an approver is usually a group', async () => {
+      // G12: a signal can only be addressed to `user:` refs, so addressing the
+      // approvers meant the people most likely to have the page open were the
+      // ones whose page never updated.
       await notifier().onFailed(REQUEST, 'the task failed');
 
       expect(publishSignal).toHaveBeenCalledWith({
-        recipients: {
-          type: 'user',
-          // The group ref is dropped rather than silently expanded.
-          entityRef: ['user:default/requester', 'user:default/platform-lead'],
-        },
+        recipients: { type: 'broadcast' },
         channel: 'scaffolder-approvals',
         message: {
           action: 'failed',
@@ -230,7 +229,7 @@ describe('ApprovalNotifier', () => {
       });
     });
 
-    it('are skipped when no user would receive one', async () => {
+    it('go out even when every recipient is a group', async () => {
       await notifier().onSubmitted({
         ...REQUEST,
         policySnapshot: {
@@ -239,9 +238,67 @@ describe('ApprovalNotifier', () => {
         },
       });
 
-      expect(publishSignal).not.toHaveBeenCalled();
-      // The notification still goes, because a group can receive one.
+      expect(publishSignal).toHaveBeenCalledWith(
+        expect.objectContaining({ recipients: { type: 'broadcast' } }),
+      );
       expect(send).toHaveBeenCalled();
+    });
+
+    it('carry nothing but the request id and its status', async () => {
+      // A broadcast reaches every signed-in user, so the payload has to be
+      // something they were all entitled to see. Reads are open (Q12) and the
+      // page fetches the request itself once it is told to.
+      await notifier().onDecided(REQUEST, APPROVAL);
+
+      const [{ message }] = publishSignal.mock.calls[0];
+      expect(Object.keys(message).sort()).toEqual([
+        'action',
+        'requestId',
+        'status',
+      ]);
+    });
+  });
+
+  describe('launched and completed', () => {
+    it('publish an event and a signal but never a notification', async () => {
+      // Q20 settles on four notifications in v1, and "launched" is redundant
+      // with "decided" in somebody's inbox. An external subscriber still needs
+      // the whole lifecycle.
+      const running = { ...REQUEST, status: 'running' as const, taskId: 't-1' };
+
+      await notifier().onLaunched(running);
+
+      expect(send).not.toHaveBeenCalled();
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventPayload: expect.objectContaining({
+            action: 'launched',
+            status: 'running',
+            taskId: 't-1',
+          }),
+        }),
+      );
+      expect(publishSignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({ action: 'launched' }),
+        }),
+      );
+    });
+
+    it('report a completed request', async () => {
+      const done = { ...REQUEST, status: 'completed' as const, taskId: 't-1' };
+
+      await notifier().onCompleted(done);
+
+      expect(send).not.toHaveBeenCalled();
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventPayload: expect.objectContaining({
+            action: 'completed',
+            status: 'completed',
+          }),
+        }),
+      );
     });
   });
 

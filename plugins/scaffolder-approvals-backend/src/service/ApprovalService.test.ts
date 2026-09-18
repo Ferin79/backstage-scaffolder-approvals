@@ -112,7 +112,11 @@ describe('ApprovalService', () => {
 
     let entity: Entity | undefined;
     let scaffold: jest.Mock;
-    let observer: { onSubmitted: jest.Mock; onDecided: jest.Mock };
+    let observer: {
+      onSubmitted: jest.Mock;
+      onDecided: jest.Mock;
+      onLaunched: jest.Mock;
+    };
 
     const requester = caller(REQUESTER, ['group:default/devx-team']);
     const alice = caller('user:default/alice', ['group:default/devx-team']);
@@ -130,7 +134,11 @@ describe('ApprovalService', () => {
 
       entity = gatedTemplate({ approvers: ['group:default/devx-team'] });
       scaffold = jest.fn().mockResolvedValue({ taskId: 'task-1' });
-      observer = { onSubmitted: jest.fn(), onDecided: jest.fn() };
+      observer = {
+        onSubmitted: jest.fn(),
+        onDecided: jest.fn(),
+        onLaunched: jest.fn(),
+      };
 
       const catalog = {
         getEntityByRef: jest.fn(async (ref: unknown) =>
@@ -512,6 +520,67 @@ describe('ApprovalService', () => {
             credentials: alice.credentials,
           }),
         ).rejects.toThrow(/Unknown decision/);
+      });
+
+      it('tells the observer the status the request now has', async () => {
+        // C3: the request was loaded before the transition, so passing it
+        // straight through announced every approval and every rejection as
+        // `pending`. An external subscriber acting on `status` would act on a
+        // decision that looked undecided.
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        expect(observer.onDecided).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'approved' }),
+          expect.objectContaining({ decision: 'approve' }),
+        );
+      });
+
+      it('tells the observer about a rejection as rejected', async () => {
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'deny',
+          comment: 'not this quarter',
+          credentials: alice.credentials,
+        });
+
+        expect(observer.onDecided).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'rejected' }),
+          expect.objectContaining({ decision: 'deny' }),
+        );
+      });
+
+      it('announces the launch once the request is running', async () => {
+        // G4: `approval.launched` is in the design's event list and never
+        // existed.
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        expect(observer.onLaunched).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'running', taskId: 'task-1' }),
+        );
+      });
+
+      it('announces no launch when the launch failed', async () => {
+        scaffold.mockRejectedValue(new Error('scaffolder unreachable'));
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        expect(observer.onDecided).toHaveBeenCalled();
+        expect(observer.onLaunched).not.toHaveBeenCalled();
       });
 
       it('does not let an observer failure undo a committed decision', async () => {

@@ -221,6 +221,10 @@ export class ApprovalSweeps {
           ? 'the task was cancelled'
           : 'the task failed',
       );
+    } else {
+      // No notification, by Q20 — but an external subscriber needs the end of
+      // the lifecycle as much as the start of it.
+      await this.notifier?.onCompleted({ ...request, status: next });
     }
   }
 

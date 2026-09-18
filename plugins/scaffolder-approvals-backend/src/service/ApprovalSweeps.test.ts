@@ -87,6 +87,8 @@ describe('ApprovalSweeps', () => {
     let notifier: {
       onSubmitted: jest.Mock;
       onDecided: jest.Mock;
+      onLaunched: jest.Mock;
+      onCompleted: jest.Mock;
       onFailed: jest.Mock;
       onExpired: jest.Mock;
     };
@@ -103,6 +105,8 @@ describe('ApprovalSweeps', () => {
       notifier = {
         onSubmitted: jest.fn(),
         onDecided: jest.fn(),
+        onLaunched: jest.fn(),
+        onCompleted: jest.fn(),
         onFailed: jest.fn(),
         onExpired: jest.fn(),
       };
@@ -350,6 +354,20 @@ describe('ApprovalSweeps', () => {
         await expect(sweeps.reconcile()).resolves.toBeUndefined();
         // Still running, to be retried next tick.
         expect((await store.getRequest(id))?.status).toBe('running');
+      });
+
+      it('announces a completed run, without notifying anyone', async () => {
+        // G4: the lifecycle an external subscriber sees has to include the end
+        // of it. Q20 still says no notification for this one.
+        const id = await approved();
+        getTask.mockResolvedValue({ id: 'task-1', status: 'completed' });
+
+        await sweeps.reconcile();
+
+        expect(notifier.onCompleted).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'completed' }),
+        );
+        expect(notifier.onFailed).not.toHaveBeenCalled();
       });
 
       it('applies a task status exactly once, however many signals arrive', async () => {

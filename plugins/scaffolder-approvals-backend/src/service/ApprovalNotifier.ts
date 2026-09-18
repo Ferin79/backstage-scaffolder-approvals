@@ -31,10 +31,20 @@ export const APPROVALS_EVENT_TOPIC = SCAFFOLDER_APPROVALS_PLUGIN_ID;
 /** The signals channel an open request page subscribes to. */
 export const APPROVALS_SIGNAL_CHANNEL = SCAFFOLDER_APPROVALS_PLUGIN_ID;
 
-/** What happened, as the event payload names it. */
+/**
+ * What happened, as the event payload names it.
+ *
+ * `launched` and `completed` deliberately carry no notification: Q20 settles on
+ * four in v1, and "launched" is redundant with "decided" in somebody's inbox.
+ * They exist because an external subscriber — a Slack integration, an audit
+ * pipeline — needs the whole lifecycle, not the part that happens to be worth
+ * interrupting a person for.
+ */
 export type ApprovalEventAction =
   | 'requested'
   | 'decided'
+  | 'launched'
+  | 'completed'
   | 'failed'
   | 'expired';
 
@@ -121,6 +131,22 @@ export class ApprovalNotifier implements ApprovalObserver {
     });
   }
 
+  /** The template is running. An event and a signal only, never a notification. */
+  async onLaunched(request: ApprovalRequest): Promise<void> {
+    await this.fanOut('launched', request, {
+      recipients: [],
+      extra: request.taskId ? { taskId: request.taskId } : undefined,
+    });
+  }
+
+  /** The task finished successfully. Event and signal only, as for `launched`. */
+  async onCompleted(request: ApprovalRequest): Promise<void> {
+    await this.fanOut('completed', request, {
+      recipients: [],
+      extra: request.taskId ? { taskId: request.taskId } : undefined,
+    });
+  }
+
   /** The task ran and failed, or the approval expired before it could run. */
   async onFailed(request: ApprovalRequest, reason: string): Promise<void> {
     await this.fanOut('failed', request, {
@@ -156,18 +182,19 @@ export class ApprovalNotifier implements ApprovalObserver {
     action: ApprovalEventAction,
     request: ApprovalRequest,
     message: {
+      /** Empty means "no notification for this one", not "nobody to tell". */
       recipients: string[];
       exclude?: string[];
-      title: string;
-      description: string;
-      severity: 'normal' | 'high';
+      title?: string;
+      description?: string;
+      severity?: 'normal' | 'high';
       extra?: Record<string, string>;
     },
   ): Promise<void> {
     const recipients = [...new Set(message.recipients)].filter(Boolean);
 
     await this.attempt('notification', async () => {
-      if (!this.notifications || recipients.length === 0) {
+      if (!this.notifications || recipients.length === 0 || !message.title) {
         return;
       }
       await this.notifications.send({
@@ -178,9 +205,9 @@ export class ApprovalNotifier implements ApprovalObserver {
         },
         payload: {
           title: message.title,
-          description: message.description,
+          description: message.description ?? '',
           link: this.link(request),
-          severity: message.severity,
+          severity: message.severity ?? 'normal',
           topic: SCAFFOLDER_APPROVALS_PLUGIN_ID,
           // Scoped per request so a re-notification replaces rather than piles
           // up in somebody's inbox.
@@ -193,14 +220,14 @@ export class ApprovalNotifier implements ApprovalObserver {
       if (!this.signals) {
         return;
       }
-      // Only users can receive a signal, so group refs are dropped rather than
-      // silently expanded — an open page belongs to a person.
-      const users = recipients.filter(ref => ref.startsWith('user:'));
-      if (users.length === 0) {
-        return;
-      }
+      // Broadcast, not addressed. A signal can only be sent to `user:` refs,
+      // and approvers are normally groups, so addressing them meant the people
+      // most likely to have the page open were the ones who never saw it
+      // update. The payload is the request id and its status and nothing else,
+      // which reveals nothing: reads are open to any signed-in user (Q12), and
+      // the page fetches the request itself once it is told to.
       await this.signals.publish({
-        recipients: { type: 'user', entityRef: users },
+        recipients: { type: 'broadcast' },
         channel: APPROVALS_SIGNAL_CHANNEL,
         message: { action, requestId: request.id, status: request.status },
       });

@@ -77,6 +77,13 @@ export interface ApprovalObserver {
     request: ApprovalRequest,
     decision: ApprovalDecision,
   ): Promise<void>;
+  /**
+   * The template is running.
+   *
+   * Optional, because it carries no notification (Q20) and an implementation
+   * that only feeds somebody's inbox has nothing to do with it.
+   */
+  onLaunched?(request: ApprovalRequest): Promise<void>;
 }
 
 /** Options for {@link ApprovalService.submit}. */
@@ -309,9 +316,10 @@ export class ApprovalService {
         { decidedAt },
       );
       if (rejected) {
-        await this.notify(() =>
-          this.observer?.onDecided(request, recorded.decision),
-        );
+        // Re-read, never reuse `request`: it was loaded before the transition
+        // and still says `pending`, so every subscriber would be told a
+        // rejected request is awaiting a decision.
+        await this.notifyDecided(requestId, recorded.decision);
       } else {
         // A concurrent approval reached quorum first. The denial is on record
         // as part of the audit trail, but it arrived too late to stop the run.
@@ -339,13 +347,31 @@ export class ApprovalService {
     );
 
     if (approved) {
-      await this.notify(() =>
-        this.observer?.onDecided(request, recorded.decision),
-      );
+      await this.notifyDecided(requestId, recorded.decision);
       await this.launch(requestId);
     }
 
     return await this.requireRequestWithDecisions(requestId);
+  }
+
+  /**
+   * Tell the observer about a decision, with the request as it is *now*.
+   *
+   * The request this method is handed by `decide` was loaded before the
+   * transition, so its status is still `pending` whatever the decision did.
+   * Publishing that is worse than publishing nothing: an external subscriber
+   * acting on `status` would see every approval and every rejection as an
+   * undecided request.
+   */
+  private async notifyDecided(
+    requestId: string,
+    decision: ApprovalDecision,
+  ): Promise<void> {
+    const current = await this.store.getRequest(requestId);
+    if (!current) {
+      return;
+    }
+    await this.notify(() => this.observer?.onDecided(current, decision));
   }
 
   /**
@@ -538,15 +564,24 @@ export class ApprovalService {
     }
 
     if (
-      !(await this.store.transition(requestId, 'approved', 'running', {
-        taskId,
-      }))
+      await this.store.transition(requestId, 'approved', 'running', { taskId })
     ) {
+      await this.notifyLaunched(requestId);
+    } else {
       // The task is running regardless, so losing this race must not be silent.
       this.logger.warn(
         `Launched task ${taskId} for approval request ${requestId}, but the request had already left 'approved'`,
       );
     }
+  }
+
+  /** Announce a running template, again reading the request after the write. */
+  private async notifyLaunched(requestId: string): Promise<void> {
+    const current = await this.store.getRequest(requestId);
+    if (!current) {
+      return;
+    }
+    await this.notify(() => this.observer?.onLaunched?.(current));
   }
 
   /**
@@ -569,6 +604,7 @@ export class ApprovalService {
       this.logger.info(
         `Recovered task ${taskId} for approval request ${requestId} from its consumed grant`,
       );
+      await this.notifyLaunched(requestId);
     }
     return true;
   }
