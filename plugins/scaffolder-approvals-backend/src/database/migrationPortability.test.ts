@@ -53,7 +53,9 @@ const DIALECTS = ['better-sqlite3', 'pg', 'mysql2'] as const;
  * Run the migration against a schema builder that compiles statements instead
  * of executing them.
  */
-async function compile(client: string): Promise<string[]> {
+async function compile(
+  client: string,
+): Promise<string[] & { upCount: number }> {
   const knex = knexFactory({
     client,
     connection: { filename: ':memory:' },
@@ -81,14 +83,22 @@ async function compile(client: string): Promise<string[]> {
     ) => capture(knex.schema.dropTableIfExists(...args)),
     alterTable: (...args: Parameters<Knex.SchemaBuilder['alterTable']>) =>
       capture(knex.schema.alterTable(...args)),
+    dropIndex: (...args: any[]) =>
+      capture((knex.schema as any).dropIndex(...args)),
   };
   recorder.fn = knex.fn;
   recorder.batchInsert = async () => [];
+  // A migration may compile differently per engine — the timestamp-precision
+  // one skips SQLite, which has no datetime type to widen — so the recorder
+  // has to be able to say which engine it is standing in for.
+  recorder.client = { config: { client } };
 
+  let upCount = 0;
   try {
     for (const migration of migrations) {
       await migration.up(recorder);
     }
+    upCount = statements.length;
     for (const migration of [...migrations].reverse()) {
       await migration.down(recorder);
     }
@@ -96,7 +106,9 @@ async function compile(client: string): Promise<string[]> {
     await knex.destroy();
   }
 
-  return statements;
+  // `up` alone matters for anything about the shape the schema ends up in;
+  // `down` deliberately puts some of it back the way it was.
+  return Object.assign(statements, { upCount });
 }
 
 /** Every `create table` body, keyed by table name. */
@@ -119,7 +131,13 @@ function indexStatements(statements: string[]): string[] {
 }
 
 describe('migration portability', () => {
-  const compiled = new Map<string, string[]>();
+  const compiled = new Map<string, string[] & { upCount: number }>();
+
+  /** Only what the migrations do on the way up. */
+  const up = (dialect: string) => {
+    const all = compiled.get(dialect)!;
+    return all.slice(0, all.upCount);
+  };
 
   beforeAll(async () => {
     for (const dialect of DIALECTS) {
@@ -184,6 +202,63 @@ describe('migration portability', () => {
     // Matched against the type that follows an identifier, since MySQL inlines
     // column comments into the same statement and those mention JSON.
     expect(body).not.toMatch(/[`"]\w+[`"] jsonb?\b/i);
+  });
+
+  it('stores MySQL timestamps to the millisecond', () => {
+    // `dateTime(col)` with no precision is DATETIME(0) on MySQL, which rounds:
+    // two decisions at 10:00:00.750 and 10:00:00.900 both read back as
+    // 10:00:01.000, tie, and are then ordered by a random uuid. Postgres and
+    // SQLite keep sub-second values already, so this is MySQL alone diverging.
+    // Column *changes*, not additions: an `add column` belongs to whichever
+    // migration introduced it.
+    const altered = up('mysql2').filter(
+      statement =>
+        /^alter table/i.test(statement) &&
+        !/add column/i.test(statement) &&
+        /datetime/i.test(statement),
+    );
+
+    expect(altered.length).toBeGreaterThan(0);
+    for (const statement of altered) {
+      // Every datetime this migration touches carries its precision.
+      for (const [, type] of statement.matchAll(/(datetime(?:\(\d\))?)/gi)) {
+        expect(type.toLowerCase()).toBe('datetime(3)');
+      }
+    }
+  });
+
+  it('skips the precision change on SQLite, which has no datetime type', () => {
+    // knex implements `.alter()` on SQLite by rebuilding the table. Rebuilding
+    // four tables to change nothing is a real risk taken for no gain.
+    expect(
+      up('better-sqlite3').filter(
+        statement =>
+          /^alter table/i.test(statement) &&
+          !/add column/i.test(statement) &&
+          /datetime/i.test(statement),
+      ),
+    ).toEqual([]);
+  });
+
+  it('indexes the column every task event looks up', () => {
+    // `findRequestByTaskId` runs for every `scaffolder.task` event in the
+    // instance, gated template or not, against a table that is never pruned.
+    for (const dialect of DIALECTS) {
+      expect(
+        indexStatements(up(dialect)).filter(s => /task_id/.test(s)),
+      ).not.toEqual([]);
+    }
+  });
+
+  it('gives every MySQL datetime column a precision, however it is added', () => {
+    // The trap this closes: a later migration adding a plain `dateTime()`
+    // column would silently get DATETIME(0) and round, and nothing else here
+    // would notice.
+    for (const statement of up('mysql2')) {
+      for (const [, type] of statement.matchAll(/(datetime(?:\(\d\))?)/gi)) {
+        expect(type.toLowerCase()).toBe('datetime(3)');
+      }
+    }
   });
 
   it('names no reserved word as a column', () => {

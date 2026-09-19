@@ -69,11 +69,20 @@ exports.up = async function up(knex) {
       .string('task_id', 255)
       .nullable()
       .comment('Scaffolder task, once launched');
-    table.dateTime('created_at').defaultTo(knex.fn.now()).notNullable();
-    table.dateTime('updated_at').defaultTo(knex.fn.now()).notNullable();
-    table.dateTime('expires_at').nullable();
-    table.dateTime('decided_at').nullable();
-    table.dateTime('redacted_at').nullable();
+    // Every timestamp carries an explicit precision: `dateTime(col)` alone is
+    // DATETIME(0) on MySQL, which *rounds* to the second. Two decisions in the
+    // same second would then tie, and a tie is broken by a random uuid.
+    table
+      .dateTime('created_at', { precision: 3 })
+      .defaultTo(knex.fn.now())
+      .notNullable();
+    table
+      .dateTime('updated_at', { precision: 3 })
+      .defaultTo(knex.fn.now())
+      .notNullable();
+    table.dateTime('expires_at', { precision: 3 }).nullable();
+    table.dateTime('decided_at', { precision: 3 }).nullable();
+    table.dateTime('redacted_at', { precision: 3 }).nullable();
 
     // The timeout sweep.
     table.index(['status', 'expires_at'], 'ar_status_expires_idx');
@@ -110,7 +119,10 @@ exports.up = async function up(knex) {
       .comment('Entity ref of the deciding user');
     table.string('decision', 16).notNullable().comment('approve | deny');
     table.text('comment').nullable();
-    table.dateTime('created_at').defaultTo(knex.fn.now()).notNullable();
+    table
+      .dateTime('created_at', { precision: 3 })
+      .defaultTo(knex.fn.now())
+      .notNullable();
 
     // One vote each. This is what makes a quorum count trustworthy under
     // concurrency: the database refuses a second vote rather than the service
@@ -138,8 +150,8 @@ exports.up = async function up(knex) {
       .string('values_hash', 64)
       .notNullable()
       .comment('Binds the grant to the exact values that were approved');
-    table.dateTime('expires_at').notNullable();
-    table.dateTime('consumed_at').nullable();
+    table.dateTime('expires_at', { precision: 3 }).notNullable();
+    table.dateTime('consumed_at', { precision: 3 }).nullable();
     table.string('consumed_by_task_id', 255).nullable();
 
     table.unique(['request_id', 'token_hash'], {

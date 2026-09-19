@@ -256,6 +256,43 @@ describe('ApprovalService', () => {
         ).rejects.toThrow(/No such template/);
       });
 
+      it('stores the requester ref in one spelling', async () => {
+        // C15: MySQL's default collation compares strings case-insensitively
+        // while SQLite and Postgres compare bytes, so a ref stored as the
+        // identity happened to spell it makes "is this the requester?" and
+        // duplicate collapse answer differently per engine.
+        const odd = caller('User:Default/Requester', [
+          'group:default/devx-team',
+        ]);
+        known.push(odd);
+
+        const { id } = await service.submit({
+          templateRef: TEMPLATE_REF,
+          values: VALUES,
+          credentials: odd.credentials,
+        });
+
+        expect((await store.getRequest(id))?.requesterRef).toBe(
+          'user:default/requester',
+        );
+      });
+
+      it('collapses a duplicate submitted under a differently spelled identity', async () => {
+        const odd = caller('User:Default/Requester', [
+          'group:default/devx-team',
+        ]);
+        known.push(odd);
+
+        const first = await submit();
+        const second = await service.submit({
+          templateRef: TEMPLATE_REF,
+          values: VALUES,
+          credentials: odd.credentials,
+        });
+
+        expect(second).toEqual({ id: first.id, collapsed: true });
+      });
+
       it('records what the template looked like at submit', async () => {
         // §10.3. Without these two columns an approver deciding days later has
         // no way to know the steps changed underneath them.

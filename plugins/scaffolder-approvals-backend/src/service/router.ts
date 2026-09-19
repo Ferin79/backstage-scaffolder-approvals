@@ -66,6 +66,18 @@ export interface RouterOptions {
 /** The only caller that has any business redeeming a grant. */
 export const DEFAULT_GRANT_CONSUMERS = ['plugin:scaffolder'];
 
+/**
+ * Request ids are uuids, and every route that takes one has to say so.
+ *
+ * Postgres types the column as `uuid` and rejects anything malformed at the
+ * driver, so `GET /requests/not-a-uuid` came back as a 500 there while SQLite
+ * and MySQL answered 404 — the same request, three different answers, and the
+ * one that looks like a server fault is the one an operator pages on. Checking
+ * the shape first also keeps a malformed id out of the permission framework's
+ * `getResources`, which would otherwise make the same trip to the database.
+ */
+const requestId = z.string().uuid('must be a request id');
+
 const submitBody = z.object({
   templateRef: z.string().min(1),
   values: z.record(z.string(), z.unknown()).default({}),
@@ -287,7 +299,9 @@ export async function createRouter(
   });
 
   router.get('/requests/:id', async (req, res) => {
-    const { id } = req.params;
+    // Before authorizing, so that a malformed id never reaches the
+    // permission framework's resource load or the database.
+    const id = parseOrBadRequest(requestId, req.params.id, 'request id');
     await authorizeOn(approvalRequestReadPermission, id, req);
 
     const request = await store.getRequestWithDecisions(id);
@@ -304,7 +318,9 @@ export async function createRouter(
   });
 
   router.post('/requests/:id/decision', async (req, res) => {
-    const { id } = req.params;
+    // Before authorizing, so that a malformed id never reaches the
+    // permission framework's resource load or the database.
+    const id = parseOrBadRequest(requestId, req.params.id, 'request id');
 
     // The check the whole feature rests on (Q19). It runs in addition to the
     // service's own eligibility check: this one is what an RBAC policy can see
@@ -324,7 +340,9 @@ export async function createRouter(
   });
 
   router.post('/requests/:id/cancel', async (req, res) => {
-    const { id } = req.params;
+    // Before authorizing, so that a malformed id never reaches the
+    // permission framework's resource load or the database.
+    const id = parseOrBadRequest(requestId, req.params.id, 'request id');
     await authorizeOn(approvalRequestCancelPermission, id, req);
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
 
@@ -382,16 +400,19 @@ export async function createRouter(
 
     const body = parseOrBadRequest(consumeBody, req.body, 'request body');
 
-    let requestId: string;
+    let grantRequestId: string;
     let token: string;
     try {
-      ({ requestId, token } = parseGrant(body.grant));
+      ({ requestId: grantRequestId, token } = parseGrant(body.grant));
+      // A grant carries its request id, and that half is subject to exactly
+      // the same driver-level typing as one in a URL.
+      grantRequestId = requestId.parse(grantRequestId);
     } catch (error) {
       throw new InputError('The approval grant is malformed');
     }
 
     const consumed = await service.consumeGrant({
-      requestId,
+      requestId: grantRequestId,
       token,
       valuesHash: body.valuesHash,
       taskId: body.taskId,
@@ -402,7 +423,7 @@ export async function createRouter(
       // One refusal for every reason: telling a bearer-token holder whether it
       // was the token, the values or the expiry that failed would be an oracle.
       logger.warn(
-        `Refused an approval grant for request ${requestId} and task ${body.taskId}`,
+        `Refused an approval grant for request ${grantRequestId} and task ${body.taskId}`,
       );
       throw new NotAllowedError('The approval grant is not valid');
     }

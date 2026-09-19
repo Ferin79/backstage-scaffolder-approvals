@@ -760,7 +760,17 @@ export class ApprovalService {
         'Approval requests can only be submitted by a signed-in user',
       );
     }
-    return userEntityRef;
+
+    // Normalised, like every other ref this plugin stores. Two engines compare
+    // strings differently — MySQL's default collation is case-insensitive
+    // while SQLite and Postgres compare bytes — so a ref stored as written
+    // makes "is this the requester?" and "collapse a duplicate" answer
+    // differently depending on the database underneath.
+    try {
+      return normaliseEntityRef(userEntityRef);
+    } catch {
+      throw new NotAllowedError(`Not a usable user identity: ${userEntityRef}`);
+    }
   }
 
   /**

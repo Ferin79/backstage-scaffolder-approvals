@@ -48,14 +48,15 @@ exports.up = async function up(knex) {
       .defaultTo(0)
       .comment('How many times a launch has been claimed, for diagnostics');
     table
-      .dateTime('launch_attempted_at')
+      // Millisecond precision, or MySQL rounds to the second (DATETIME(0)).
+      .dateTime('launch_attempted_at', { precision: 3 })
       .nullable()
       .comment('When a launch was last claimed; null means never');
   });
 
   await knex.schema.alterTable('approval_grants', table => {
     table
-      .dateTime('revoked_at')
+      .dateTime('revoked_at', { precision: 3 })
       .nullable()
       .comment('When a failed launch withdrew this grant; null means live');
   });

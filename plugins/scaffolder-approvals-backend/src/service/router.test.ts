@@ -386,6 +386,18 @@ describe('createRouter', () => {
         });
       });
 
+      it('reports 400 for an id that is not a uuid', async () => {
+        // C8: Postgres types the column as `uuid` and rejects anything
+        // malformed at the driver, so this was a 500 there and a 404 on the
+        // other two engines. The one that looks like a server fault is the one
+        // an operator pages on.
+        const response = await request(app)
+          .get('/requests/not-a-uuid')
+          .set('authorization', as('user:default/alice'));
+
+        expect(response.status).toBe(400);
+      });
+
       it('reports 404 for an unknown id', async () => {
         const response = await request(app)
           .get('/requests/3f1e4c8a-0000-4000-8000-00000000dead')
@@ -522,6 +534,36 @@ describe('createRouter', () => {
         targetPluginId: 'test',
       });
     }
+
+    describe('malformed ids', () => {
+      it.each([
+        ['post', '/requests/not-a-uuid/decision', { decision: 'approve' }],
+        ['post', '/requests/not-a-uuid/cancel', {}],
+      ])('rejects %s %s with 400', async (_method, path, body) => {
+        const response = await request(app)
+          .post(path)
+          .set('authorization', as('user:default/alice'))
+          .send(body);
+
+        expect(response.status).toBe(400);
+      });
+
+      it('rejects a grant whose request id is not a uuid', async () => {
+        // The id half of a grant is subject to the same driver-level typing as
+        // one in a URL, and a forged grant is exactly where this gets tried.
+        const response = await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send({
+            grant: `not-a-uuid.${'x'.repeat(43)}`,
+            valuesHash: computeValuesHash(VALUES),
+            taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
+          });
+
+        expect(response.status).toBe(400);
+      });
+    });
 
     describe('POST /grants/consume', () => {
       async function approvedGrant(): Promise<{ id: string; grant: string }> {
