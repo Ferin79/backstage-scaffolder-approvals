@@ -14,14 +14,18 @@
  * limitations under the License.
  */
 
-/**
- * Backend-shared types, permission rules and service refs for scaffolder-approvals.
- *
- * @packageDocumentation
+/*
+ * BUI has no callout or alert component, so this is hand-rolled from its own
+ * variables — the same approach as `StatusPill`, and the reason it follows the
+ * viewer's theme without a hard-coded colour.
  */
 
-export * from './hashes';
-export * from './grantToken';
-export * from './gateStep';
-export * from './templateDrift';
-export * from './permissions';
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-1);
+  padding: var(--bui-space-3);
+  border: 1px solid var(--bui-fg-danger);
+  border-radius: var(--bui-radius-3);
+  color: var(--bui-fg-danger);
+}

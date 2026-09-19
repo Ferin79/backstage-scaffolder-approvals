@@ -189,6 +189,23 @@ export interface ApprovalRequest {
   /** The scaffolder task, once one has been launched. */
   taskId?: string;
 
+  /**
+   * `metadata.uid` of the template when the request was submitted (§10.3).
+   *
+   * Undefined for a request submitted before drift was tracked, which is not
+   * the same as "unchanged".
+   */
+  templateUid?: string;
+
+  /**
+   * SHA-256 of the template's `spec.steps` when the request was submitted.
+   *
+   * The steps are what execute, so this is what an approver is really
+   * agreeing to. Hashing the whole spec would flag an owner or description
+   * edit as drift, and a warning that fires on everything stops being read.
+   */
+  templateStepsHash?: string;
+
   createdAt: string;
   updatedAt: string;
 
@@ -239,7 +256,45 @@ export interface ApprovalDecision {
  */
 export interface ApprovalRequestWithDecisions extends ApprovalRequest {
   decisions: ApprovalDecision[];
+
+  /**
+   * Whether the template has changed since the request was submitted.
+   *
+   * Computed against the catalog when the request is read, not stored:
+   * the template is loaded live at launch time, so the only honest answer is
+   * the one from the moment somebody asked. Absent when the check could not be
+   * made — an unreachable catalog must not look like "unchanged".
+   */
+  templateDrift?: TemplateDrift;
 }
+
+/**
+ * How the template a request was raised against has changed since submit.
+ *
+ * @public
+ */
+export interface TemplateDrift {
+  /** True when something an approver should know about has changed. */
+  changed: boolean;
+
+  /**
+   * What changed, for the UI to show. Empty when nothing has.
+   *
+   * `missing` — the template is no longer in the catalog.
+   * `replaced` — same name, different entity: deleted and recreated.
+   * `steps` — the steps that will run have been edited.
+   * `unknown` — the request predates drift tracking, so there is nothing to
+   * compare against.
+   */
+  reasons: TemplateDriftReason[];
+}
+
+/**
+ * A single way a template can have drifted.
+ *
+ * @public
+ */
+export type TemplateDriftReason = 'missing' | 'replaced' | 'steps' | 'unknown';
 
 /**
  * How far a pending request has got towards its quorum.

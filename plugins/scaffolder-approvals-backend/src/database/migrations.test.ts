@@ -83,6 +83,8 @@ describe('migrations', () => {
         'summary',
         'task_id',
         'template_ref',
+        'template_steps_hash',
+        'template_uid',
         'updated_at',
         'values_hash',
         'values_json',

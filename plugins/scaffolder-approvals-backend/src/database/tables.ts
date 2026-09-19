@@ -42,6 +42,10 @@ export interface ApprovalRequestRow {
   /** JSON. */
   policy_snapshot: string;
   task_id: string | null;
+  /** `metadata.uid` of the template at submit; null if never recorded. */
+  template_uid: string | null;
+  /** SHA-256 of `spec.steps` at submit; null if never recorded. */
+  template_steps_hash: string | null;
   /** How many times a launch has been claimed, for diagnostics. */
   launch_attempt: number;
   /** When a launch was last claimed; null means never. */

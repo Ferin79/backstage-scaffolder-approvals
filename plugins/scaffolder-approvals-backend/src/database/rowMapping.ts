@@ -118,6 +118,12 @@ export function rowToApprovalRequest(row: ApprovalRequestRow): ApprovalRequest {
   if (row.task_id !== null) {
     request.taskId = row.task_id;
   }
+  if (row.template_uid !== null) {
+    request.templateUid = row.template_uid;
+  }
+  if (row.template_steps_hash !== null) {
+    request.templateStepsHash = row.template_steps_hash;
+  }
   const expiresAt = optionalTimestampToIso(row.expires_at, 'expires_at');
   if (expiresAt) {
     request.expiresAt = expiresAt;

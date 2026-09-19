@@ -55,6 +55,8 @@ export interface ApprovalRequest {
   summary: string | null;
   taskId?: string;
   templateRef: string;
+  templateStepsHash?: string;
+  templateUid?: string;
   // (undocumented)
   updatedAt: string;
   values: JsonObject | null;
@@ -91,6 +93,7 @@ export type ApprovalRequestStatus =
 export interface ApprovalRequestWithDecisions extends ApprovalRequest {
   // (undocumented)
   decisions: ApprovalDecision[];
+  templateDrift?: TemplateDrift;
 }
 
 // @public
@@ -262,6 +265,15 @@ export interface SubmitApprovalRequestResponse {
   // (undocumented)
   id: string;
 }
+
+// @public
+export interface TemplateDrift {
+  changed: boolean;
+  reasons: TemplateDriftReason[];
+}
+
+// @public
+export type TemplateDriftReason = 'missing' | 'replaced' | 'steps' | 'unknown';
 
 // @public
 export const TERMINAL_APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[];

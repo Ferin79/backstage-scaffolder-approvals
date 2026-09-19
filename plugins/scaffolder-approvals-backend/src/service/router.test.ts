@@ -48,22 +48,28 @@ const TEMPLATE_REF = 'template:default/request-github-admin';
 const REQUESTER = 'user:default/requester';
 const VALUES = { repository: 'backstage', justification: 'on-call rotation' };
 
-const TEMPLATE: Entity = {
-  apiVersion: 'scaffolder.backstage.io/v1beta3',
-  kind: 'Template',
-  metadata: { name: 'request-github-admin' },
-  spec: {
-    type: 'service',
-    steps: [
-      {
-        id: 'gate',
-        action: GATE_ACTION_ID,
-        input: { approvers: ['group:default/devx-team'] },
-      },
-      { id: 'grant', action: 'github:admin:grant' },
-    ],
-  },
-} as Entity;
+/**
+ * Built fresh per test, because the drift cases edit it. A shared constant
+ * would leak an added step into every test that ran afterwards.
+ */
+function newTemplate(): Entity {
+  return {
+    apiVersion: 'scaffolder.backstage.io/v1beta3',
+    kind: 'Template',
+    metadata: { name: 'request-github-admin', uid: 'uid-1' },
+    spec: {
+      type: 'service',
+      steps: [
+        {
+          id: 'gate',
+          action: GATE_ACTION_ID,
+          input: { approvers: ['group:default/devx-team'] },
+        },
+        { id: 'grant', action: 'github:admin:grant' },
+      ],
+    },
+  } as Entity;
+}
 
 /** Ownership refs per user, as the auth token would carry them. */
 const OWNERSHIP: Record<string, string[]> = {
@@ -80,10 +86,12 @@ describe('createRouter', () => {
     let knex: Knex;
     let store: ApprovalStore;
     let app: express.Express;
+    let template: Entity;
     let scaffold: jest.Mock;
     let authorizeResult: AuthorizeResult;
 
     beforeEach(async () => {
+      template = newTemplate();
       knex = await databases.init(databaseId);
       await knex.migrate.latest({ directory: migrationsDir });
 
@@ -109,7 +117,7 @@ describe('createRouter', () => {
         store,
         catalog: {
           getEntityByRef: jest.fn(async (ref: unknown) =>
-            ref === TEMPLATE_REF ? TEMPLATE : undefined,
+            ref === TEMPLATE_REF ? template : undefined,
           ),
         } as unknown as CatalogService,
         scaffolder: { scaffold } as unknown as ScaffolderService,
@@ -344,6 +352,38 @@ describe('createRouter', () => {
 
         expect(response.status).toBe(200);
         expect(response.body.decisions).toHaveLength(1);
+      });
+
+      it('tells an approver when the template has changed', async () => {
+        // §10.3: the detail page is where somebody decides, so it is where the
+        // warning has to appear.
+        const id = await submit();
+        (template as any).spec.steps.push({
+          id: 'extra',
+          action: 'debug:log',
+        });
+
+        const response = await request(app)
+          .get(`/requests/${id}`)
+          .set('authorization', as('user:default/alice'));
+
+        expect(response.body.templateDrift).toEqual({
+          changed: true,
+          reasons: ['steps'],
+        });
+      });
+
+      it('says nothing about drift while the template is untouched', async () => {
+        const id = await submit();
+
+        const response = await request(app)
+          .get(`/requests/${id}`)
+          .set('authorization', as('user:default/alice'));
+
+        expect(response.body.templateDrift).toEqual({
+          changed: false,
+          reasons: [],
+        });
       });
 
       it('reports 404 for an unknown id', async () => {

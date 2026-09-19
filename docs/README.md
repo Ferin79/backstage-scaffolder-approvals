@@ -192,6 +192,19 @@ The scaffolder's `requestUserCredentials` option puts a short-lived token belong
 
 **A gated template must not depend on `${{ secrets.USER_OAUTH_TOKEN }}`.** Use the backend's integration credentials instead. The catalog module logs a warning when it sees a gated template whose later steps reference that secret.
 
+### The template can change while a request waits
+
+The values and the gate policy are frozen when a request is submitted, so editing a template cannot change the terms of a request already in flight. **The steps are not frozen**: the scaffolder reads the template from the catalog when the task starts, so a template edited during the wait runs in its edited form, and a step added in the meantime runs like any other.
+
+The request page warns an approver when this has happened. Two things are recorded at submit and compared when the request is read:
+
+- `metadata.uid`, which catches a template deleted and recreated — same name, different entity;
+- a hash of `spec.steps`, which catches steps edited in place, where the uid never changes.
+
+The hash covers the steps only. A template repo takes commits for all sorts of reasons, and a warning that fired on an owner or description edit is one people would learn to click past.
+
+Drift is **shown, not enforced**. Failing every in-flight request whenever its template took an unrelated commit would make the feature unusable, so an approver is told and decides. A drifted launch is also logged by the backend, so the run can be tied to the template it actually ran.
+
 ### The gate can be removed by whoever owns the template
 
 Nothing forces a template to stay gated. Anyone who can change the template's YAML can delete the gate step. That is an accepted risk, not an oversight; mitigate it with CODEOWNERS on gated template files, and alert when the derived `gated` annotation disappears from a template.

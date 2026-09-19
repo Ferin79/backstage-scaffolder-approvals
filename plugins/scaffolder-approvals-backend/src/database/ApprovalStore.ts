@@ -56,6 +56,10 @@ export interface NewApprovalRequest {
   policySnapshot: GatePolicy;
   /** When the timeout sweep should expire this. Omit for no timeout. */
   expiresAt?: Date;
+  /** `metadata.uid` of the template as it was at submit (§10.3). */
+  templateUid?: string;
+  /** SHA-256 of the template's `spec.steps` as they were at submit. */
+  templateStepsHash?: string;
 }
 
 /** Outcome of {@link ApprovalStore.createOrCollapse}. */
@@ -237,6 +241,8 @@ export class ApprovalStore {
         summary: input.summary ?? null,
         policy_snapshot: JSON.stringify(input.policySnapshot),
         task_id: null,
+        template_uid: input.templateUid ?? null,
+        template_steps_hash: input.templateStepsHash ?? null,
         created_at: now,
         updated_at: now,
         expires_at: input.expiresAt ?? null,

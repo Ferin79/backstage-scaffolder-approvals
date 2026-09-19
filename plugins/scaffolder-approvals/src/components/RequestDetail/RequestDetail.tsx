@@ -38,6 +38,7 @@ import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { StatusPill } from '../StatusPill';
 import { DecisionDialog } from './DecisionDialog';
+import { DriftNotice } from './DriftNotice';
 
 /** Why the decide buttons are not available, in the approver's words. */
 const WHY_NOT: Record<DecisionIneligibility, string> = {
@@ -148,6 +149,10 @@ export function RequestDetail(props: RequestDetailProps) {
 
       <Content>
         <Flex direction="column" gap="4">
+          {/* Above the request rather than beside it: it changes what
+              approving means, so it has to be read before the buttons. */}
+          <DriftNotice drift={request.templateDrift} />
+
           <Card>
             <Flex direction="column" gap="3">
               <Text variant="title-small">Request</Text>

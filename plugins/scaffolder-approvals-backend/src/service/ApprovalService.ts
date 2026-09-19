@@ -29,8 +29,11 @@ import {
   normaliseEntityRef,
   renderGateSummary,
   type SubmitApprovalRequestResponse,
+  type TemplateDrift,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
+  compareTemplate,
+  computeTemplateStepsHash,
   computeValuesHash,
   findGateStep,
   formatGrant,
@@ -256,6 +259,10 @@ export class ApprovalService {
             this.now().getTime() + durationToMilliseconds(policy.timeout),
           )
         : undefined,
+      // §10.3: what the template looked like now, so an approver deciding in
+      // three days can be told if it has changed underneath them.
+      templateUid: template.metadata.uid,
+      templateStepsHash: computeTemplateStepsHash(template),
     });
 
     if (!created.collapsed) {
@@ -266,6 +273,37 @@ export class ApprovalService {
     }
 
     return created;
+  }
+
+  /**
+   * Whether the template a request was raised against has changed since.
+   *
+   * Computed on read rather than stored, because the template is loaded live
+   * at launch: the only honest answer is the one from the moment somebody
+   * asked. A catalog that cannot be reached returns undefined rather than
+   * "unchanged", since claiming a template is unchanged when nothing was
+   * checked is the one answer that would mislead an approver.
+   */
+  async templateDrift(
+    request: ApprovalRequest,
+    credentials: BackstageCredentials,
+  ): Promise<TemplateDrift | undefined> {
+    try {
+      const template = await this.catalog.getEntityByRef(request.templateRef, {
+        credentials,
+      });
+      return compareTemplate({
+        template,
+        submittedUid: request.templateUid,
+        submittedStepsHash: request.templateStepsHash,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not check ${request.templateRef} for drift`,
+        error instanceof Error ? error : undefined,
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -505,6 +543,23 @@ export class ApprovalService {
         `Not launching approval request ${requestId}; the approval is no longer redeemable`,
       );
       return;
+    }
+
+    // Noted, not refused. A template repo takes unrelated commits while an
+    // approval waits, and failing every in-flight request on any edit would
+    // make the feature unusable. What matters is that the change is visible:
+    // the approver saw it on the request page before deciding, and this line
+    // ties the run in the log to the template it actually ran.
+    const drift = await this.templateDrift(
+      request,
+      await this.auth.getOwnServiceCredentials(),
+    );
+    if (drift?.changed) {
+      this.logger.warn(
+        `Launching approval request ${requestId} against a template that has changed since submit: ${drift.reasons.join(
+          ', ',
+        )}`,
+      );
     }
 
     const token = generateGrantToken();

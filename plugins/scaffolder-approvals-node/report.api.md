@@ -8,6 +8,7 @@ import type { Entity } from '@backstage/catalog-model';
 import type { JsonObject } from '@backstage/types';
 import { PermissionResourceRef } from '@backstage/plugin-permission-node';
 import { PermissionRule } from '@backstage/plugin-permission-node';
+import { TemplateDrift } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { TemplateEntityStepV1beta3 } from '@backstage/plugin-scaffolder-common';
 
 // @public
@@ -35,6 +36,16 @@ export const approvalRequestResourceRef: PermissionResourceRef<
 
 // @public
 export function assertSha256Hex(value: unknown, field: string): string;
+
+// @public
+export function compareTemplate(options: {
+  template: Entity | undefined;
+  submittedUid?: string;
+  submittedStepsHash?: string;
+}): TemplateDrift;
+
+// @public
+export function computeTemplateStepsHash(entity: Entity): string;
 
 // @public
 export function computeValuesHash(values: JsonObject): string;

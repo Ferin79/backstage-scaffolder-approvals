@@ -15,7 +15,10 @@
  */
 
 import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
-import { parseGrant } from '@backstage-community/plugin-scaffolder-approvals-node';
+import {
+  computeTemplateStepsHash,
+  parseGrant,
+} from '@backstage-community/plugin-scaffolder-approvals-node';
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import {
   mockCredentials,
@@ -111,6 +114,7 @@ describe('ApprovalService', () => {
     let clock: Date;
 
     let entity: Entity | undefined;
+    let catalogFails: boolean;
     let scaffold: jest.Mock;
     let observer: {
       onSubmitted: jest.Mock;
@@ -140,10 +144,14 @@ describe('ApprovalService', () => {
         onLaunched: jest.fn(),
       };
 
+      catalogFails = false;
       const catalog = {
-        getEntityByRef: jest.fn(async (ref: unknown) =>
-          ref === TEMPLATE_REF ? entity : undefined,
-        ),
+        getEntityByRef: jest.fn(async (ref: unknown) => {
+          if (catalogFails) {
+            throw new Error('catalog unreachable');
+          }
+          return ref === TEMPLATE_REF ? entity : undefined;
+        }),
       } as unknown as CatalogService;
 
       const scaffolder = { scaffold } as unknown as ScaffolderService;
@@ -246,6 +254,57 @@ describe('ApprovalService', () => {
             credentials: requester.credentials,
           }),
         ).rejects.toThrow(/No such template/);
+      });
+
+      it('records what the template looked like at submit', async () => {
+        // §10.3. Without these two columns an approver deciding days later has
+        // no way to know the steps changed underneath them.
+        (entity!.metadata as { uid?: string }).uid = 'uid-1';
+
+        const { id } = await submit();
+
+        const stored = await store.getRequest(id);
+        expect(stored?.templateUid).toBe('uid-1');
+        expect(stored?.templateStepsHash).toBe(
+          computeTemplateStepsHash(entity!),
+        );
+      });
+
+      it('reports drift once the steps change under a pending request', async () => {
+        (entity!.metadata as { uid?: string }).uid = 'uid-1';
+        const { id } = await submit();
+
+        // The template is read live at launch, so editing it here is exactly
+        // what an unlucky approver would be deciding against.
+        (entity as any).spec.steps.push({ id: 'extra', action: 'debug:log' });
+
+        const request = await store.getRequest(id);
+        await expect(
+          service.templateDrift(request!, requester.credentials),
+        ).resolves.toEqual({ changed: true, reasons: ['steps'] });
+      });
+
+      it('reports no drift while the template is untouched', async () => {
+        (entity!.metadata as { uid?: string }).uid = 'uid-1';
+        const { id } = await submit();
+
+        const request = await store.getRequest(id);
+        await expect(
+          service.templateDrift(request!, requester.credentials),
+        ).resolves.toEqual({ changed: false, reasons: [] });
+      });
+
+      it('reports nothing rather than "unchanged" when the catalog fails', async () => {
+        // An unreachable catalog is not evidence that a template is unchanged,
+        // and saying so would be the one answer that misleads an approver.
+        (entity!.metadata as { uid?: string }).uid = 'uid-1';
+        const { id } = await submit();
+        const request = await store.getRequest(id);
+
+        catalogFails = true;
+        await expect(
+          service.templateDrift(request!, requester.credentials),
+        ).resolves.toBeUndefined();
       });
 
       it('refuses an ungated template', async () => {

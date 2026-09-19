@@ -294,7 +294,13 @@ export async function createRouter(
     if (!request) {
       throw new NotFoundError(`No such approval request: ${id}`);
     }
-    res.json(request);
+
+    // §10.3. Only on the detail route: it costs a catalog read, and the list
+    // would pay it once per row for something nobody can act on from a table.
+    const credentials = await httpAuth.credentials(req);
+    const templateDrift = await service.templateDrift(request, credentials);
+
+    res.json(templateDrift ? { ...request, templateDrift } : request);
   });
 
   router.post('/requests/:id/decision', async (req, res) => {

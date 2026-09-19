@@ -245,6 +245,60 @@ describe('RequestDetail', () => {
     });
   });
 
+  describe('template drift', () => {
+    it('warns an approver that the steps have changed', async () => {
+      // §10.3: the values and the policy are frozen at submit, but the
+      // template is read live at launch, so the steps on screen are not
+      // necessarily the ones that will run.
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: true, reasons: ['steps'] },
+        }),
+      });
+
+      const notice = await screen.findByRole('alert');
+      expect(notice).toHaveTextContent('The template has changed');
+      expect(notice).toHaveTextContent(
+        /edited steps are the ones that will run/,
+      );
+    });
+
+    it('explains a template that has left the catalog', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: true, reasons: ['missing'] },
+        }),
+      });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        /no longer in the catalog/,
+      );
+    });
+
+    it('says nothing when the template is untouched', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: false, reasons: [] },
+        }),
+      });
+
+      await screen.findByText('Admin on backstage');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('says nothing when the backend could not check', async () => {
+      // An unreachable catalog is not evidence of a change, and a warning that
+      // fires on infrastructure trouble is one people learn to click past.
+      await render({ getRequest: async () => REQUEST });
+
+      await screen.findByText('Admin on backstage');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
   it('explains a redacted request rather than rendering a blank', async () => {
     // Redaction is a normal end state, not a failure.
     await render({

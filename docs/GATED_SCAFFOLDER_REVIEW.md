@@ -243,11 +243,35 @@ sent. Mutant M49 (drop the binding) and M51 (send a fixed ref from the action) e
 an end-to-end test through the real approvals backend confirms both halves: a grant presented under
 another template is refused, **and survives the attempt**, so the legitimate run still succeeds.
 
-### <a id="s5"></a>S5 — Template drift is neither detected nor shown (🟡)
+### <a id="s5"></a>S5 — Template drift is neither detected nor shown (🟡) — ✅ fixed
 
 §10.3 asks for "`metadata.uid` plus a hash of its spec at submit, and warn the approver if it changed" ([L606](GATED_SCAFFOLDER_WORKFLOWS.md#L606)). Nothing is stored. In [E2](#e2) a step was added between submit and approval, and it ran after approval: "DRIFT STEP ADDED AFTER SUBMIT".
 
 Approvers approve the _values_ and see nothing of the steps. Store the template uid and a hash of `spec.steps` at submit, and show a warning on the request page when either has changed. Refusing to launch a drifted template is a stronger option.
+
+**Fixed.** `submit` records `metadata.uid` and a SHA-256 of `spec.steps`, and `GET /requests/:id`
+compares both against the catalog and returns a `templateDrift`. The request page renders a
+`role="alert"` notice above the request, so it is read before the Approve button rather than beside
+it.
+
+Both values are recorded because either alone can be fooled: a template deleted and recreated keeps
+its name and takes a new uid, while one edited in place keeps its uid and changes its steps. The
+hash covers `spec.steps` rather than the whole spec, because the steps are what execute — a warning
+that fired on an owner or description edit is one people would learn to click past. Canonical
+serialisation keeps it stable across the catalog's own reserialisation.
+
+**Drift is shown, not enforced**, which is the weaker of the two options offered. Failing every
+in-flight request whenever its template took an unrelated commit would make the feature unusable, so
+the approver is told and decides; a drifted launch is also logged so the run can be tied to the
+template it really ran. Refusing to launch remains available to anyone who wants it, on one `if`.
+
+One case is deliberately silent: when the catalog cannot be reached, the backend returns nothing
+rather than `changed: false`. An unreachable catalog is not evidence that a template is unchanged,
+and a warning that fires on infrastructure trouble is one people click past. Requests submitted
+before this landed report `unknown` for the same reason.
+
+Five mutants — ignore edited steps, ignore a replaced uid, report "unchanged" on a catalog failure,
+record nothing at submit, never render the notice — each break between two and six tests.
 
 ### <a id="s6"></a>S6 — `IS_NOT_REQUESTER` filters for the opposite set (🔴, latent)
 
@@ -793,7 +817,7 @@ Each row lands in its own commit. **Status** tracks progress against this review
 | 3   | Revoke-then-relaunch with compare-and-set, and claim launches with compare-and-set                                                                                                                            | C1, C2                    | M      | ✅ Done |
 | 4   | Re-read the request before notifying; add `launched` and `completed` events; broadcast signals                                                                                                                | C3, G4, G12               | S      | ✅ Done |
 | 5   | Bind grants to the template; restrict consume to `plugin:scaffolder`                                                                                                                                          | S4, S3                    | S      | ✅ Done |
-| 6   | Store the template uid and a steps hash; show drift to approvers                                                                                                                                              | S5                        | M      | ⬜ Open |
+| 6   | Store the template uid and a steps hash; show drift to approvers                                                                                                                                              | S5                        | M      | ✅ Done |
 | 7   | Validate ids as UUIDs; add a migration with `precision: 3` timestamps and a `task_id` index; normalise `templateRef`                                                                                          | C8, C9, C10, C5, C15      | S      | ⬜ Open |
 | 8   | Guard approval on `expires_at`; rotate the running sweep                                                                                                                                                      | C4, C6                    | S      | ⬜ Open |
 | 9   | Fix `IS_NOT_REQUESTER.toQuery` and test it                                                                                                                                                                    | S6                        | S      | ⬜ Open |
