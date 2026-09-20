@@ -14,8 +14,5 @@
  * limitations under the License.
  */
 
-export * from './ApprovalsPage';
-export * from './GatedReviewStep';
-export * from './RequestDetail';
-export * from './Router';
-export * from './StatusPill';
+export { GatedReviewStep } from './GatedReviewStep';
+export type { GatedReviewStepProps } from './GatedReviewStep';

@@ -553,18 +553,47 @@ The `scaffolder.task` topic is confirmed in `DatabaseTaskStore`. `cancelTask` pu
 
 What exists is well built. The problem is what does not exist.
 
-- <a id="g1"></a>**G1** [frontend/src/api/ApprovalsClient.ts:L96-L100](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/api/ApprovalsClient.ts#L96-L100): 🔴 bug: nothing calls `submitRequest`, and the §8.4 decorator was never built. Neither was the alternative `ReviewStepComponent`. The sequence a requester meets is:
+- <a id="g1"></a>**G1** ✅ fixed: [frontend/src/api/ApprovalsClient.ts:L96-L100](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/api/ApprovalsClient.ts#L96-L100): 🔴 bug: nothing calls `submitRequest`, and the §8.4 decorator was never built. Neither was the alternative `ReviewStepComponent`. The sequence a requester meets is:
   1. They run a gated template.
   2. The task fails, with a message telling them to "submit it from the approvals page" ([gate-module/src/createApprovalGateAction.ts:L37-L40](workspaces/scaffolder-approvals/plugins/scaffolder-backend-module-approvals/src/createApprovalGateAction.ts#L37-L40)).
   3. That page has no form.
 
   The README ([ws/README.md:L86](workspaces/scaffolder-approvals/README.md#L86)) describes the flow as working. "UX only" is true for security, but without this the feature cannot be used. Fix: build the decorator, or at least a "Request approval" form on the page.
 
-- <a id="g2"></a>**G2** [frontend/src/components/RequestDetail/RequestDetail.tsx:L160](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L160), [L205-L224](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L205-L224): 🟡 risk: four things are missing:
+  **Fixed, as a review step rather than a decorator.** `GatedReviewStep` replaces the scaffolder
+  wizard's last screen: for a gated template it shows who will be asked and how many of them, and
+  its button creates a request instead of a task. For every other template it renders whatever
+  review step it is given as `children`, so installing it changes nothing else.
+
+  Not a `scaffolderApiRef` decorator, because of what `scaffold()` has to return. A decorator
+  diverting a gated submit would have no task id to hand back and would have to invent one or throw
+  — reporting a successful request as a failure. Replacing the review step means `handleCreate` is
+  simply never called. §4 lists both seams; this is the second one.
+
+  `ReviewStepProps` carries no template ref, so the component reads it from the scaffolder's route
+  parameters, with a `templateRef` prop as an escape hatch. If that URL shape ever changes it
+  renders the ordinary review step rather than a broken screen — the behaviour an app had before
+  installing it. Mutants M68 and M69 break four and one tests.
+
+- <a id="g2"></a>**G2** ◨ three of four fixed: [frontend/src/components/RequestDetail/RequestDetail.tsx:L160](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L160), [L205-L224](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L205-L224): 🟡 risk: four things are missing:
   - the task id is plain text, although §10.1 and Phase 9 step 6 call for a link to the task log;
   - there is no Withdraw button (§5), so `api.cancel` is never called;
   - there is no Resubmit for a failed request (Q5, [L309](GATED_SCAFFOLDER_WORKFLOWS.md#L309));
   - nothing subscribes to signals (P3).
+
+  **Three are done.** The task id is a link to `/create/tasks/:taskId`, which §10.1 asks for and is
+  the only route a requester has to the log of a task they do not own. `RequesterActions` adds
+  Withdraw while a request is pending and Resubmit once it has failed — a _new_ request with the
+  same values, never a retry, since a spent approval cannot be spent twice (Q5). It renders nothing
+  for anyone but the requester, and refuses to resubmit a request whose values retention has already
+  redacted. Mutants M70, M71 and M72 each break a test.
+
+  **The signal subscription is not done.** It needs `@backstage/plugin-signals-react`, which is not
+  in this workspace, so it is a dependency addition and a lockfile change rather than a component.
+  The backend half landed in fix 4 — the signals are broadcast and carry `{ action, requestId,
+status }` — so what is missing is only the page subscribing to them. Until then the page reloads
+  on its own actions and not on somebody else's.
+
 - <a id="g3"></a>**G3** [frontend/src/alpha.ts:L64-L71](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/alpha.ts#L64-L71): 🟡 risk: Q22 asks for "page + nav item + homepage card", and only the page exists. These gaps are recorded only in Phase 10, while Phase 8 is marked Done.
 - <a id="c25"></a>**C25** [frontend/src/components/RequestDetail/RequestDetail.tsx:L43-L48](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L43-L48): 🔵 nit: `WHY_NOT` re-words the backend's `INELIGIBILITY_MESSAGES` ([ApprovalService.ts:L110](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L110)), although L221–L222 promises the two "can never tell different stories". Keep one map in `-common`.
 - <a id="c26"></a>**C26** [frontend/src/components/RequestDetail/RequestDetail.tsx:L183-L187](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L183-L187): 🔵 nit: shows "Denied" whenever any denial exists, including one that lost the race to an approval, on a request that is actually running. Base the text on `request.status`.
@@ -831,22 +860,22 @@ In order: the security core first, then correctness, then the product surface, t
 
 Each row lands in its own commit. **Status** tracks progress against this review.
 
-| #   | Fix                                                                                                                                                                                                           | Closes                    | Effort | Status  |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------ | ------- |
-| 1   | Reject `if` and `each` on the gate, later `always()`/`failure()` steps, and gate tags narrower than other steps' tags. Do it in `findGateStep`, at submit and in the processor; add A3/A4 as regression tests | S1, G9                    | M      | ✅ Done |
-| 2   | Document and recommend the user-principal `scaffolder.action.execute` policy (proven in E2)                                                                                                                   | S1 (defence in depth), S2 | S      | ✅ Done |
-| 3   | Revoke-then-relaunch with compare-and-set, and claim launches with compare-and-set                                                                                                                            | C1, C2                    | M      | ✅ Done |
-| 4   | Re-read the request before notifying; add `launched` and `completed` events; broadcast signals                                                                                                                | C3, G4, G12               | S      | ✅ Done |
-| 5   | Bind grants to the template; restrict consume to `plugin:scaffolder`                                                                                                                                          | S4, S3                    | S      | ✅ Done |
-| 6   | Store the template uid and a steps hash; show drift to approvers                                                                                                                                              | S5                        | M      | ✅ Done |
-| 7   | Validate ids as UUIDs; add a migration with `precision: 3` timestamps and a `task_id` index; normalise `templateRef`                                                                                          | C8, C9, C10, C5, C15      | S      | ✅ Done |
-| 8   | Guard approval on `expires_at`; rotate the running sweep                                                                                                                                                      | C4, C6                    | S      | ✅ Done |
-| 9   | Fix `IS_NOT_REQUESTER.toQuery` and test it                                                                                                                                                                    | S6                        | S      | ✅ Done |
-| 10  | Build the submit path (decorator or form), Withdraw, Resubmit and the task link                                                                                                                               | G1, G2                    | L      | ⬜ Open |
-| 11  | Nav item and homepage card                                                                                                                                                                                    | G3                        | M      | ⬜ Open |
-| 12  | Auditor events; a decision on Q11 and break-glass; refuse secret-type fields                                                                                                                                  | G5, G6, G7, S7            | S      | ⬜ Open |
-| 13  | Correct the README, the design doc §9 and the progress table; document S1, S2, C21 and the mount path                                                                                                         | D1–D4, G10, P16           | S      | ⬜ Open |
-| 14  | Signed-off commits, proposal issue, design notes into the issue, `dev/index` instead of `packages/backend`, script mode, unused dependencies                                                                  | P1–P4, P6, P9–P14         | S      | ⬜ Open |
+| #   | Fix                                                                                                                                                                                                           | Closes                    | Effort | Status   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------ | -------- |
+| 1   | Reject `if` and `each` on the gate, later `always()`/`failure()` steps, and gate tags narrower than other steps' tags. Do it in `findGateStep`, at submit and in the processor; add A3/A4 as regression tests | S1, G9                    | M      | ✅ Done  |
+| 2   | Document and recommend the user-principal `scaffolder.action.execute` policy (proven in E2)                                                                                                                   | S1 (defence in depth), S2 | S      | ✅ Done  |
+| 3   | Revoke-then-relaunch with compare-and-set, and claim launches with compare-and-set                                                                                                                            | C1, C2                    | M      | ✅ Done  |
+| 4   | Re-read the request before notifying; add `launched` and `completed` events; broadcast signals                                                                                                                | C3, G4, G12               | S      | ✅ Done  |
+| 5   | Bind grants to the template; restrict consume to `plugin:scaffolder`                                                                                                                                          | S4, S3                    | S      | ✅ Done  |
+| 6   | Store the template uid and a steps hash; show drift to approvers                                                                                                                                              | S5                        | M      | ✅ Done  |
+| 7   | Validate ids as UUIDs; add a migration with `precision: 3` timestamps and a `task_id` index; normalise `templateRef`                                                                                          | C8, C9, C10, C5, C15      | S      | ✅ Done  |
+| 8   | Guard approval on `expires_at`; rotate the running sweep                                                                                                                                                      | C4, C6                    | S      | ✅ Done  |
+| 9   | Fix `IS_NOT_REQUESTER.toQuery` and test it                                                                                                                                                                    | S6                        | S      | ✅ Done  |
+| 10  | Build the submit path (decorator or form), Withdraw, Resubmit and the task link                                                                                                                               | G1, G2                    | L      | ◨ Partly |
+| 11  | Nav item and homepage card                                                                                                                                                                                    | G3                        | M      | ⬜ Open  |
+| 12  | Auditor events; a decision on Q11 and break-glass; refuse secret-type fields                                                                                                                                  | G5, G6, G7, S7            | S      | ⬜ Open  |
+| 13  | Correct the README, the design doc §9 and the progress table; document S1, S2, C21 and the mount path                                                                                                         | D1–D4, G10, P16           | S      | ⬜ Open  |
+| 14  | Signed-off commits, proposal issue, design notes into the issue, `dev/index` instead of `packages/backend`, script mode, unused dependencies                                                                  | P1–P4, P6, P9–P14         | S      | ⬜ Open  |
 
 ---
 

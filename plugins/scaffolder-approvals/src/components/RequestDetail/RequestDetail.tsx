@@ -31,14 +31,19 @@ import {
   alertApiRef,
   identityApiRef,
   useApi,
+  useRouteRef,
 } from '@backstage/core-plugin-api';
-import { Box, Button, Card, Flex, Text } from '@backstage/ui';
-import { useCallback, useState } from 'react';
+import { Box, Button, Card, Flex, Link, Text } from '@backstage/ui';
+import type { JsonObject } from '@backstage/types';
+import { type ReactNode, useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
+import { rootRouteRef } from '../../routes';
 import { StatusPill } from '../StatusPill';
 import { DecisionDialog } from './DecisionDialog';
 import { DriftNotice } from './DriftNotice';
+import { RequesterActions } from './RequesterActions';
 
 /** Why the decide buttons are not available, in the approver's words. */
 const WHY_NOT: Record<DecisionIneligibility, string> = {
@@ -74,6 +79,9 @@ export function RequestDetail(props: RequestDetailProps) {
   const api = useApi(approvalsApiRef);
   const alertApi = useApi(alertApiRef);
   const identityApi = useApi(identityApiRef);
+
+  const navigate = useNavigate();
+  const rootPath = useRouteRef(rootRouteRef);
 
   const [reload, setReload] = useState(0);
   const [deciding, setDeciding] = useState<ApprovalDecisionOutcome>();
@@ -114,6 +122,58 @@ export function RequestDetail(props: RequestDetailProps) {
       }
     },
     [api, alertApi, requestId],
+  );
+
+  const withdraw = useCallback(async () => {
+    setBusy(true);
+    try {
+      await api.cancel(requestId);
+      alertApi.post({
+        message: 'Request withdrawn',
+        severity: 'success',
+        display: 'transient',
+      });
+      setReload(value => value + 1);
+    } catch (error) {
+      alertApi.post({
+        message: `Could not withdraw the request: ${
+          error instanceof Error ? error.message : error
+        }`,
+        severity: 'error',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [api, alertApi, requestId]);
+
+  const resubmit = useCallback(
+    async (templateRef: string, values: JsonObject) => {
+      setBusy(true);
+      try {
+        // A new request, never a retry of this one: a spent approval cannot be
+        // spent twice (Q5), so resubmitting has to start the whole thing over
+        // with the values pre-filled.
+        const created = await api.submitRequest({ templateRef, values });
+        alertApi.post({
+          message: created.collapsed
+            ? 'You already have an identical request open'
+            : 'Request submitted',
+          severity: 'success',
+          display: 'transient',
+        });
+        navigate(`${rootPath()}/requests/${created.id}`);
+      } catch (error) {
+        alertApi.post({
+          message: `Could not resubmit: ${
+            error instanceof Error ? error.message : error
+          }`,
+          severity: 'error',
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, alertApi, navigate, rootPath],
   );
 
   if (state.loading) {
@@ -163,7 +223,22 @@ export function RequestDetail(props: RequestDetailProps) {
               {request.expiresAt && (
                 <Detail label="Expires" value={when(request.expiresAt)} />
               )}
-              {request.taskId && <Detail label="Task" value={request.taskId} />}
+              {request.taskId && (
+                <Detail
+                  label="Task"
+                  value={
+                    // §10.1: the requester cannot find this task under "my
+                    // tasks", because it was created by the service principal.
+                    // This link is how they reach its log at all.
+                    <Link
+                      href={`/create/tasks/${request.taskId}`}
+                      target="_blank"
+                    >
+                      {request.taskId}
+                    </Link>
+                  }
+                />
+              )}
 
               <Text variant="title-x-small">Parameters</Text>
               {request.values === null ? (
@@ -208,6 +283,17 @@ export function RequestDetail(props: RequestDetailProps) {
                 ))
               )}
 
+              <RequesterActions
+                request={request}
+                isRequester={
+                  identity.userEntityRef.toLocaleLowerCase('en-US') ===
+                  request.requesterRef.toLocaleLowerCase('en-US')
+                }
+                busy={busy}
+                onWithdraw={withdraw}
+                onResubmit={resubmit}
+              />
+
               {eligibility.allowed ? (
                 <Flex gap="2">
                   <Button
@@ -246,11 +332,17 @@ export function RequestDetail(props: RequestDetailProps) {
   );
 }
 
-function Detail(props: { label: string; value: string }) {
+function Detail(props: { label: string; value: ReactNode }) {
   return (
     <Flex gap="2">
       <Text weight="bold">{props.label}</Text>
-      <Text>{props.value}</Text>
+      {/* A string is the common case, but the task id is a link. Wrapping a
+          link in `Text` would nest an anchor inside a span for no reason. */}
+      {typeof props.value === 'string' ? (
+        <Text>{props.value}</Text>
+      ) : (
+        props.value
+      )}
     </Flex>
   );
 }

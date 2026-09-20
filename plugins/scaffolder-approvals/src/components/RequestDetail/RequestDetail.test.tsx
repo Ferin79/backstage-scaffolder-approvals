@@ -245,6 +245,101 @@ describe('RequestDetail', () => {
     });
   });
 
+  describe('what the requester can do', () => {
+    const REQUESTER = identityOf('user:default/requester');
+
+    it('offers Withdraw while the request is pending', async () => {
+      // §5: withdrawing is what `cancelled` means, as distinct from
+      // `rejected` — nobody decided, the requester changed their mind.
+      const cancel = jest.fn().mockResolvedValue(REQUEST);
+      await render({ getRequest: async () => REQUEST, cancel }, REQUESTER);
+
+      await userEvent.click(
+        await screen.findByRole('button', {
+          name: 'Withdraw',
+        }),
+      );
+
+      expect(cancel).toHaveBeenCalledWith(REQUEST.id);
+    });
+
+    it('offers Resubmit once the request has failed', async () => {
+      // Q5: a spent approval cannot be spent twice, so this starts a new
+      // request rather than retrying the old one.
+      const submitRequest = jest
+        .fn()
+        .mockResolvedValue({ id: 'req-2', collapsed: false });
+      await render(
+        {
+          getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
+          submitRequest,
+        },
+        REQUESTER,
+      );
+
+      await userEvent.click(
+        await screen.findByRole('button', {
+          name: 'Resubmit',
+        }),
+      );
+
+      expect(submitRequest).toHaveBeenCalledWith({
+        templateRef: REQUEST.templateRef,
+        values: REQUEST.values,
+      });
+    });
+
+    it('cannot resubmit a request whose parameters were redacted', async () => {
+      await render(
+        {
+          getRequest: async () => ({
+            ...REQUEST,
+            status: 'failed' as const,
+            values: null,
+          }),
+        },
+        REQUESTER,
+      );
+
+      expect(
+        await screen.findByText(/can no longer be resubmitted/),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Resubmit' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('offers neither to somebody else', async () => {
+      // An approver looking at another person's request has the decide
+      // buttons and no business with these.
+      await render({ getRequest: async () => REQUEST });
+
+      expect(
+        screen.queryByRole('button', { name: 'Withdraw' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Resubmit' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('links to the task log once there is a task', async () => {
+      // §10.1: the requester cannot find this task under "my tasks", because
+      // it was created by the service principal. This link is the only way
+      // they reach its log.
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          status: 'running' as const,
+          taskId: 'task-42',
+        }),
+      });
+
+      expect(
+        await screen.findByRole('link', { name: 'task-42' }),
+      ).toHaveAttribute('href', '/create/tasks/task-42');
+    });
+  });
+
   describe('template drift', () => {
     it('warns an approver that the steps have changed', async () => {
       // §10.3: the values and the policy are frozen at submit, but the

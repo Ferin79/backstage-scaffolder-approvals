@@ -250,6 +250,37 @@ import { ApprovalsIndexPage } from '@backstage-community/plugin-scaffolder-appro
 
 Add a sidebar link to `/scaffolder-approvals` so approvers can find their inbox.
 
+#### Submitting from the scaffolder's own wizard
+
+Without this step a requester who opens a gated template in the scaffolder and presses **Create** gets a failed task telling them to use the approvals page. Pass `GatedReviewStep` as the wizard's review step and the wizard ends in a request instead:
+
+```tsx
+import { GatedReviewStep } from '@backstage-community/plugin-scaffolder-approvals';
+
+<Route
+  path="/create"
+  element={
+    <ScaffolderPage
+      components={{
+        ReviewStepComponent: props => (
+          <GatedReviewStep {...props}>
+            <DefaultReviewStep {...props} />
+          </GatedReviewStep>
+        ),
+      }}
+    />
+  }
+/>;
+```
+
+It renders the review step you pass as `children` for every template that is not gated, so installing it changes nothing about the other ones. For a gated template it shows who will be asked and how many of them, and its button creates a request rather than a task.
+
+**This is convenience, not enforcement.** Remove it and the gate still holds — a gated template started any other way fails at step one. What it removes is the dead end, not the bypass.
+
+It is a review step rather than a decorator on `scaffolderApiRef` because of what `scaffold()` has to return. A decorator diverting a gated submit would have no task id to hand back, so it would have to invent one or throw, turning a successful request into something the UI reports as a failure.
+
+`ReviewStepProps` does not carry the template ref, so the component reads it from the scaffolder's route parameters. If your app mounts the wizard somewhere else, pass `templateRef` explicitly; without it the component renders your ordinary review step rather than a broken screen.
+
 ### Configuration
 
 Gate policy lives in each template. The global configuration is only this:
@@ -301,7 +332,6 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 ## Not yet
 
 - **A homepage card and an entity card on Templates.** Neither exists yet; the approvals page is the only UI.
-- **Sending a gated template to the approvals page from the scaffolder's own form.** Today a person who runs a gated template from the regular template list meets the gate as a failed task, with a message telling them to use the approvals page. The gate itself is unaffected.
 - **Pausing a template partway through.** The gate has to be the first step. Parking a task mid-run needs a suspend/resume primitive in core ([BEP-0016](https://github.com/backstage/backstage/pull/34966)).
 - **Restricting who can read requests.** Any signed-in user can read every request, matching the scaffolder's own task list. The permission rules needed to narrow it already exist.
 

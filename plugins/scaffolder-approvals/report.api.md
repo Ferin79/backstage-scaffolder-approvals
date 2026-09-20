@@ -15,6 +15,7 @@ import { JSX as JSX_2 } from 'react';
 import { ListApprovalRequestsOptions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { ListApprovalRequestsResponse } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { PathParams } from '@backstage/core-plugin-api';
+import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import { RouteRef } from '@backstage/core-plugin-api';
 import { SubmitApprovalRequestOptions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { SubmitApprovalRequestResponse } from '@backstage-community/plugin-scaffolder-approvals-common';
@@ -68,6 +69,15 @@ export class ApprovalsClient implements ApprovalsApi {
 
 // @public
 export const ApprovalsIndexPage: Router;
+
+// @public
+export function GatedReviewStep(props: GatedReviewStepProps): JSX_2.Element;
+
+// @public (undocumented)
+export interface GatedReviewStepProps extends ReviewStepProps {
+  children: React.ReactNode;
+  templateRef?: string;
+}
 
 // @public
 export const requestRouteRef: SubRouteRef<PathParams<'/requests/:requestId'>>;
