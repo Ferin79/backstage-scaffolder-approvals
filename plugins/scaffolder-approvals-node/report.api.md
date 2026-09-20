@@ -24,6 +24,18 @@ export type ApprovalRequestFilter =
   | {
       key: 'approverRef';
       values: string[];
+    }
+  /**
+   * Everything the inner filter does not match.
+   *
+   * Needed by {@link isNotRequester}, whose whole point is exclusion. Without
+   * it that rule had no way to say what it meant, and said the opposite
+   * instead. Keeping negation in the union rather than adding a `negate` flag
+   * to each variant means a future implementation of these filters has to
+   * handle it: the compiler will not let a `switch` over this type forget.
+   */
+  | {
+      not: ApprovalRequestFilter;
     };
 
 // @public

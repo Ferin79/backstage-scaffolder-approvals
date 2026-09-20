@@ -16,6 +16,7 @@
 
 import {
   type ApprovalRequest,
+  normaliseEntityRef,
   RESOURCE_TYPE_APPROVAL_REQUEST,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
@@ -118,6 +119,61 @@ describe('isNotRequester', () => {
     expect(isNotRequester.apply(REQUEST, { userRef: '!!broken!!' })).toBe(
       false,
     );
+  });
+});
+
+describe('isNotRequester.toQuery', () => {
+  // S6/M38: nothing covered this, which is how a filter that returned the
+  // exact set the rule excludes got shipped.
+
+  it('matches everything except the caller', () => {
+    expect(isNotRequester.toQuery({ userRef: 'User:Alice' })).toEqual({
+      not: { key: 'requesterRef', values: ['user:default/alice'] },
+    });
+  });
+
+  it('never matches the set the rule allows', () => {
+    // The property that actually matters, stated without reference to the
+    // shape: whatever this filter is, it must not be a positive match on the
+    // caller's own ref. That was the bug.
+    const query = isNotRequester.toQuery({ userRef: 'user:default/alice' });
+
+    expect(query).not.toEqual({
+      key: 'requesterRef',
+      values: ['user:default/alice'],
+    });
+  });
+
+  it('agrees with apply for every request it is given', () => {
+    // A filter and its rule disagreeing is the whole failure mode, so check
+    // them against each other rather than against a literal.
+    const params = { userRef: 'user:default/alice' };
+    const query = isNotRequester.toQuery(params);
+    expect('not' in query).toBe(true);
+    const inner = (query as { not: { key: string; values: string[] } }).not;
+
+    for (const requesterRef of [
+      'user:default/alice',
+      'User:Default/Alice',
+      'user:default/bob',
+    ]) {
+      const request = { ...REQUEST, requesterRef };
+      const allowedByRule = isNotRequester.apply(request, params);
+      const excludedByFilter = inner.values.includes(
+        normaliseEntityRef(requesterRef),
+      );
+      expect(allowedByRule).toBe(!excludedByFilter);
+    }
+  });
+
+  it('matches nothing when the caller ref will not parse', () => {
+    // `apply` fails closed on an unparseable ref, so the filter has to as
+    // well. `not` over an empty set would match everything, which is the same
+    // inversion by another route.
+    expect(isNotRequester.toQuery({ userRef: 'not a ref' })).toEqual({
+      key: 'requesterRef',
+      values: [],
+    });
   });
 });
 

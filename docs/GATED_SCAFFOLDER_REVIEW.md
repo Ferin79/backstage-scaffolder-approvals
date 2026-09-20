@@ -273,11 +273,29 @@ before this landed report `unknown` for the same reason.
 Five mutants — ignore edited steps, ignore a replaced uid, report "unchanged" on a catalog failure,
 record nothing at submit, never render the notice — each break between two and six tests.
 
-### <a id="s6"></a>S6 — `IS_NOT_REQUESTER` filters for the opposite set (🔴, latent)
+### <a id="s6"></a>S6 — `IS_NOT_REQUESTER` filters for the opposite set (🔴, latent) — ✅ fixed
 
 `toQuery` returns `{ key: 'requesterRef', values: [caller] }`, which is exactly the requests the rule _excludes_ ([node/src/permissions.ts:L134-L137](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-node/src/permissions.ts#L134-L137)). The comment above it claims a list query "gets nothing back rather than something wrong". [E3](#e3) confirms the inversion.
 
 Nothing uses the filter today, because conditional reads are refused ([router.ts:L231-L235](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/router.ts#L231-L235)). It is a trap for whoever enables them, and no test covers it: `permissions.test.ts` tests `toQuery` for the other two rules only. Return `{ not: { key: 'requesterRef', values } }` and teach the store `not`, or throw.
+
+**Fixed, the first way.** `ApprovalRequestFilter` gained a `{ not: ApprovalRequestFilter }` variant
+and `toQuery` now returns it. Negation lives in the union rather than as a `negate` flag on each
+variant precisely so that a future implementation cannot skip it: a `switch` over the type will not
+compile without handling `not`. That is what turns this from a trap for whoever enables conditional
+reads into something the compiler asks them about.
+
+One case the review did not mention, and it is the same inversion by another route: `apply` fails
+closed on a caller ref that will not parse, so `toQuery` has to as well. `not` over an empty set
+matches _everything_, so that path returns an empty positive filter, which matches nothing.
+
+The misleading comment is gone too. It claimed a list query using this rule "gets nothing back
+rather than something wrong", which was the part that made the bug hard to see — it returned the
+caller's own requests and nothing else, the exact inverse of a four-eyes control.
+
+Four tests now cover it, including one that checks `apply` and `toQuery` against _each other_ rather
+than against a literal, since disagreeing is the whole failure mode.
+[M38](#m38) is killed, along with two new mutants for the unparseable-ref path and the rule itself.
 
 ### <a id="s7"></a>S7 — Secret-type parameters become world-readable (🟡)
 
@@ -702,7 +720,7 @@ The two things Phase 9 found are real and valuable: the unrendered summary, and 
 **What the survivors mean:**
 
 - <a id="m04"></a>**M04** — removing `request_id` from the consume guard breaks no test. `ApprovalStore.test.ts › refuses a grant belonging to another request` presents a _different token_ as well as a different request, so the token guard refuses it on its own. The request guard is the one `formatGrant` exists to feed, yet nothing tests it. Fix the test so it presents request A's real token with request B's id.
-- <a id="m38"></a>**M38** — no test covers `IS_NOT_REQUESTER.toQuery`. That is how [S6](#s6) shipped.
+- <a id="m38"></a>**M38** — no test covers `IS_NOT_REQUESTER.toQuery`. That is how [S6](#s6) shipped. ✅ **Now killed** — see [S6](#s6).
 - <a id="m39"></a>**M39** — the first run reported this mutant as surviving. That was a bug in the audit runner: Jest read the test path as a second `--testPathIgnorePatterns` value, so the relevant test file never ran. Re-run with the arguments fixed, it was killed (4 of 10 `RequestDetail` tests failed).
 
 **Gaps the suite does not cover, with where this review demonstrates them:**
@@ -823,7 +841,7 @@ Each row lands in its own commit. **Status** tracks progress against this review
 | 6   | Store the template uid and a steps hash; show drift to approvers                                                                                                                                              | S5                        | M      | ✅ Done |
 | 7   | Validate ids as UUIDs; add a migration with `precision: 3` timestamps and a `task_id` index; normalise `templateRef`                                                                                          | C8, C9, C10, C5, C15      | S      | ✅ Done |
 | 8   | Guard approval on `expires_at`; rotate the running sweep                                                                                                                                                      | C4, C6                    | S      | ✅ Done |
-| 9   | Fix `IS_NOT_REQUESTER.toQuery` and test it                                                                                                                                                                    | S6                        | S      | ⬜ Open |
+| 9   | Fix `IS_NOT_REQUESTER.toQuery` and test it                                                                                                                                                                    | S6                        | S      | ✅ Done |
 | 10  | Build the submit path (decorator or form), Withdraw, Resubmit and the task link                                                                                                                               | G1, G2                    | L      | ⬜ Open |
 | 11  | Nav item and homepage card                                                                                                                                                                                    | G3                        | M      | ⬜ Open |
 | 12  | Auditor events; a decision on Q11 and break-glass; refuse secret-type fields                                                                                                                                  | G5, G6, G7, S7            | S      | ⬜ Open |
