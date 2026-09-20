@@ -74,6 +74,7 @@ describe('migrations', () => {
         'decided_at',
         'expires_at',
         'id',
+        'last_checked_at',
         'launch_attempt',
         'launch_attempted_at',
         'policy_snapshot',

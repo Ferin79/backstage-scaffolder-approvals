@@ -122,6 +122,7 @@ const INELIGIBILITY_MESSAGES: Record<DecisionIneligibility, string> = {
   'not-an-approver': 'You are not an approver for this request',
   'self-approval': 'Self-approval is not permitted for this request',
   'not-pending': 'This request has already been decided',
+  expired: 'This request timed out before anyone decided',
   'already-voted': 'You have already decided on this request',
 };
 
@@ -327,12 +328,18 @@ export class ApprovalService {
     }
 
     const existing = await this.store.listDecisions(requestId);
-    const eligibility = checkDecisionEligibility(request, caller, existing);
+    const eligibility = checkDecisionEligibility(
+      request,
+      caller,
+      existing,
+      this.now(),
+    );
     if (!eligibility.allowed) {
       const message = INELIGIBILITY_MESSAGES[eligibility.reason];
       // A stale request is a conflict; the other reasons are refusals.
       throw eligibility.reason === 'not-pending' ||
-        eligibility.reason === 'already-voted'
+        eligibility.reason === 'already-voted' ||
+        eligibility.reason === 'expired'
         ? new ConflictError(message)
         : new NotAllowedError(message);
     }
@@ -357,7 +364,9 @@ export class ApprovalService {
         requestId,
         'pending',
         'rejected',
-        { decidedAt },
+        // Guarded on the timeout as well as the status, so a decision and the
+        // timeout sweep landing together produce exactly one winner.
+        { decidedAt, notExpired: true },
       );
       if (rejected) {
         // Re-read, never reuse `request`: it was loaded before the transition
@@ -387,7 +396,7 @@ export class ApprovalService {
       requestId,
       'pending',
       'approved',
-      { decidedAt },
+      { decidedAt, notExpired: true },
     );
 
     if (approved) {

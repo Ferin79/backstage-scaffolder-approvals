@@ -108,9 +108,13 @@ export class CanonicalJsonError extends Error {
 
 // @public
 export function checkDecisionEligibility(
-  request: Pick<ApprovalRequest, 'status' | 'requesterRef' | 'policySnapshot'>,
+  request: Pick<
+    ApprovalRequest,
+    'status' | 'requesterRef' | 'policySnapshot' | 'expiresAt'
+  >,
   caller: ApprovalCaller,
   decisions?: readonly ApprovalDecision[],
+  now?: Date,
 ): DecisionEligibility;
 
 // @public
@@ -159,6 +163,7 @@ export type DecisionIneligibility =
   | 'not-an-approver'
   | 'self-approval'
   | 'not-pending'
+  | 'expired'
   | 'already-voted';
 
 // @public

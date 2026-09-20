@@ -26,6 +26,7 @@ import {
   TestDatabases,
 } from '@backstage/backend-test-utils';
 import type { Entity } from '@backstage/catalog-model';
+import { ResponseError } from '@backstage/errors';
 import type { CatalogService } from '@backstage/plugin-catalog-node';
 import type { ScaffolderService } from '@backstage/plugin-scaffolder-node';
 import type { Knex } from 'knex';
@@ -368,6 +369,103 @@ describe('ApprovalSweeps', () => {
         expect(notifier.onCompleted).toHaveBeenCalledWith(
           expect.objectContaining({ id, status: 'completed' }),
         );
+        expect(notifier.onFailed).not.toHaveBeenCalled();
+      });
+
+      it('rotates, so a slow batch cannot starve what is behind it', async () => {
+        // C6: ordering by `updated_at` sounds like "longest waiting" and is
+        // not. A task that is still running never changes status, so nothing
+        // moves its `updated_at` and it holds its place in every batch. With a
+        // batch of 2, the third request was never looked at again.
+        const capped = new ApprovalSweeps({
+          store,
+          service,
+          scaffolder: { scaffold, getTask } as unknown as ScaffolderService,
+          auth: mockServices.auth(),
+          logger: mockServices.logger.mock(),
+          notifier: notifier as unknown as ApprovalNotifier,
+          retention: { days: 180 },
+          batchSize: 2,
+          now: () => clock,
+        });
+
+        const ids: string[] = [];
+        for (const index of [0, 1, 2]) {
+          const { id } = await service.submit({
+            templateRef: TEMPLATE_REF,
+            values: { ...VALUES, index },
+            credentials: REQUESTER_CALLER.credentials,
+          });
+          await service.decide({
+            requestId: id,
+            decision: 'approve',
+            credentials: ALICE.credentials,
+          });
+          ids.push(id);
+        }
+        expect(
+          (await Promise.all(ids.map(id => store.getRequest(id)))).map(
+            r => r?.status,
+          ),
+        ).toEqual(['running', 'running', 'running']);
+
+        // The first two never settle; the third finished long ago.
+        getTask.mockImplementation(async () => ({
+          id: 'task-1',
+          status: 'processing',
+        }));
+        // Time has to move, or `last_checked_at` lands on the same instant as
+        // `created_at` and the ordering is a tie rather than a rotation.
+        clock = new Date('2026-09-13T10:01:00.000Z');
+        await capped.reconcile();
+
+        getTask.mockImplementation(async () => ({
+          id: 'task-1',
+          status: 'completed',
+        }));
+        // One more tick is all it should take: the first two have been looked
+        // at, so the third is now at the front of the queue.
+        clock = new Date('2026-09-13T10:05:00.000Z');
+        await capped.reconcile();
+
+        expect((await store.getRequest(ids[2]))?.status).toBe('completed');
+      });
+
+      it('fails a request whose task the scaffolder has forgotten', async () => {
+        // Nothing will ever resolve it: no event can arrive for a task that
+        // does not exist, and every later sweep reads the same 404. Leaving it
+        // `running` forever is worse, because the requester is still waiting.
+        const id = await approved();
+        getTask.mockRejectedValue(
+          await ResponseError.fromResponse(
+            new Response(
+              JSON.stringify({
+                error: { name: 'NotFoundError', message: 'No such task' },
+              }),
+              { status: 404, statusText: 'Not Found' },
+            ),
+          ),
+        );
+
+        await sweeps.reconcile();
+
+        expect((await store.getRequest(id))?.status).toBe('failed');
+        expect(notifier.onFailed).toHaveBeenCalledWith(
+          expect.objectContaining({ id }),
+          expect.stringMatching(/no longer has a record of the task/),
+        );
+      });
+
+      it('leaves a request alone when the scaffolder is merely unwell', async () => {
+        // A 5xx or a dropped connection says nothing about whether the task
+        // exists, and failing a request over a restart would be worse than
+        // waiting.
+        const id = await approved();
+        getTask.mockRejectedValue(new Error('ECONNREFUSED'));
+
+        await sweeps.reconcile();
+
+        expect((await store.getRequest(id))?.status).toBe('running');
         expect(notifier.onFailed).not.toHaveBeenCalled();
       });
 

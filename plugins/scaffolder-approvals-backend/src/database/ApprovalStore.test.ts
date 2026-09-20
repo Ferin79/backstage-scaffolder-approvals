@@ -738,6 +738,68 @@ describe('ApprovalStore', () => {
       });
     });
 
+    describe('findRunning', () => {
+      /**
+       * Three running requests, each a minute apart.
+       *
+       * Distinct timestamps on purpose: with all three tied, SQLite happens to
+       * return them in the order of the `(status, last_checked_at)` index,
+       * which makes the wrong ordering look right.
+       */
+      async function threeRunning(): Promise<string[]> {
+        const ids: string[] = [];
+        for (const index of [0, 1, 2]) {
+          clock = new Date(Date.UTC(2026, 8, 12, 10, index));
+          const { id } = await store.createOrCollapse(
+            newRequest({
+              values: { repository: `repo-${index}` },
+              valuesHash: computeValuesHash({ repository: `repo-${index}` }),
+            }),
+          );
+          await store.transition(id, 'pending', 'approved');
+          await store.transition(id, 'approved', 'running', {
+            taskId: `task-${index}`,
+          });
+          ids.push(id);
+        }
+        return ids;
+      }
+
+      it('rotates, so a batch that changes nothing still yields', async () => {
+        // C6: ordering by `updated_at` sounds like "longest waiting" and is
+        // not. A task still running never changes status, so nothing moves its
+        // `updated_at` and it holds its place in every batch — with a batch of
+        // two, the third request is never returned again however long it has
+        // been finished.
+        const ids = await threeRunning();
+
+        const first = await store.findRunning(2);
+        expect(first.map(r => r.id)).toEqual([ids[0], ids[1]]);
+
+        // Looked at, nothing changed. That is the case that used to starve the
+        // queue, so it is exactly the one that has to move them along.
+        clock = new Date('2026-09-12T10:05:00.000Z');
+        await store.markChecked(first.map(r => r.id));
+
+        // The one never looked at is now at the front. Ordering by
+        // `updated_at` would hand back the same two and never reach it.
+        const second = await store.findRunning(2);
+        expect(second[0].id).toBe(ids[2]);
+      });
+
+      it('puts a request never looked at before one already checked', async () => {
+        const ids = await threeRunning();
+        clock = new Date('2026-09-12T10:05:00.000Z');
+        await store.markChecked([ids[0]]);
+
+        expect((await store.findRunning(3)).map(r => r.id)).toEqual([
+          ids[1],
+          ids[2],
+          ids[0],
+        ]);
+      });
+    });
+
     describe('getRequestWithDecisions', () => {
       it('joins the decision history onto the request', async () => {
         const { id } = await store.createOrCollapse(newRequest());

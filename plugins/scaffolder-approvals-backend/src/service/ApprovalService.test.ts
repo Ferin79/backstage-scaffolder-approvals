@@ -582,6 +582,68 @@ describe('ApprovalService', () => {
         expect(await store.listDecisions(id)).toHaveLength(0);
       });
 
+      it('refuses a decision once the timeout has passed', async () => {
+        // C4: the sweep that marks a request `expired` runs every few minutes.
+        // Without this, an approval landing in that window launched the
+        // template after the deadline the approvers were given.
+        entity = gatedTemplate({
+          approvers: ['group:default/devx-team'],
+          timeout: { hours: 2 },
+        });
+        const { id } = await submit();
+
+        clock = new Date('2026-09-12T12:00:01.000Z');
+
+        await expect(
+          service.decide({
+            requestId: id,
+            decision: 'approve',
+            credentials: alice.credentials,
+          }),
+        ).rejects.toThrow(/timed out before anyone decided/);
+
+        // Nothing was recorded and nothing was launched.
+        expect(await store.listDecisions(id)).toEqual([]);
+        expect(scaffold).not.toHaveBeenCalled();
+        expect((await store.getRequest(id))?.status).toBe('pending');
+      });
+
+      it('lets the sweep and a decision race to exactly one winner', async () => {
+        // The guard is on the UPDATE as well as in the eligibility check, so a
+        // decision arriving as the sweep expires the request cannot leave it
+        // both `expired` and `approved`.
+        entity = gatedTemplate({
+          approvers: ['group:default/devx-team'],
+          timeout: { hours: 2 },
+        });
+        const { id } = await submit();
+
+        clock = new Date('2026-09-12T12:00:01.000Z');
+        expect(
+          await store.transition(id, 'pending', 'approved', {
+            notExpired: true,
+          }),
+        ).toBe(false);
+        expect(await store.transition(id, 'pending', 'expired')).toBe(true);
+      });
+
+      it('still allows a decision inside the timeout', async () => {
+        entity = gatedTemplate({
+          approvers: ['group:default/devx-team'],
+          timeout: { hours: 2 },
+        });
+        const { id } = await submit();
+
+        clock = new Date('2026-09-12T11:59:59.000Z');
+        const decided = await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        expect(decided.status).toBe('running');
+      });
+
       it('refuses a decision on a request that already left pending', async () => {
         const { id } = await submit();
         await service.decide({

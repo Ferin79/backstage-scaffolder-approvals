@@ -45,6 +45,7 @@ const WHY_NOT: Record<DecisionIneligibility, string> = {
   'not-an-approver': 'You are not an approver for this request.',
   'self-approval': 'You cannot approve your own request.',
   'not-pending': 'This request has already been decided.',
+  expired: 'This request timed out before anyone decided.',
   'already-voted': 'You have already decided on this request.',
 };
 

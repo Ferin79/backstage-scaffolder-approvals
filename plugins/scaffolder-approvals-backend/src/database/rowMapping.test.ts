@@ -31,6 +31,7 @@ const ROW: ApprovalRequestRow = {
   summary: 'Admin on backstage',
   policy_snapshot: '{"approvers":["group:default/devx"],"quorum":1}',
   task_id: null,
+  last_checked_at: null,
   template_uid: null,
   template_steps_hash: null,
   launch_attempt: 0,

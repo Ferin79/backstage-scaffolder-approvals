@@ -39,6 +39,8 @@ export interface ApprovalCaller {
  * - `not-an-approver` — none of their refs appear in the policy.
  * - `self-approval` — they submitted it and the gate forbids self-approval.
  * - `not-pending` — the request already reached a decision.
+ * - `expired` — its timeout has passed, even though the sweep that will mark
+ *   it `expired` has not run yet.
  * - `already-voted` — they have cast a vote; decisions are append-only.
  *
  * @public
@@ -47,6 +49,7 @@ export type DecisionIneligibility =
   | 'not-an-approver'
   | 'self-approval'
   | 'not-pending'
+  | 'expired'
   | 'already-voted';
 
 /**
@@ -109,12 +112,26 @@ export function isApprover(
  * @public
  */
 export function checkDecisionEligibility(
-  request: Pick<ApprovalRequest, 'status' | 'requesterRef' | 'policySnapshot'>,
+  request: Pick<
+    ApprovalRequest,
+    'status' | 'requesterRef' | 'policySnapshot' | 'expiresAt'
+  >,
   caller: ApprovalCaller,
   decisions: readonly ApprovalDecision[] = [],
+  now: Date = new Date(),
 ): DecisionEligibility {
   if (request.status !== 'pending') {
     return { allowed: false, reason: 'not-pending' };
+  }
+
+  // A request is dead the moment its timeout passes, not when the sweep
+  // notices. The sweep runs every few minutes, and without this a request
+  // could be approved — and the template launched — after the deadline the
+  // approvers were given. `createOrCollapse` already refuses to fold a
+  // duplicate onto such a request, so treating it as alive here was the
+  // inconsistent half.
+  if (request.expiresAt && new Date(request.expiresAt) <= now) {
+    return { allowed: false, reason: 'expired' };
   }
 
   if (!isApprover(request.policySnapshot, caller)) {

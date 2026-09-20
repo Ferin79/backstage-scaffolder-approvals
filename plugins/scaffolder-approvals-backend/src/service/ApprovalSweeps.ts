@@ -21,6 +21,7 @@ import type {
 import type { AuthService, LoggerService } from '@backstage/backend-plugin-api';
 import type { ScaffolderService } from '@backstage/plugin-scaffolder-node';
 import type { ScaffolderTaskStatus } from '@backstage/plugin-scaffolder-common';
+import { ResponseError } from '@backstage/errors';
 import { durationToMilliseconds, type HumanDuration } from '@backstage/types';
 import type { ApprovalStore } from '../database';
 import type { ApprovalNotifier } from './ApprovalNotifier';
@@ -180,11 +181,41 @@ export class ApprovalSweeps {
         );
         await this.applyTaskStatus(request, task.status);
       } catch (error) {
-        this.logger.warn(
-          `Could not read task ${request.taskId} for approval request ${request.id}`,
-          error instanceof Error ? error : undefined,
-        );
+        if (isNotFound(error)) {
+          // The task record is gone, so nothing will ever resolve this
+          // request: no event can arrive for a task that does not exist, and
+          // every later sweep would read the same 404. The scaffolder does not
+          // delete tasks in normal operation, so this is a real end state
+          // rather than a blip — and leaving the request `running` forever is
+          // the worse answer, because the requester is still waiting on it.
+          await this.failRunning(
+            request,
+            'the scaffolder no longer has a record of the task',
+          );
+        } else {
+          this.logger.warn(
+            `Could not read task ${request.taskId} for approval request ${request.id}`,
+            error instanceof Error ? error : undefined,
+          );
+        }
       }
+    }
+
+    // Recorded after the pass, and for every request in it — including the
+    // ones nothing could be done about. That is the whole point: a request
+    // that cannot be resolved must still move to the back of the queue, or it
+    // holds a place in every batch and starves everything behind it.
+    await this.store.markChecked(requests.map(request => request.id));
+  }
+
+  /** A running request whose task has settled badly, or vanished. */
+  private async failRunning(
+    request: ApprovalRequest,
+    reason: string,
+  ): Promise<void> {
+    if (await this.store.transition(request.id, 'running', 'failed')) {
+      this.logger.warn(`Approval request ${request.id} failed: ${reason}`);
+      await this.notifier?.onFailed({ ...request, status: 'failed' }, reason);
     }
   }
 
@@ -291,4 +322,15 @@ export class ApprovalSweeps {
       await this.notifier?.onFailed({ ...request, status: 'failed' }, reason);
     }
   }
+}
+
+/**
+ * Whether an error is the scaffolder saying it has no such task.
+ *
+ * Narrow on purpose. A 5xx or a connection failure says nothing about whether
+ * the task exists, and treating either as "gone" would fail a request over a
+ * restart.
+ */
+function isNotFound(error: unknown): boolean {
+  return error instanceof ResponseError && error.statusCode === 404;
 }

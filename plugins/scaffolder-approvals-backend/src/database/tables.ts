@@ -46,6 +46,8 @@ export interface ApprovalRequestRow {
   template_uid: string | null;
   /** SHA-256 of `spec.steps` at submit; null if never recorded. */
   template_steps_hash: string | null;
+  /** When the sweep last read this request's task status; null means never. */
+  last_checked_at: DbTimestamp | null;
   /** How many times a launch has been claimed, for diagnostics. */
   launch_attempt: number;
   /** When a launch was last claimed; null means never. */

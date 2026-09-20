@@ -74,6 +74,8 @@ export interface TransitionFields {
   taskId?: string | null;
   decidedAt?: Date | null;
   expiresAt?: Date | null;
+  /** Also require the request's timeout not to have passed (C4). */
+  notExpired?: boolean;
 }
 
 /** A vote to record. */
@@ -364,6 +366,12 @@ export class ApprovalStore {
    * row was not in `from` — already moved by another replica, in some other
    * state, or absent. Callers must read false as "someone else owns this now"
    * and must not retry blindly.
+   *
+   * `notExpired` adds `expires_at > now` to the guard. A decision and the
+   * timeout sweep can land on the same row at the same moment, and without it
+   * both would succeed: the sweep would mark the request `expired` and the
+   * decision would mark it `approved`, with whichever wrote last deciding
+   * whether the template runs.
    */
   async transition(
     id: string,
@@ -387,9 +395,20 @@ export class ApprovalStore {
       patch.expires_at = fields.expiresAt;
     }
 
-    const affected = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
-      .where({ id, status: from })
-      .update(patch);
+    let query = this.db<ApprovalRequestRow>(TABLE_REQUESTS).where({
+      id,
+      status: from,
+    });
+
+    if (fields.notExpired) {
+      query = query.where(builder =>
+        builder
+          .whereNull('expires_at')
+          .orWhere('expires_at', '>', patch.updated_at!),
+      );
+    }
+
+    const affected = await query.update(patch);
 
     return affected === 1;
   }
@@ -676,14 +695,48 @@ export class ApprovalStore {
     return rows.map(rowToApprovalRequest);
   }
 
-  /** Requests with a task in flight, for status reconciliation. */
+  /**
+   * Requests with a task in flight, least recently checked first.
+   *
+   * Ordering by `updated_at` sounds like "whatever has been waiting longest"
+   * and is not: a request whose task is still running never changes status, so
+   * nothing moves its `updated_at`, and neither does one whose `getTask` keeps
+   * failing — the case that most needs looking at. The oldest rows therefore
+   * held the batch forever, and with a batch of 50 the 51st was never examined
+   * again however long it had been finished.
+   *
+   * `last_checked_at` makes it a rotation instead: `markChecked` moves a
+   * request to the back of the queue whether or not anything changed. Nulls
+   * sort first, which is what it means to have never been looked at.
+   */
   async findRunning(limit: number): Promise<ApprovalRequest[]> {
     const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
       .where({ status: 'running' satisfies ApprovalRequestStatus })
       .whereNotNull('task_id')
-      .orderBy('updated_at', 'asc')
+      // COALESCE rather than plain `orderBy`, because the engines disagree
+      // about where nulls sort: Postgres puts them last ascending, SQLite and
+      // MySQL put them first. Falling back to `created_at` makes the order the
+      // same everywhere and is the honest answer anyway — a request never
+      // checked has been waiting since it was created.
+      .orderByRaw('coalesce(last_checked_at, created_at) asc')
       .limit(limit);
     return rows.map(rowToApprovalRequest);
+  }
+
+  /**
+   * Note that the sweep has looked at these requests.
+   *
+   * Deliberately separate from `transition`: the point is to record the look
+   * itself, including when it found nothing to change, which is the case that
+   * used to starve the rest of the queue.
+   */
+  async markChecked(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
+      .whereIn('id', ids)
+      .update({ last_checked_at: this.now() });
   }
 
   /** Pending requests whose timeout has passed. */
