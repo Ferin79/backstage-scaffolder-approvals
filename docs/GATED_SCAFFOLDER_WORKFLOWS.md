@@ -504,8 +504,14 @@ member and picks up email — or Slack, if that processor is ever added — for 
 
 ## 9. Declaring a gate
 
-A gate is one extra step at the top of the template. Nothing else changes, and there is no
-annotation to write — the processor derives it.
+A gate is one extra step at the top of the template, and there is no annotation to write — the
+processor derives it.
+
+> **Corrected against the implementation.** This section said "nothing else changes", and two things
+> do. The gate requires `values: ${{ parameters }}`, without which it refuses every run; and an
+> approved run has no user on it, so `${{ user.* }}` renders empty and anything needing the
+> requester's identity has to be a parameter or come from the gate's own output. Both are reflected
+> below.
 
 ```yaml
 apiVersion: scaffolder.backstage.io/v1beta3
@@ -517,9 +523,12 @@ spec:
   type: access-request
   parameters:
     - title: Access details
-      required: [repository, justification]
+      required: [repository, githubUsername, justification]
       properties:
         repository: { type: string, title: Repository }
+        # Asked for, not derived: an approved run launches as a service
+        # principal, so `${{ user.* }}` is empty (§10.1).
+        githubUsername: { type: string, title: GitHub username }
         justification: { type: string, title: Why do you need this? }
 
   steps:
@@ -534,20 +543,30 @@ spec:
         selfApprove: false
         timeout: { hours: 72 }
         summary: 'Admin on ${{ parameters.repository }}'
+        # Required. The gate hashes what it is handed and compares it with what
+        # was approved, so anything narrower refuses every run.
+        values: ${{ parameters }}
 
     - id: grant
       name: Grant admin
       action: github:repo:collaborator:add
       input:
         repoUrl: 'github.com?repo=${{ parameters.repository }}&owner=acme'
-        username: '${{ user.entity.metadata.name }}'
+        username: '${{ parameters.githubUsername }}'
         permission: admin
 ```
 
 Notes:
 
-- **No `if:` conditions on the real steps.** The gate throws on an unapproved run, so nothing
-  downstream executes.
+- **No `if:` conditions on the real steps**, and none on the gate either. The gate throws on an
+  unapproved run — but scaffolder 4.1.0 skips a step whose `if:` is falsy, runs an `each:` over an
+  empty list zero times, and still executes later `always()`/`failure()` steps after a failure, so
+  "nothing downstream executes" holds only for a template that avoids all of those. The plugin
+  refuses the four shapes rather than trusting authors to avoid them; see §3.
+- **`values: ${{ parameters }}` is required.** It is what binds the approval to the run.
+- **`${{ user.* }}` renders empty.** The task is launched by the plugin's service principal, so
+  anything needing the requester belongs in a parameter or comes from the gate's output
+  (`requestedBy`, `approvedBy`, `requestId`). See §10.1.
 - **No `gated` annotation to write.** The catalog processor scans `spec.steps` for an `approval:gate`
   action and stamps `scaffolder-approvals.backstage.io/gated: 'true'` itself. One source of truth
   means the annotation and the gate cannot drift apart.

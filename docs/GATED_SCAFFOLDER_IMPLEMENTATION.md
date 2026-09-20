@@ -9,22 +9,31 @@ decision, the decision is cited inline so nobody silently re-litigates it mid-bu
 
 ## Progress
 
-| Phase                             | Status   |
-| --------------------------------- | -------- |
-| 0 — Proposal and scaffolding      | **Done** |
-| 1 — Common package                | **Done** |
-| 2 — Database and store            | **Done** |
-| 3 — Approval service              | **Done** |
-| 4 — Router and permissions        | **Done** |
-| 5 — Gate action                   | **Done** |
-| 6 — Catalog processor             | **Done** |
-| 7 — Sweeps, events, notifications | **Done** |
-| 8 — Frontend                      | **Done** |
-| 9 — End-to-end verification       | **Done** |
-| 10 — Upstream preparation         | **Done** |
+Every phase below was marked **Done** before review. A review
+([GATED_SCAFFOLDER_REVIEW.md](GATED_SCAFFOLDER_REVIEW.md)) found that several of those ticks did not
+hold: exit criteria that were reworded after the fact, a box ticked on SQLite alone, and a security
+boundary that could be walked around. The status column now records what the review established, and
+what has been done about it since.
+
+| Phase                             | Before review | Now                                                                                                                                                                                                                                                               |
+| --------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 — Proposal and scaffolding      | **Done**      | **Done with gaps** — no proposal issue, no DCO sign-off ([P1](GATED_SCAFFOLDER_REVIEW.md#p1), [P2](GATED_SCAFFOLDER_REVIEW.md#p2))                                                                                                                                |
+| 1 — Common package                | **Done**      | **Done**                                                                                                                                                                                                                                                          |
+| 2 — Database and store            | **Done**      | **Done** — the three-engine box was ticked on SQLite alone; the review verified Postgres and MySQL, and the defects it found are fixed                                                                                                                            |
+| 3 — Approval service              | **Done**      | **Done** — Q9's launch retry was missing entirely ([C1](GATED_SCAFFOLDER_REVIEW.md#c1)) and a launch race could run a template twice ([C2](GATED_SCAFFOLDER_REVIEW.md#c2)); both fixed                                                                            |
+| 4 — Router and permissions        | **Done**      | **Done** — any service principal could spend a grant ([S3](GATED_SCAFFOLDER_REVIEW.md#s3)); fixed, and decisions are now audited                                                                                                                                  |
+| 5 — Gate action                   | **Done**      | **Done** — the bypass exit criterion was reworded and did not hold: four template shapes ran real steps unapproved ([S1](GATED_SCAFFOLDER_REVIEW.md#s1)). Now refused at submit and at ingestion                                                                  |
+| 6 — Catalog processor             | **Done**      | **Done** — it validated almost nothing ([G9](GATED_SCAFFOLDER_REVIEW.md#g9)); now runs every check the backend runs                                                                                                                                               |
+| 7 — Sweeps, events, notifications | **Done**      | **Done** — the retry criterion did not hold, the sweep could starve, and `launched`/`completed` events did not exist; all fixed                                                                                                                                   |
+| 8 — Frontend                      | **Done**      | **Done with gaps** — a requester had no way to submit at all ([G1](GATED_SCAFFOLDER_REVIEW.md#g1)); that, Withdraw, Resubmit, the task link, the nav item and the home card are now built. The signal subscription is not, and nothing has been seen in a browser |
+| 9 — End-to-end verification       | **Done**      | **Done with gaps** — "steps 1–7 scripted" was reworded; the review drove the real scaffolder and found the happy path sound and the bypass not. `verify-gate.sh` still covers one template shape ([T4](GATED_SCAFFOLDER_REVIEW.md#t4))                            |
+| 10 — Upstream preparation         | **Done**      | **Done with gaps** — the README described features that did not exist ([D1](GATED_SCAFFOLDER_REVIEW.md#d1)–[D4](GATED_SCAFFOLDER_REVIEW.md#d4)); corrected. Proposal issue and DCO remain                                                                         |
 
 Branch: `feat/scaffolder-approvals`. Phase 0.1 (proposal issue) and 0.2 (BEP comment) are
 outward-facing GitHub actions and are deliberately **not** done — see Phase 0 below.
+
+**Read the review alongside this document.** Where the two disagree about what was built, the review
+is the one that ran the code.
 
 ## How to use this document
 

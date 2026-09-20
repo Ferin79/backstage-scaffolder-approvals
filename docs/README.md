@@ -123,9 +123,13 @@ spec:
 
   parameters:
     - title: What do you need?
-      required: [repository, justification]
+      required: [repository, githubUsername, justification]
       properties:
         repository:
+          type: string
+        # Asked for rather than derived. An approved run has no user on it, so
+        # `${{ user.entity.metadata.name }}` would render empty here.
+        githubUsername:
           type: string
         justification:
           type: string
@@ -147,30 +151,36 @@ spec:
         # was approved. Without it the gate refuses every run.
         values: ${{ parameters }}
 
-    # Runs only after approval. The task was started by the approvals plugin,
-    # not by a person, so use the gate's outputs to record who actually asked
-    # and who agreed.
+    # Runs only after approval. Check the input schema of whichever action you
+    # use; these are `github:repo:collaborator:add`'s, from the GitHub module.
     - id: grant
       name: Grant admin
       action: github:repo:collaborator:add
       input:
-        repository: ${{ parameters.repository }}
-        requestedBy: ${{ steps.gate.output.requestedBy }}
-        approvedBy: ${{ steps.gate.output.approvedBy }}
+        repoUrl: 'github.com?repo=${{ parameters.repository }}&owner=acme'
+        username: ${{ parameters.githubUsername }}
+        permission: admin
 ```
+
+The gate also publishes `${{ steps.gate.output.requestedBy }}`,
+`${{ steps.gate.output.approvedBy }}` and `${{ steps.gate.output.requestId }}`. Use those wherever a
+later step wants to record who asked and who agreed — the task itself cannot say, because it was
+started by this plugin rather than by a person.
 
 That is all a template author writes. Nothing marks the template as gated by hand — a catalog module derives the `scaffolder-approvals.backstage.io/gated` annotation from the step, so the two cannot drift apart.
 
 What happens next:
 
-1. The requester submits the template from the **approvals page**. Their values are checked against the template's parameter schema straight away, so an approver's time is never spent on a request that could not run.
+1. The requester opens the template in the scaffolder as usual and presses **Request approval** on the last screen. Their values are checked against the template's parameter schema straight away, so an approver's time is never spent on a request that could not run. (That last screen is `GatedReviewStep`; without it the button still says Create, and pressing it produces a failed task telling them to use the approvals page.)
 2. The approvers are notified. Each approves or denies, optionally with a comment. The requester cannot approve their own request, even though they are in the group.
 3. When two have approved, the template starts. A single denial rejects the request outright, whatever the approval count.
 4. The request moves to `running`, then `completed` or `failed`. Nobody deciding within 72 hours moves it to `expired`.
 
+The request page is the canonical view throughout, and links to the task log once there is a task. It does not update on its own yet: the backend broadcasts a signal on every change, but the page does not subscribe to it, so somebody else's decision appears on reload.
+
 ## Things to know before you rely on it
 
-Two consequences of this design will otherwise turn up as support questions.
+These turn up as support questions otherwise. The first two are consequences of the design; the rest are limits worth knowing before a gated template is holding up somebody's access.
 
 ### The task runs as the plugin, not as the person who asked
 
@@ -227,6 +237,16 @@ That is deliberate, and the alternative is worse than it looks. Treating an expl
 
 For a genuine break-glass path, name the break-glass group in the template's `approvers` and control its membership where you control your other emergency access.
 
+### Gated templates must not opt into task recovery
+
+`EXPERIMENTAL_recovery` with `EXPERIMENTAL_strategy: startOver` keeps a task's secrets in the scaffolder's database for the whole run, the approval grant among them, and re-runs the task from the beginning on recovery. A recovered gated task therefore runs its gate a second time and fails, because the grant it is holding was consumed by the first attempt.
+
+There is no recovery strategy that would help. A grant is single-use on purpose: that is what stops a leaked one from running the template twice. A template that fails after a restart needs a fresh request, which is the same answer as any other failed run (Q5).
+
+### Notification links assume the default mount path
+
+Deep links in notifications are built as `<app.baseUrl>/scaffolder-approvals/requests/<id>`. If you mount the page somewhere else, those links break — the page itself works, but every "Approval requested" email points at a 404. Mount it at `/scaffolder-approvals`, or expect to fix the links.
+
 ### The gate can be removed by whoever owns the template
 
 Nothing forces a template to stay gated. Anyone who can change the template's YAML can delete the gate step. That is an accepted risk, not an oversight; mitigate it with CODEOWNERS on gated template files, and alert when the derived `gated` annotation disappears from a template.
@@ -252,7 +272,7 @@ backend.add(
 
 Your catalog also needs **`@backstage/plugin-catalog-backend-module-scaffolder-entity-model`**, if it does not have it already. Without it the catalog does not recognise the `Template` kind and drops those entities **silently** — no error, just no template.
 
-Notifications and signals are optional. With the notifications plugin installed, approvers and requesters are notified; with signals, an open request page updates live. The backend starts and works with neither.
+Notifications and signals are optional. With the notifications plugin installed, approvers and requesters are notified. Signals are published but nothing subscribes to them yet, so an open request page still needs a reload to show somebody else's decision. The backend starts and works with neither.
 
 ### Frontend
 
@@ -350,7 +370,7 @@ If the events backend is installed, every state change is published on the `scaf
 
 `status` is the status the request has **after** the change, so a `decided` event on an approved request says `approved`, not `pending`.
 
-If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`, so an open request page can refresh itself. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
+If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`. Nothing in this plugin subscribes to them yet — the page does not refresh itself — so today they are there for anything else that wants them. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
 
 ## Packages
 
@@ -366,6 +386,7 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 ## Not yet
 
 - **An entity card on Templates.** Additive later; the approvals page and the home-page card are the UI today.
+- **A request page that updates itself.** The backend broadcasts a signal on every change and nothing subscribes to it yet, so somebody else's decision appears on reload.
 - **Pausing a template partway through.** The gate has to be the first step. Parking a task mid-run needs a suspend/resume primitive in core ([BEP-0016](https://github.com/backstage/backstage/pull/34966)).
 - **Restricting who can read requests.** Any signed-in user can read every request, matching the scaffolder's own task list. The permission rules needed to narrow it already exist.
 

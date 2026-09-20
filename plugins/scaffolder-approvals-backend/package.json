@@ -67,7 +67,8 @@
     "@types/luxon": "^3.4.2",
     "@types/supertest": "^2.0.12",
     "@types/uuid": "^9.0.0",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.3",
+    "yaml": "^2.0.0"
   },
   "configSchema": "config.d.ts",
   "files": [
