@@ -594,7 +594,34 @@ What exists is well built. The problem is what does not exist.
 status }` — so what is missing is only the page subscribing to them. Until then the page reloads
   on its own actions and not on somebody else's.
 
-- <a id="g3"></a>**G3** [frontend/src/alpha.ts:L64-L71](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/alpha.ts#L64-L71): 🟡 risk: Q22 asks for "page + nav item + homepage card", and only the page exists. These gaps are recorded only in Phase 10, while Phase 8 is marked Done.
+- <a id="g3"></a>**G3** ✅ fixed: [frontend/src/alpha.ts:L64-L71](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/alpha.ts#L64-L71): 🟡 risk: Q22 asks for "page + nav item + homepage card", and only the page exists. These gaps are recorded only in Phase 10, while Phase 8 is marked Done.
+
+  **Both added.**
+
+  **The nav item is not a `NavItemBlueprint`.** That blueprint does not exist in the
+  `frontend-plugin-api` this workspace targets — sibling workspaces still calling it are on older
+  Backstage versions. In 1.54.5 a page declares its own `title` and `icon`, outputs them as
+  `core.title` and `core.icon`, and the app builds the sidebar entry from that. The icon is an
+  inline SVG rather than one from an icon set, so the package takes no dependency for a single
+  glyph.
+
+  **The card is dual-shipped**: `createCardExtension` for the legacy system,
+  `HomePageWidgetBlueprint` for the new one, both rendering the same component (Q14, Q23). It counts
+  with `role=approver` and `status=pending` — the same query the inbox tab runs, so the number and
+  the list cannot disagree — and it renders a message rather than throwing when the backend is
+  unreachable, since a home card that throws takes the whole page with it.
+
+  **One pin was needed.** `@backstage/plugin-home-react` resolved to 0.1.42, which requires
+  `frontend-plugin-api ^0.18.1`, while Backstage 1.54.5 ships 0.18.0 — so yarn installed a second
+  copy and the alpha plugin's inferred type stopped being nameable. 0.1.41 is what the 1.54.5
+  manifest pins and it wants `^0.18.0`, so a `resolutions` entry holds it there. The alternative was
+  annotating the plugin's type, which erases `getExtension` and would have cost the construction
+  smoke tests (Q23).
+
+  **M73 survived the first run**, because nothing asserted the page declared a nav entry at all.
+  `createExtensionTester` reads `core.title` and `core.icon` off the page extension, which kills it.
+  M74 and M75 cover the card's query and its failure mode.
+
 - <a id="c25"></a>**C25** [frontend/src/components/RequestDetail/RequestDetail.tsx:L43-L48](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L43-L48): 🔵 nit: `WHY_NOT` re-words the backend's `INELIGIBILITY_MESSAGES` ([ApprovalService.ts:L110](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L110)), although L221–L222 promises the two "can never tell different stories". Keep one map in `-common`.
 - <a id="c26"></a>**C26** [frontend/src/components/RequestDetail/RequestDetail.tsx:L183-L187](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L183-L187): 🔵 nit: shows "Denied" whenever any denial exists, including one that lost the race to an approval, on a request that is actually running. Base the text on `request.status`.
 - <a id="c27"></a>**C27** [frontend/src/components/ApprovalsPage/ApprovalsPage.tsx:L52-L60](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/ApprovalsPage/ApprovalsPage.tsx#L52-L60): 🔵 nit: "Waiting on you" includes requests the caller has already voted on, and their own requests under `selfApprove: false`.
@@ -872,7 +899,7 @@ Each row lands in its own commit. **Status** tracks progress against this review
 | 8   | Guard approval on `expires_at`; rotate the running sweep                                                                                                                                                      | C4, C6                    | S      | ✅ Done  |
 | 9   | Fix `IS_NOT_REQUESTER.toQuery` and test it                                                                                                                                                                    | S6                        | S      | ✅ Done  |
 | 10  | Build the submit path (decorator or form), Withdraw, Resubmit and the task link                                                                                                                               | G1, G2                    | L      | ◨ Partly |
-| 11  | Nav item and homepage card                                                                                                                                                                                    | G3                        | M      | ⬜ Open  |
+| 11  | Nav item and homepage card                                                                                                                                                                                    | G3                        | M      | ✅ Done  |
 | 12  | Auditor events; a decision on Q11 and break-glass; refuse secret-type fields                                                                                                                                  | G5, G6, G7, S7            | S      | ⬜ Open  |
 | 13  | Correct the README, the design doc §9 and the progress table; document S1, S2, C21 and the mount path                                                                                                         | D1–D4, G10, P16           | S      | ⬜ Open  |
 | 14  | Signed-off commits, proposal issue, design notes into the issue, `dev/index` instead of `packages/backend`, script mode, unused dependencies                                                                  | P1–P4, P6, P9–P14         | S      | ⬜ Open  |
