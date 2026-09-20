@@ -21,6 +21,7 @@ import {
   discoveryApiRef,
   fetchApiRef,
 } from '@backstage/core-plugin-api';
+import { createCardExtension } from '@backstage/plugin-home-react';
 import { ApprovalsClient, approvalsApiRef } from './api';
 import { requestRouteRef, rootRouteRef } from './routes';
 
@@ -56,5 +57,26 @@ export const ApprovalsIndexPage = scaffolderApprovalsPlugin.provide(
     // Lazy so the plugin costs nothing until somebody opens it.
     component: () => import('./components').then(m => m.Router),
     mountPoint: rootRouteRef,
+  }),
+);
+
+/**
+ * A home-page card showing how many requests are waiting on you (Q22).
+ *
+ * `createCardExtension` rather than a plain component export, because that is
+ * what lets the home plugin place it, size it and remember where somebody put
+ * it. A bare component would have to be wired by hand into every app.
+ *
+ * @public
+ */
+export const PendingApprovalsHomePageCard = scaffolderApprovalsPlugin.provide(
+  createCardExtension({
+    name: 'PendingApprovalsCard',
+    title: 'Approvals',
+    description: 'Approval requests waiting on your decision',
+    components: () =>
+      import('./components').then(m => ({
+        Content: m.PendingApprovalsCard,
+      })),
   }),
 );

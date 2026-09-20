@@ -14,9 +14,4 @@
  * limitations under the License.
  */
 
-export * from './ApprovalsPage';
-export * from './GatedReviewStep';
-export * from './PendingApprovalsCard';
-export * from './RequestDetail';
-export * from './Router';
-export * from './StatusPill';
+export { PendingApprovalsCard } from './PendingApprovalsCard';

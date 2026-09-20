@@ -248,7 +248,19 @@ import { ApprovalsIndexPage } from '@backstage-community/plugin-scaffolder-appro
 <Route path="/scaffolder-approvals" element={<ApprovalsIndexPage />} />;
 ```
 
-Add a sidebar link to `/scaffolder-approvals` so approvers can find their inbox.
+The new frontend system builds the sidebar entry from the page itself, so there is nothing to add. In the legacy system, add a sidebar link to `/scaffolder-approvals` by hand so approvers can find their inbox.
+
+#### The home-page card
+
+How many requests are waiting on you, somewhere people already look. Nothing notifies an approver a second time, so a request that arrives while somebody is away otherwise waits until it expires.
+
+```tsx
+import { PendingApprovalsHomePageCard } from '@backstage-community/plugin-scaffolder-approvals';
+
+<PendingApprovalsHomePageCard />;
+```
+
+On the new frontend system the same card is a home-page widget and needs no wiring — it appears in the widget catalogue as **Approvals**.
 
 #### Submitting from the scaffolder's own wizard
 
@@ -331,7 +343,7 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 
 ## Not yet
 
-- **A homepage card and an entity card on Templates.** Neither exists yet; the approvals page is the only UI.
+- **An entity card on Templates.** Additive later; the approvals page and the home-page card are the UI today.
 - **Pausing a template partway through.** The gate has to be the first step. Parking a task mid-run needs a suspend/resume primitive in core ([BEP-0016](https://github.com/backstage/backstage/pull/34966)).
 - **Restricting who can read requests.** Any signed-in user can read every request, matching the scaffolder's own task list. The permission rules needed to narrow it already exist.
 

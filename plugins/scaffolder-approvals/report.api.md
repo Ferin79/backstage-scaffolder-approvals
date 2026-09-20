@@ -8,6 +8,7 @@ import { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approval
 import type { ApprovalRequestStatus } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { ApprovalRequestWithDecisions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { BackstagePlugin } from '@backstage/core-plugin-api';
+import { CardExtensionProps } from '@backstage/plugin-home-react';
 import { DecideApprovalRequestOptions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { DiscoveryApi } from '@backstage/core-plugin-api';
 import type { FetchApi } from '@backstage/core-plugin-api';
@@ -78,6 +79,14 @@ export interface GatedReviewStepProps extends ReviewStepProps {
   children: React.ReactNode;
   templateRef?: string;
 }
+
+// @public
+export function PendingApprovalsCard(): JSX_2.Element;
+
+// @public
+export const PendingApprovalsHomePageCard: (
+  props: CardExtensionProps<unknown>,
+) => JSX_2.Element;
 
 // @public
 export const requestRouteRef: SubRouteRef<PathParams<'/requests/:requestId'>>;

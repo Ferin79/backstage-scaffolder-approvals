@@ -21,11 +21,20 @@
  * @packageDocumentation
  */
 
-export { scaffolderApprovalsPlugin, ApprovalsIndexPage } from './plugin';
+export {
+  scaffolderApprovalsPlugin,
+  ApprovalsIndexPage,
+  PendingApprovalsHomePageCard,
+} from './plugin';
 export { approvalsApiRef, ApprovalsClient } from './api';
 export type { ApprovalsApi } from './api';
 export { rootRouteRef, requestRouteRef } from './routes';
 // `Router` is exported because `ApprovalsIndexPage`'s inferred type refers to
 // it, and because an app that wants to mount the page itself can.
-export { GatedReviewStep, Router, StatusPill } from './components';
+export {
+  GatedReviewStep,
+  PendingApprovalsCard,
+  Router,
+  StatusPill,
+} from './components';
 export type { GatedReviewStepProps, StatusPillProps } from './components';

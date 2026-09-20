@@ -57,6 +57,7 @@
     "@backstage/errors": "backstage:^",
     "@backstage/frontend-plugin-api": "backstage:^",
     "@backstage/plugin-catalog-react": "backstage:^",
+    "@backstage/plugin-home-react": "backstage:^",
     "@backstage/plugin-permission-react": "backstage:^",
     "@backstage/plugin-scaffolder-common": "backstage:^",
     "@backstage/plugin-scaffolder-react": "backstage:^",

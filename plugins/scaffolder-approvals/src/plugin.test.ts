@@ -14,8 +14,14 @@
  * limitations under the License.
  */
 
+import { coreExtensionData } from '@backstage/frontend-plugin-api';
+import { createExtensionTester } from '@backstage/frontend-test-utils';
 import alphaPlugin from './alpha';
-import { ApprovalsIndexPage, scaffolderApprovalsPlugin } from './plugin';
+import {
+  ApprovalsIndexPage,
+  PendingApprovalsHomePageCard,
+  scaffolderApprovalsPlugin,
+} from './plugin';
 import { requestRouteRef, rootRouteRef } from './routes';
 
 /**
@@ -42,6 +48,10 @@ describe('dual-shipped plugin definitions', () => {
     it('exposes the page extension', () => {
       expect(ApprovalsIndexPage).toBeDefined();
     });
+
+    it('exposes the home-page card (Q22)', () => {
+      expect(PendingApprovalsHomePageCard).toBeDefined();
+    });
   });
 
   describe('the new frontend system', () => {
@@ -62,6 +72,27 @@ describe('dual-shipped plugin definitions', () => {
       ).toBeDefined();
       expect(
         alphaPlugin.getExtension('page:scaffolder-approvals'),
+      ).toBeDefined();
+    });
+
+    it('gives the page a nav title and icon (Q22)', () => {
+      // There is no `NavItemBlueprint` in this Backstage version: a page
+      // carries its own title and icon and the app builds the sidebar entry
+      // from them. Without these the page is reachable only by URL, which for
+      // an inbox means the people who need it never find it.
+      const tester = createExtensionTester(
+        alphaPlugin.getExtension('page:scaffolder-approvals'),
+      );
+
+      expect(tester.get(coreExtensionData.title)).toBe('Approvals');
+      expect(tester.get(coreExtensionData.icon)).toBeDefined();
+    });
+
+    it('carries the home-page widget, so both wirings offer the card', () => {
+      expect(
+        alphaPlugin.getExtension(
+          'home-page-widget:scaffolder-approvals/pendingApprovals',
+        ),
       ).toBeDefined();
     });
   });
