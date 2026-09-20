@@ -29,8 +29,8 @@
  * these rows are written once, with the request, and never change. Group
  * membership is deliberately *not* expanded here — a row holds the `group:` ref
  * as written, and the caller's own ownership refs are matched against it at
- * query time, which is what keeps "adding someone to an approver group takes
- * effect immediately" true.
+ * query time. That is what lets a group's membership change without rewriting
+ * every request it approves.
  *
  * @param {import('knex').Knex} knex
  */

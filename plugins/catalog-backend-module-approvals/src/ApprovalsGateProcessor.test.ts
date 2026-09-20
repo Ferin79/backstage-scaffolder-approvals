@@ -345,6 +345,32 @@ describe('ApprovalsGateProcessor', () => {
       );
     });
 
+    it('warns about a secret-typed parameter (S7)', async () => {
+      // The backend refuses these at submit, so saying so here is the
+      // difference between an author finding out now and a requester finding
+      // out when they try to use the template.
+      const entity = {
+        apiVersion: 'scaffolder.backstage.io/v1beta3',
+        kind: 'Template',
+        metadata: { name: 'request-github-admin' },
+        spec: {
+          type: 'service',
+          parameters: [
+            {
+              properties: { token: { type: 'string', 'ui:field': 'Secret' } },
+            },
+          ],
+          steps: [GATE, PUBLISH],
+        },
+      } as Entity;
+
+      await processor.preProcessEntity(entity);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/secret-typed parameter/),
+      );
+    });
+
     it('says each thing once, not on every refresh cycle', async () => {
       // The catalog re-processes every entity on every cycle; a repeated
       // warning becomes a permanent stream that nobody reads.

@@ -31,3 +31,4 @@ export * from './permissions';
 export * from './canonicalJson';
 export * from './gatePolicy';
 export * from './renderSummary';
+export * from './secretFields';

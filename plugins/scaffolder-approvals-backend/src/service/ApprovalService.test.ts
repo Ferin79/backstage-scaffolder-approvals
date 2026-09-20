@@ -344,6 +344,28 @@ describe('ApprovalService', () => {
         ).resolves.toBeUndefined();
       });
 
+      it('refuses a template with a secret-typed parameter (S7)', async () => {
+        // The scaffolder puts a `ui:field: Secret` value into the task's
+        // secrets, not its values, so it cannot survive the wait: the request
+        // would be approved and the template would run without it. And if such
+        // a value did arrive it would be stored in `values`, which every
+        // signed-in user can read (Q12).
+        entity = gatedTemplate(
+          { approvers: ['group:default/devx-team'] },
+          {
+            required: ['token'],
+            properties: {
+              token: { type: 'string', 'ui:field': 'Secret' },
+            },
+          },
+        );
+
+        await expect(submit({ token: 'hunter2' })).rejects.toThrow(
+          /secret-typed/,
+        );
+        expect((await store.listRequests()).totalItems).toBe(0);
+      });
+
       it('refuses an ungated template', async () => {
         entity = {
           apiVersion: 'scaffolder.backstage.io/v1beta3',

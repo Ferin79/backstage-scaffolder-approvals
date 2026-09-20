@@ -173,6 +173,9 @@ export const DEFAULT_QUORUM = 1;
 export const DEFAULT_SELF_APPROVE = false;
 
 // @public
+export function findSecretParameters(parameters: unknown): string[];
+
+// @public
 export const GATE_ACTION_ID = 'approval:gate';
 
 // @public

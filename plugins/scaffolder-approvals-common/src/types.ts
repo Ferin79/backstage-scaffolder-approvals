@@ -105,8 +105,11 @@ export function isApprovalRequestStatus(
  * is already in flight.
  *
  * Group membership is the deliberate exception: `approvers` holds entity refs,
- * and group refs are expanded at decision time so that adding someone to an
- * approver group takes effect immediately.
+ * and a caller's own group refs are matched against them at decision time.
+ * Those refs come from the caller's token, so somebody added to an approver
+ * group can decide from their next sign-in — not from the moment they are
+ * added. Q11 asked for a catalog lookup to close that window; see the README
+ * for why it was not built.
  *
  * @public
  */

@@ -24,6 +24,7 @@ import {
   computeQuorumProgress,
   type DecideApprovalRequestOptions,
   type DecisionIneligibility,
+  findSecretParameters,
   type GatePolicy,
   readGatePolicy,
   normaliseEntityRef,
@@ -217,6 +218,22 @@ export class ApprovalService {
     if (!gate.step) {
       throw new InputError(
         `${templateRef} is not gated; run it through the scaffolder directly`,
+      );
+    }
+
+    // S7. Refused rather than warned about: a secret-typed parameter never
+    // reaches the request at all — the scaffolder puts it in the task's
+    // `secrets` — so a template declaring one would be approved and then run
+    // without it. And if such a value did arrive here it would be stored in
+    // `values`, which every signed-in user can read (Q12).
+    const secretParameters = findSecretParameters(template.spec?.parameters);
+    if (secretParameters.length) {
+      throw new InputError(
+        `${templateRef} cannot be gated: its parameter(s) ${secretParameters.join(
+          ', ',
+        )} are secret-typed, and a secret cannot survive the wait for an ` +
+          'approval. Pass the secret to the step that needs it from the ' +
+          "deployment's own integration credentials instead.",
       );
     }
 

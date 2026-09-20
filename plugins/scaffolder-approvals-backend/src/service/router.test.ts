@@ -87,6 +87,13 @@ describe('createRouter', () => {
     let store: ApprovalStore;
     let app: express.Express;
     let template: Entity;
+    let auditorEnabled: boolean;
+    let auditEvents: Array<{
+      eventId: string;
+      severityLevel?: string;
+      meta?: Record<string, unknown>;
+      outcome?: 'success' | 'fail';
+    }>;
     let scaffold: jest.Mock;
     let authorizeResult: AuthorizeResult;
 
@@ -136,6 +143,26 @@ describe('createRouter', () => {
         ),
       };
 
+      auditEvents = [];
+      auditorEnabled = true;
+      const auditor = {
+        createEvent: jest.fn(async (event: any) => {
+          if (!auditorEnabled) {
+            throw new Error('no auditor is wired in this deployment');
+          }
+          const recorded = { ...event, request: undefined };
+          auditEvents.push(recorded);
+          return {
+            success: async () => {
+              recorded.outcome = 'success';
+            },
+            fail: async () => {
+              recorded.outcome = 'fail';
+            },
+          };
+        }),
+      };
+
       app = express()
         .use(
           await createRouter({
@@ -150,6 +177,7 @@ describe('createRouter', () => {
             userInfo,
             permissions: permissions as any,
             logger: mockServices.logger.mock(),
+            auditor: auditor as any,
           }),
         )
         .use(mockErrorHandler());
@@ -163,11 +191,16 @@ describe('createRouter', () => {
     const as = (userEntityRef: string) =>
       mockCredentials.user.header(userEntityRef);
 
-    async function submit(): Promise<string> {
+    async function submit(
+      overrides: Record<string, unknown> = {},
+    ): Promise<string> {
       const response = await request(app)
         .post('/requests')
         .set('authorization', as(REQUESTER))
-        .send({ templateRef: TEMPLATE_REF, values: VALUES });
+        .send({
+          templateRef: TEMPLATE_REF,
+          values: { ...VALUES, ...overrides },
+        });
       expect(response.status).toBe(201);
       return response.body.id;
     }
@@ -534,6 +567,118 @@ describe('createRouter', () => {
         targetPluginId: 'test',
       });
     }
+
+    describe('auditing (P4)', () => {
+      it('records a decision at high severity', async () => {
+        const id = await submit();
+
+        await request(app)
+          .post(`/requests/${id}/decision`)
+          .set('authorization', as('user:default/alice'))
+          .send({ decision: 'approve' });
+
+        expect(auditEvents).toContainEqual(
+          expect.objectContaining({
+            eventId: 'request-decide',
+            severityLevel: 'high',
+            meta: { requestId: id, decision: 'approve' },
+            outcome: 'success',
+          }),
+        );
+      });
+
+      it('records a refused decision as loudly as an accepted one', async () => {
+        // "Who tried to approve what and was told no" is the half of an audit
+        // trail that gets left out when only the happy path is recorded.
+        const id = await submit();
+
+        await request(app)
+          .post(`/requests/${id}/decision`)
+          .set('authorization', as('user:default/outsider'))
+          .send({ decision: 'approve' });
+
+        expect(auditEvents).toContainEqual(
+          expect.objectContaining({
+            eventId: 'request-decide',
+            outcome: 'fail',
+          }),
+        );
+      });
+
+      it('records submitting, cancelling and redeeming a grant', async () => {
+        const id = await submit();
+        await request(app)
+          .post(`/requests/${id}/cancel`)
+          .set('authorization', as(REQUESTER))
+          .send({});
+
+        const other = await submit({ justification: 'a second one entirely' });
+        await request(app)
+          .post(`/requests/${other}/decision`)
+          .set('authorization', as('user:default/alice'))
+          .send({ decision: 'approve' });
+        const grant = scaffold.mock.calls[0][0].secrets.APPROVAL_GRANT;
+        await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send({
+            grant,
+            valuesHash: computeValuesHash({
+              ...VALUES,
+              justification: 'a second one entirely',
+            }),
+            taskId: 'task-1',
+            templateRef: TEMPLATE_REF,
+          });
+
+        const ids = auditEvents.map(event => event.eventId);
+        expect(ids).toContain('request-submit');
+        expect(ids).toContain('request-cancel');
+        expect(ids).toContain('grant-consume');
+      });
+
+      it('records a refused grant, which is what a replay looks like', async () => {
+        const id = await submit();
+        await request(app)
+          .post(`/requests/${id}/decision`)
+          .set('authorization', as('user:default/alice'))
+          .send({ decision: 'approve' });
+        const grant = scaffold.mock.calls[0][0].secrets.APPROVAL_GRANT;
+
+        const body = {
+          grant,
+          valuesHash: computeValuesHash(VALUES),
+          taskId: 'task-1',
+          templateRef: TEMPLATE_REF,
+        };
+        await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send(body);
+        await request(app)
+          .post('/grants/consume')
+          .set('authorization', asScaffolder())
+          .send(body);
+
+        const consumes = auditEvents.filter(e => e.eventId === 'grant-consume');
+        expect(consumes.map(e => e.outcome)).toEqual(['success', 'fail']);
+      });
+
+      it('does not let a failing auditor block a decision', async () => {
+        // The approvals tables are the record of who approved what; this is a
+        // second copy for whatever the deployment already collects. Losing the
+        // copy is not a reason to refuse the decision.
+        auditorEnabled = false;
+
+        const response = await request(app)
+          .post('/requests')
+          .set('authorization', as(REQUESTER))
+          .send({ templateRef: TEMPLATE_REF, values: VALUES });
+
+        expect(response.status).toBe(201);
+        expect(auditEvents).toEqual([]);
+      });
+    });
 
     describe('malformed ids', () => {
       it.each([

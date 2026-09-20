@@ -22,9 +22,12 @@ import type { ApprovalDecision, ApprovalRequest, GatePolicy } from './types';
  *
  * `ownershipEntityRefs` is what `UserInfoService` returns: the user's own ref
  * plus every group they belong to, transitively. Group membership is therefore
- * resolved by the catalog rather than expanded here, which is what makes adding
- * someone to an approver group take effect immediately — the deliberate
- * exception to the policy being a frozen snapshot.
+ * resolved by the catalog rather than expanded here — the deliberate exception
+ * to the policy being a frozen snapshot.
+ *
+ * It is resolved at *sign-in*, not at decision time: these refs arrive in the
+ * caller's token. Somebody added to an approver group can decide from their
+ * next sign-in rather than from the moment they are added.
  *
  * @public
  */

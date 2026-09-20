@@ -26,6 +26,7 @@ import {
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { parseGrant } from '@backstage-community/plugin-scaffolder-approvals-node';
 import type {
+  AuditorService,
   BackstageCredentials,
   BackstageServicePrincipal,
   HttpAuthService,
@@ -54,6 +55,15 @@ export interface RouterOptions {
   userInfo: UserInfoService;
   permissions: PermissionsService;
   logger: LoggerService;
+  /**
+   * Where decisions are recorded for audit (P4).
+   *
+   * Optional, because the plugin has to work in a deployment that does not
+   * wire one — but note that the approvals tables are themselves the audit
+   * trail of who approved what. This is what puts the same events into
+   * whatever the deployment already collects.
+   */
+  auditor?: AuditorService;
   /**
    * Service principal subjects allowed to redeem a grant (S3).
    *
@@ -182,8 +192,73 @@ export async function createRouter(
     userInfo,
     permissions,
     logger,
+    auditor,
     grantConsumers = DEFAULT_GRANT_CONSUMERS,
   } = options;
+
+  /**
+   * Record one auditable operation, whatever its outcome.
+   *
+   * Wrapping rather than logging after the fact, so a refusal is audited as
+   * loudly as a success: "who tried to approve what and was told no" is the
+   * half of an audit trail that gets left out when events are emitted only on
+   * the happy path.
+   */
+  async function audited<T>(
+    options2: {
+      eventId: string;
+      severityLevel: 'low' | 'medium' | 'high' | 'critical';
+      request: express.Request;
+      meta?: Record<string, JsonObject[string]>;
+    },
+    run: () => Promise<T>,
+  ): Promise<T> {
+    // An auditor that cannot record must not stop an approval. The approvals
+    // tables are the system of record for who approved what; this is a second
+    // copy for whatever the deployment already collects, and losing the copy
+    // is not a reason to refuse the decision. Same reasoning as the notifier.
+    const event = auditor
+      ? await auditor
+          .createEvent({
+            eventId: options2.eventId,
+            severityLevel: options2.severityLevel,
+            request: options2.request,
+            meta: options2.meta,
+          })
+          .catch(error => {
+            logger.warn(
+              `Could not open an audit event for ${options2.eventId}`,
+              error instanceof Error ? error : undefined,
+            );
+            return undefined;
+          })
+      : undefined;
+
+    const record = (finish: () => Promise<void>) =>
+      finish().catch(error => {
+        logger.warn(
+          `Could not close the audit event for ${options2.eventId}`,
+          error instanceof Error ? error : undefined,
+        );
+      });
+
+    try {
+      const result = await run();
+      if (event) {
+        await record(() => event.success());
+      }
+      return result;
+    } catch (error) {
+      if (event) {
+        await record(() =>
+          event.fail({
+            error: error instanceof Error ? error : new Error(String(error)),
+          }),
+        );
+      }
+      throw error;
+    }
+  }
 
   const router = Router();
   router.use(express.json());
@@ -231,14 +306,24 @@ export async function createRouter(
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
 
     const body = parseOrBadRequest(submitBody, req.body, 'request body');
-    const result = await service.submit({
-      templateRef: body.templateRef,
-      // The body arrived through `express.json()`, so it is JSON by
-      // construction; `JsonObject` only differs in admitting `undefined`,
-      // which `JSON.parse` cannot produce.
-      values: body.values as JsonObject,
-      credentials,
-    });
+    const result = await audited(
+      {
+        eventId: 'request-submit',
+        // Asking is not the privileged act; agreeing is.
+        severityLevel: 'medium',
+        request: req,
+        meta: { templateRef: body.templateRef },
+      },
+      () =>
+        service.submit({
+          templateRef: body.templateRef,
+          // The body arrived through `express.json()`, so it is JSON by
+          // construction; `JsonObject` only differs in admitting `undefined`,
+          // which `JSON.parse` cannot produce.
+          values: body.values as JsonObject,
+          credentials,
+        }),
+    );
 
     // 200 rather than 201 when collapsed, since nothing was created.
     res.status(result.collapsed ? 200 : 201).json(result);
@@ -276,8 +361,8 @@ export async function createRouter(
     if (query.role) {
       // `ownershipEntityRefs` is the user's own ref plus every group they
       // belong to, transitively, resolved by the catalog rather than expanded
-      // here. That is what makes adding someone to an approver group take
-      // effect immediately.
+      // here. It comes from the caller's token, so a group added to somebody's
+      // membership shows up in their inbox from their next sign-in.
       const caller = await userInfo.getUserInfo(credentials);
       if (query.role === 'requester') {
         requesterRef = caller.userEntityRef;
@@ -330,12 +415,22 @@ export async function createRouter(
 
     const body = parseOrBadRequest(decisionBody, req.body, 'request body');
     res.json(
-      await service.decide({
-        requestId: id,
-        decision: body.decision,
-        comment: body.comment,
-        credentials,
-      }),
+      await audited(
+        {
+          eventId: 'request-decide',
+          // The act the whole plugin exists to record.
+          severityLevel: 'high',
+          request: req,
+          meta: { requestId: id, decision: body.decision },
+        },
+        () =>
+          service.decide({
+            requestId: id,
+            decision: body.decision,
+            comment: body.comment,
+            credentials,
+          }),
+      ),
     );
   });
 
@@ -346,7 +441,17 @@ export async function createRouter(
     await authorizeOn(approvalRequestCancelPermission, id, req);
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
 
-    res.json(await service.cancel({ requestId: id, credentials }));
+    res.json(
+      await audited(
+        {
+          eventId: 'request-cancel',
+          severityLevel: 'medium',
+          request: req,
+          meta: { requestId: id },
+        },
+        () => service.cancel({ requestId: id, credentials }),
+      ),
+    );
   });
 
   /**
@@ -411,12 +516,41 @@ export async function createRouter(
       throw new InputError('The approval grant is malformed');
     }
 
-    const consumed = await service.consumeGrant({
-      requestId: grantRequestId,
-      token,
-      valuesHash: body.valuesHash,
-      taskId: body.taskId,
-      templateRef: body.templateRef,
+    // Audited around the whole redemption, so a refused grant is recorded as
+    // well as a spent one: a grant presented and rejected is the signal that
+    // something is being replayed.
+    const consumed = await audited(
+      {
+        eventId: 'grant-consume',
+        severityLevel: 'high',
+        request: req,
+        meta: {
+          requestId: grantRequestId,
+          taskId: body.taskId,
+          templateRef: body.templateRef,
+        },
+      },
+      async () => {
+        const result = await service.consumeGrant({
+          requestId: grantRequestId,
+          token,
+          valuesHash: body.valuesHash,
+          taskId: body.taskId,
+          templateRef: body.templateRef,
+        });
+        if (!result) {
+          throw new NotAllowedError('The approval grant is not valid');
+        }
+        return result;
+      },
+    ).catch((error: unknown) => {
+      if (
+        error instanceof NotAllowedError &&
+        error.message === 'The approval grant is not valid'
+      ) {
+        return undefined;
+      }
+      throw error;
     });
 
     if (!consumed) {

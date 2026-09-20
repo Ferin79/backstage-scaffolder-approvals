@@ -67,6 +67,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
   register(env) {
     env.registerInit({
       deps: {
+        auditor: coreServices.auditor,
         auth: coreServices.auth,
         config: coreServices.rootConfig,
         database: coreServices.database,
@@ -89,6 +90,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
         signals: signalsServiceRef,
       },
       async init({
+        auditor,
         auth,
         config,
         database,
@@ -162,6 +164,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
             userInfo,
             permissions,
             logger,
+            auditor,
             grantConsumers: config.getOptionalStringArray(
               'scaffolderApprovals.grantConsumers',
             ),

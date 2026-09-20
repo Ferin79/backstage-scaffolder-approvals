@@ -205,6 +205,28 @@ The hash covers the steps only. A template repo takes commits for all sorts of r
 
 Drift is **shown, not enforced**. Failing every in-flight request whenever its template took an unrelated commit would make the feature unusable, so an approver is told and decides. A drifted launch is also logged by the backend, so the run can be tied to the template it actually ran.
 
+### A secret cannot survive the wait
+
+A gated template must not declare a `ui:field: Secret` parameter, and the approvals backend refuses one at submit rather than warning about it.
+
+The reason is not only disclosure. The scaffolder puts a secret-typed value into the task's **secrets**, never its values — so there is nothing to carry it across a three-day approval. The request would be approved and the template would run without it. The disclosure risk is the sharper one, though: a value that did arrive as an ordinary parameter would be stored in the request and every signed-in user can read every request, so a password typed into a gated template would be published to the whole organisation until retention redacted it months later.
+
+Pass whatever the step needs from the deployment's own integration credentials instead. The catalog module warns about this at ingestion, so an author finds out before a requester does.
+
+### Approver group changes apply from the next sign-in
+
+`approvers` holds entity refs and a caller's own group refs are matched against them, so a group's membership can change without rewriting any request. Those refs come from the caller's token, which is minted at sign-in — so somebody added to an approver group can decide **from their next sign-in**, not from the moment they are added.
+
+The design (Q11) asked for a catalog lookup to close that window. It is not built. What it would buy is a few hours in an unusual case; what it costs is a catalog read on the decision path and a cache whose staleness is its own source of surprise. Every other Backstage plugin reads group membership the same way, and an approver who cannot see a request can sign out and back in. If that window matters to you, the request page is the place to add the lookup.
+
+### Break-glass cannot be granted by a permission policy
+
+A `scaffolderApprovals.request.decide` policy can only **narrow** who may decide. The service always applies the gate's own terms as well, so a policy cannot make somebody an approver for a request whose template did not name them.
+
+That is deliberate, and the alternative is worse than it looks. Treating an explicit ALLOW as authority to bypass the approver check would mean that in a deployment with `permission.enabled` unset — the default — every signed-in user could approve every request, because `ServerPermissionClient` answers ALLOW for everything when permissions are disabled. A four-eyes control that evaporates on a default config setting is not a control.
+
+For a genuine break-glass path, name the break-glass group in the template's `approvers` and control its membership where you control your other emergency access.
+
 ### The gate can be removed by whoever owns the template
 
 Nothing forces a template to stay gated. Anyone who can change the template's YAML can delete the gate step. That is an accepted risk, not an oversight; mitigate it with CODEOWNERS on gated template files, and alert when the derived `gated` annotation disappears from a template.

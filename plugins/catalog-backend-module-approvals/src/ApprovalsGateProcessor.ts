@@ -15,6 +15,7 @@
  */
 
 import {
+  findSecretParameters,
   GATE_ACTION_ID,
   GATED_ANNOTATION,
   GatePolicyError,
@@ -270,6 +271,24 @@ export class ApprovalsGateProcessor implements CatalogProcessor {
           throw error;
         }
       }
+    }
+
+    // S7: the backend refuses these at submit, so saying so at ingestion is
+    // the difference between an author finding out now and a requester
+    // finding out when they try to use the template.
+    const secretParameters = findSecretParameters(
+      (entity as TemplateEntityV1beta3).spec?.parameters,
+    );
+    if (secretParameters.length) {
+      notices.push({
+        level: 'warn',
+        message:
+          `${ref} is gated but declares secret-typed parameter(s) ` +
+          `${secretParameters.join(', ')}. The scaffolder puts those in the ` +
+          'task secrets rather than its values, so they cannot survive the ' +
+          'wait for an approval; the approvals backend refuses to accept a ' +
+          'request for this template.',
+      });
     }
 
     const otherSteps = steps.filter(step => step?.action !== GATE_ACTION_ID);
