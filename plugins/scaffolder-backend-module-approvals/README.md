@@ -97,6 +97,6 @@ The task is launched by this plugin's service principal, so `task.createdBy` nam
 
 ## Documentation
 
-- [Design and decision record](../../../../GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../../../GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Workspace README](../../README.md)
+- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
+- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
+- [Plugin guide](../../docs/README.md)

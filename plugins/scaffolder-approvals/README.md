@@ -57,6 +57,6 @@ The dev harness serves the plugin against a mock API with a part-way-approved re
 
 ## Documentation
 
-- [Design and decision record](../../../../GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../../../GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Workspace README](../../README.md)
+- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
+- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
+- [Plugin guide](../../docs/README.md)

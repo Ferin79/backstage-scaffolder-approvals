@@ -20,7 +20,10 @@
     "lint": "backstage-cli repo lint --since origin/main",
     "lint:all": "backstage-cli repo lint",
     "prettier:check": "prettier --check .",
-    "new": "backstage-cli new"
+    "new": "backstage-cli new",
+    "prettier:fix": "prettier --write .",
+    "build:api-reports": "yarn build:api-reports:only --tsc",
+    "build:api-reports:only": "backstage-repo-tools api-reports -o ae-wrong-input-file-type,ae-undocumented --validate-release-tags"
   },
   "backstage": {
     "cli": {
@@ -52,6 +55,7 @@
     "@backstage/cli": "^0.36.6",
     "@backstage/cli-defaults": "^0.1.6",
     "@backstage/e2e-test-utils": "^0.1.2",
+    "@backstage/repo-tools": "^0.19.1",
     "@jest/environment-jsdom-abstract": "~30.2.0",
     "@playwright/test": "^1.32.3",
     "@types/jest": "^30.0.0",

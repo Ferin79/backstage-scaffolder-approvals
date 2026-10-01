@@ -29,7 +29,11 @@ backend:
   # The production database configuration is stored in app-config.production.yaml
   database:
     client: better-sqlite3
-    connection: ':memory:'
+    # A directory rather than `:memory:`, so data survives a restart. An
+    # approval request outliving the backend is the point of storing it, and
+    # trying approvals locally means restarting the backend as another user.
+    connection:
+      directory: ./.local-db
   # see https://backstage.io/docs/ai/mcp-actions#actions-configuration for more details
   actions:
     pluginSources:
@@ -112,6 +116,17 @@ catalog:
       rules:
         - allow: [User, Group]
 
+    # Scaffolder approvals: the people and group the example gate names, and a
+    # gated template that needs two of them to agree before it runs
+    - type: file
+      target: ../../examples/scaffolder-approvals/org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ../../examples/scaffolder-approvals/request-github-admin.yaml
+      rules:
+        - allow: [Template]
+
     ## Uncomment these lines to add more example data
     # - type: url
     #   target: https://github.com/backstage/backstage/blob/master/packages/catalog-model/examples/all.yaml
@@ -121,6 +136,16 @@ catalog:
     #   target: https://github.com/backstage/backstage/blob/master/packages/catalog-model/examples/acme-corp.yaml
     #   rules:
     #     - allow: [User, Group]
+
+# The entire config surface of the scaffolder-approvals plugin, shown with its
+# defaults. Gate policy (who approves, how many, self-approval, timeout) lives
+# in each template's `approval:gate` step, never here.
+scaffolderApprovals:
+  # How long an approval stays redeemable once granted
+  grantTtl: { hours: 1 }
+  retention:
+    # How long submitted values are kept before being redacted
+    redactAfter: { days: 180 }
 
 kubernetes:
   # see https://backstage.io/docs/features/kubernetes/configuration for kubernetes configuration options

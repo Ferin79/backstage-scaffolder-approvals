@@ -32,8 +32,9 @@ import { validateValues } from './validateValues';
  * checks a real submission goes through.
  */
 function readmeTemplate(): Entity {
+  // The plugin guide, which holds the worked example.
   const readme = readFileSync(
-    resolve(__dirname, '../../../../README.md'),
+    resolve(__dirname, '../../../../docs/README.md'),
     'utf8',
   );
   const start = readme.indexOf('## A worked example');

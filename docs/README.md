@@ -318,7 +318,7 @@ import { GatedReviewStep } from '@backstage-community/plugin-scaffolder-approval
       components={{
         ReviewStepComponent: props => (
           <GatedReviewStep {...props}>
-            <DefaultReviewStep {...props} />
+            <YourReviewStep {...props} />
           </GatedReviewStep>
         ),
       }}
@@ -326,6 +326,10 @@ import { GatedReviewStep } from '@backstage-community/plugin-scaffolder-approval
   }
 />;
 ```
+
+Setting `ReviewStepComponent` replaces the scaffolder's built-in review step entirely, and the scaffolder does not export that built-in one. So `YourReviewStep` has to be a complete review step: the review table plus Back and Create buttons. [`packages/app/src/components/scaffolder/ReviewStep.tsx`](../packages/app/src/components/scaffolder/ReviewStep.tsx) has one that mirrors the scaffolder's own, built from `ReviewState` in `@backstage/plugin-scaffolder-react/alpha`.
+
+This works on the **legacy frontend system only.** In the new frontend system (Backstage 1.55) the scaffolder's templates page passes the wizard field extensions, layouts and form props, but no review-step component, so there is nowhere to install this. That is why this repository's app uses the legacy system.
 
 It renders the review step you pass as `children` for every template that is not gated, so installing it changes nothing about the other ones. For a gated template it shows who will be asked and how many of them, and its button creates a request rather than a task.
 
@@ -374,14 +378,14 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 
 ## Packages
 
-| Package                                                                              | What it is                                                               |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| [scaffolder-approvals](./plugins/scaffolder-approvals)                               | The approvals page: an inbox, your requests, and a request detail view   |
-| [scaffolder-approvals-backend](./plugins/scaffolder-approvals-backend)               | Requests, decisions and grants; launching; sweeps; the API               |
-| [scaffolder-backend-module-approvals](./plugins/scaffolder-backend-module-approvals) | The `approval:gate` action                                               |
-| [catalog-backend-module-approvals](./plugins/catalog-backend-module-approvals)       | Derives the `gated` annotation, and warns about gates that will not work |
-| [scaffolder-approvals-common](./plugins/scaffolder-approvals-common)                 | Shared types, permissions and helpers                                    |
-| [scaffolder-approvals-node](./plugins/scaffolder-approvals-node)                     | Node-side helpers shared by the backend and its modules                  |
+| Package                                                                               | What it is                                                               |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [scaffolder-approvals](../plugins/scaffolder-approvals)                               | The approvals page: an inbox, your requests, and a request detail view   |
+| [scaffolder-approvals-backend](../plugins/scaffolder-approvals-backend)               | Requests, decisions and grants; launching; sweeps; the API               |
+| [scaffolder-backend-module-approvals](../plugins/scaffolder-backend-module-approvals) | The `approval:gate` action                                               |
+| [catalog-backend-module-approvals](../plugins/catalog-backend-module-approvals)       | Derives the `gated` annotation, and warns about gates that will not work |
+| [scaffolder-approvals-common](../plugins/scaffolder-approvals-common)                 | Shared types, permissions and helpers                                    |
+| [scaffolder-approvals-node](../plugins/scaffolder-approvals-node)                     | Node-side helpers shared by the backend and its modules                  |
 
 ## Not yet
 
@@ -392,26 +396,14 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 
 ## Local development
 
-This workspace includes a backend that wires everything together, with an example gated template in `examples/`:
+See the [repository README](../README.md) for running the app, trying an approval end to end as several different people, and running `scripts/verify-gate.sh`.
 
-```sh
-yarn install
-cd packages/backend && yarn start
-```
-
-Then, from the workspace root, in another terminal:
-
-```sh
-./scripts/verify-gate.sh
-```
-
-It checks that the example template is marked gated, that invalid values are rejected before anything is stored, and that calling the scaffolder directly fails at the gate with every later step skipped.
-
-There is no frontend app in this workspace. To work on the approvals page, run `yarn start` inside `plugins/scaffolder-approvals`, which serves it against a mock API.
-
-The example backend uses guest sign-in, and a guest belongs to no groups, so it cannot act as an approver. Exercising approvals end to end needs a real sign-in provider; the automated tests cover that path against a real backend instead.
+To work on the approvals page on its own, run `yarn start` inside `plugins/scaffolder-approvals`, which serves it against a mock API.
 
 ## Documentation
 
-- [Design and decision record](../../GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../GATED_SCAFFOLDER_IMPLEMENTATION.md)
+- [Design and decision record](./GATED_SCAFFOLDER_WORKFLOWS.md)
+- [Implementation guide](./GATED_SCAFFOLDER_IMPLEMENTATION.md)
+- [Review](./GATED_SCAFFOLDER_REVIEW.md)
+
+These three were written while the plugins lived in a `backstage/community-plugins` workspace, so paths in them such as `workspaces/scaffolder-approvals/plugins/...` refer to that layout. In this repository the same files are under `plugins/...`.

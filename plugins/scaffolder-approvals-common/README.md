@@ -27,6 +27,6 @@ Most apps never import it directly. It is worth knowing about if you are writing
 
 ## Documentation
 
-- [Design and decision record](../../../../GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../../../GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Workspace README](../../README.md)
+- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
+- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
+- [Plugin guide](../../docs/README.md)

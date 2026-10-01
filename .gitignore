@@ -43,6 +43,9 @@ site
 # Local configuration files
 *.local.yaml
 
+# Local SQLite databases (see backend.database in app-config.yaml)
+.local-db/
+
 # Sensitive credentials
 *-credentials.yaml
 

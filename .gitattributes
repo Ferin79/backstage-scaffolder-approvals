@@ -1,0 +1,3 @@
+# Keep LF everywhere, including Windows checkouts with core.autocrlf=true:
+# prettier (and the lint-staged hook) rejects CRLF.
+* text=auto eol=lf

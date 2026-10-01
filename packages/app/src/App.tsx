@@ -1,4 +1,4 @@
-import { Navigate, Route } from 'react-router-dom';
+import { Route } from 'react-router-dom';
 import { apiDocsPlugin, ApiExplorerPage } from '@backstage/plugin-api-docs';
 import {
   CatalogEntityPage,
@@ -24,6 +24,9 @@ import { apis } from './apis';
 import { entityPage } from './components/catalog/EntityPage';
 import { searchPage } from './components/search/SearchPage';
 import { Root } from './components/Root';
+import { HomePage } from './components/home/HomePage';
+import { ReviewStep } from './components/scaffolder/ReviewStep';
+import { ApprovalsIndexPage } from '@backstage-community/plugin-scaffolder-approvals';
 
 import {
   AlertDisplay,
@@ -64,7 +67,7 @@ const app = createApp({
 
 const routes = (
   <FlatRoutes>
-    <Route path="/" element={<Navigate to="catalog" />} />
+    <Route path="/" element={<HomePage />} />
     <Route path="/catalog" element={<CatalogIndexPage />} />
     <Route
       path="/catalog/:namespace/:kind/:name"
@@ -81,7 +84,16 @@ const routes = (
         <ReportIssue />
       </TechDocsAddons>
     </Route>
-    <Route path="/create" element={<ScaffolderPage />} />
+    <Route
+      path="/create"
+      element={
+        // A gated template's last step submits an approval request instead of
+        // starting a task. Every other template is unaffected.
+        <ScaffolderPage components={{ ReviewStepComponent: ReviewStep }} />
+      }
+    />
+    {/* Notification links assume this mount path. */}
+    <Route path="/scaffolder-approvals" element={<ApprovalsIndexPage />} />
     <Route path="/api-docs" element={<ApiExplorerPage />} />
     <Route
       path="/catalog-import"

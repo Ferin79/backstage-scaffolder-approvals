@@ -21,6 +21,6 @@ Core Backstage may eventually gain a suspend/resume primitive for scaffolder tas
 
 ## Documentation
 
-- [Design and decision record](../../../../GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../../../GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Workspace README](../../README.md)
+- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
+- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
+- [Plugin guide](../../docs/README.md)

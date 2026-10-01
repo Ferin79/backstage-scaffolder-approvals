@@ -13,8 +13,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/backstage/community-plugins",
-    "directory": "workspaces/scaffolder-approvals/plugins/scaffolder-approvals-common"
+    "url": "https://github.com/Ferin79/backstage-scaffolder-approvals",
+    "directory": "plugins/scaffolder-approvals-common"
   },
   "backstage": {
     "role": "common-library",
@@ -36,12 +36,12 @@
     "postpack": "backstage-cli package postpack"
   },
   "dependencies": {
-    "@backstage/catalog-model": "backstage:^",
-    "@backstage/plugin-permission-common": "backstage:^",
-    "@backstage/types": "backstage:^"
+    "@backstage/catalog-model": "^1.10.1",
+    "@backstage/plugin-permission-common": "^0.9.11",
+    "@backstage/types": "^1.2.2"
   },
   "devDependencies": {
-    "@backstage/cli": "backstage:^"
+    "@backstage/cli": "^0.36.6"
   },
   "files": [
     "dist"

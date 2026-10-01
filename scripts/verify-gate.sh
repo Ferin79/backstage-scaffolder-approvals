@@ -22,7 +22,7 @@
 # no unit test can stand in for.
 #
 # Usage:
-#   (cd packages/backend && yarn start)   # in another terminal
+#   yarn start                    # in another terminal, from the repo root
 #   ./scripts/verify-gate.sh
 
 set -euo pipefail
@@ -50,7 +50,9 @@ JSON='content-type: application/json'
 
 echo
 echo "1. The gated annotation is derived, not authored"
-ANNOTATION=$(curl -s -H "$AUTH" "$BASE/api/catalog/entities?filter=kind=template" |
+# Looked up by name: the catalog holds ungated templates too, so "the first
+# template" is not necessarily the one under test.
+ANNOTATION=$(curl -s -H "$AUTH" "$BASE/api/catalog/entities?filter=kind=template,metadata.name=${TEMPLATE##*/}" |
   node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
     const t=JSON.parse(s)[0]||{};
     console.log(((t.metadata||{}).annotations||{})['scaffolder-approvals.backstage.io/gated']||'');
