@@ -33,7 +33,7 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
-import { Box, Button, Card, Flex, Link, Text } from '@backstage/ui';
+import { Button, Card, Flex, Link, Text } from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
 import { type ReactNode, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -272,14 +272,18 @@ export function RequestDetail(props: RequestDetailProps) {
                 <Text>Nobody has decided yet.</Text>
               ) : (
                 request.decisions.map(decision => (
-                  <Box key={decision.id}>
+                  // A column: `Text` is inline, so in a plain box the comment
+                  // ran straight on from the timestamp.
+                  <Flex key={decision.id} direction="column" gap="1">
                     <Text>
                       <strong>{decision.approverRef}</strong>{' '}
                       {decision.decision === 'approve' ? 'approved' : 'denied'}{' '}
                       on {when(decision.createdAt)}
                     </Text>
-                    {decision.comment && <Text>{decision.comment}</Text>}
-                  </Box>
+                    {decision.comment && (
+                      <Text color="secondary">{decision.comment}</Text>
+                    )}
+                  </Flex>
                 ))
               )}
 

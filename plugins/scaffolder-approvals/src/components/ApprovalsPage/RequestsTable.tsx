@@ -87,6 +87,10 @@ export function RequestsTable(props: RequestsTableProps) {
       {
         id: 'templateRef',
         label: 'Template',
+        // The column that names a row. react-aria requires one and throws in
+        // the browser without it ("A table must have at least one Column with
+        // the isRowHeader prop set to true"); jsdom never reached that check.
+        isRowHeader: true,
         cell: (item: Row) => (
           <CellText
             title={shortRef(item.templateRef)}

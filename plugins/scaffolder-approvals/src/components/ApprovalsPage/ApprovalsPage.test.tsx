@@ -86,6 +86,11 @@ describe('ApprovalsPage', () => {
     expect(screen.getByText('request-github-admin')).toBeInTheDocument();
     expect(screen.getByText('requester')).toBeInTheDocument();
     expect(screen.getByText('Awaiting approval')).toBeInTheDocument();
+    // The template column names each row. Without a row header the table
+    // throws in a browser, though not under jsdom, so assert the role instead.
+    expect(
+      screen.getByRole('rowheader', { name: /request-github-admin/ }),
+    ).toBeInTheDocument();
   });
 
   it('asks the backend only for pending requests in the inbox', async () => {
