@@ -1,0 +1,198 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import {
+  type ApprovalRequest,
+  isApprover,
+  normaliseEntityRef,
+  RESOURCE_TYPE_APPROVAL_REQUEST,
+  SCAFFOLDER_APPROVALS_PLUGIN_ID,
+} from '@backstage-community/plugin-scaffolder-approvals-common';
+import {
+  createPermissionResourceRef,
+  createPermissionRule,
+} from '@backstage/plugin-permission-node';
+import { z } from 'zod';
+
+/**
+ * A filter over approval requests, as a conditional decision expresses it.
+ *
+ * Deliberately narrow: these are the three questions a policy can usefully ask
+ * about a request, and each maps onto an indexed column or the approvers table.
+ * A filter that could not be answered by the database would have to be applied
+ * in memory, which cannot page or report a correct total.
+ *
+ * @public
+ */
+export type ApprovalRequestFilter =
+  | { key: 'requesterRef'; values: string[] }
+  | { key: 'templateRef'; values: string[] }
+  | { key: 'approverRef'; values: string[] }
+  /**
+   * Everything the inner filter does not match.
+   *
+   * Needed by {@link isNotRequester}, whose whole point is exclusion. Without
+   * it that rule had no way to say what it meant, and said the opposite
+   * instead. Keeping negation in the union rather than adding a `negate` flag
+   * to each variant means a future implementation of these filters has to
+   * handle it: the compiler will not let a `switch` over this type forget.
+   */
+  | { not: ApprovalRequestFilter };
+
+/**
+ * The resource the approvals permissions act on.
+ *
+ * @public
+ */
+export const approvalRequestResourceRef = createPermissionResourceRef<
+  ApprovalRequest,
+  ApprovalRequestFilter
+>().with({
+  pluginId: SCAFFOLDER_APPROVALS_PLUGIN_ID,
+  resourceType: RESOURCE_TYPE_APPROVAL_REQUEST,
+});
+
+/** Refs are normalised before comparison, so casing cannot decide a rule. */
+function normaliseAll(refs: readonly string[]): string[] {
+  return refs.flatMap(ref => {
+    try {
+      return [normaliseEntityRef(ref)];
+    } catch {
+      // A ref that will not parse cannot match anything, so dropping it is
+      // equivalent to it failing to match.
+      return [];
+    }
+  });
+}
+
+/**
+ * The caller is named by the request's own gate policy.
+ *
+ * Matches through groups: pass the caller's ownership refs and the rule matches
+ * whichever of them the policy lists. This is the same check the service
+ * applies, exposed as a rule so an RBAC policy can build conditions out of it.
+ *
+ * @public
+ */
+export const isDesignatedApprover = createPermissionRule({
+  resourceRef: approvalRequestResourceRef,
+  name: 'IS_DESIGNATED_APPROVER',
+  description: "Allow actions by the request's designated approvers",
+  paramsSchema: z.object({
+    userRefs: z
+      .array(z.string())
+      .describe("The caller's own entity ref and group refs"),
+  }),
+  apply: (request: ApprovalRequest, { userRefs }) =>
+    isApprover(request.policySnapshot, {
+      // `isApprover` needs one ref to treat as the caller; every ref given here
+      // is equally the caller, so the first stands in and the rest come through
+      // as ownership.
+      userEntityRef: userRefs[0] ?? '',
+      ownershipEntityRefs: userRefs,
+    }),
+  toQuery: ({ userRefs }) => ({
+    key: 'approverRef',
+    values: normaliseAll(userRefs),
+  }),
+});
+
+/**
+ * The caller did not submit the request.
+ *
+ * The four-eyes control, as a rule. Note that a gate may set
+ * `selfApprove: true`, in which case a policy should not apply this — the
+ * service honours the gate's own setting, and this rule exists for deployments
+ * that want to forbid self-approval regardless of what a template asks for.
+ *
+ * @public
+ */
+export const isNotRequester = createPermissionRule({
+  resourceRef: approvalRequestResourceRef,
+  name: 'IS_NOT_REQUESTER',
+  description: 'Deny actions by the requester themselves',
+  paramsSchema: z.object({
+    userRef: z.string().describe("The caller's own entity ref"),
+  }),
+  apply: (request: ApprovalRequest, { userRef }) => {
+    const [caller] = normaliseAll([userRef]);
+    const [requester] = normaliseAll([request.requesterRef]);
+    // An unparseable ref on either side must not accidentally satisfy "is not
+    // the requester", so fail closed.
+    if (!caller || !requester) {
+      return false;
+    }
+    return caller !== requester;
+  },
+  /**
+   * Everything that is *not* the caller's own.
+   *
+   * This previously returned `{ key: 'requesterRef', values: [caller] }`,
+   * which is precisely the set the rule excludes — so a policy using it to
+   * filter a list would have shown a requester their own requests and nothing
+   * else, the exact inverse of a four-eyes control. The comment above it
+   * claimed such a query "gets nothing back rather than something wrong",
+   * which was the part that made it hard to spot.
+   */
+  toQuery: ({ userRef }) => {
+    const [caller] = normaliseAll([userRef]);
+    if (!caller) {
+      // `apply` fails closed on a ref that will not parse, and so must this.
+      // `not` over an empty set would match *everything*, which is the same
+      // inversion by another route; an empty positive set matches nothing.
+      return { key: 'requesterRef', values: [] };
+    }
+    return { not: { key: 'requesterRef', values: [caller] } };
+  },
+});
+
+/**
+ * The request is for one of the named templates.
+ *
+ * Lets a policy scope a rule to particular templates — "anyone in
+ * platform-admins may decide on the production access templates".
+ *
+ * @public
+ */
+export const hasTemplateRef = createPermissionRule({
+  resourceRef: approvalRequestResourceRef,
+  name: 'HAS_TEMPLATE_REF',
+  description: 'Allow actions on requests for the named templates',
+  paramsSchema: z.object({
+    templateRefs: z
+      .array(z.string())
+      .describe('Entity refs of the templates this applies to'),
+  }),
+  apply: (request: ApprovalRequest, { templateRefs }) =>
+    normaliseAll(templateRefs).includes(
+      normaliseAll([request.templateRef])[0] ?? '',
+    ),
+  toQuery: ({ templateRefs }) => ({
+    key: 'templateRef',
+    values: normaliseAll(templateRefs),
+  }),
+});
+
+/**
+ * Every rule this plugin registers.
+ *
+ * @public
+ */
+export const scaffolderApprovalsPermissionRules = [
+  isDesignatedApprover,
+  isNotRequester,
+  hasTemplateRef,
+] as const;
