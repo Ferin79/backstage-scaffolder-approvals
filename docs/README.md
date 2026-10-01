@@ -405,5 +405,6 @@ To work on the approvals page on its own, run `yarn start` inside `plugins/scaff
 - [Design and decision record](./GATED_SCAFFOLDER_WORKFLOWS.md)
 - [Implementation guide](./GATED_SCAFFOLDER_IMPLEMENTATION.md)
 - [Review](./GATED_SCAFFOLDER_REVIEW.md)
+- [Browser review](./GATED_SCAFFOLDER_BROWSER_REVIEW.md): every feature exercised in the running app, with screenshots
 
 These three were written while the plugins lived in a `backstage/community-plugins` workspace, so paths in them such as `workspaces/scaffolder-approvals/plugins/...` refer to that layout. In this repository the same files are under `plugins/...`.
