@@ -69,8 +69,13 @@ function render(options: {
   entity?: unknown;
   api?: Partial<ApprovalsApi>;
   alertApi?: { post: jest.Mock; alert$: jest.Mock };
+  catalogApi?: { getEntityByRef: jest.Mock };
+  // The scaffolder's own wizard routes. Mounting a made-up shape here once hid
+  // that the component never recognised a gated template in a real app.
+  path?: string;
+  entry?: string;
 }) {
-  const catalogApi = {
+  const catalogApi = options.catalogApi ?? {
     getEntityByRef: jest.fn(async () => options.entity),
   };
 
@@ -87,7 +92,7 @@ function render(options: {
     >
       <Routes>
         <Route
-          path="/create/templates/:namespace/:kind/:templateName"
+          path={options.path ?? '/create/templates/:namespace/:templateName'}
           element={
             <GatedReviewStep {...REVIEW_PROPS}>
               <div>default review step</div>
@@ -98,7 +103,9 @@ function render(options: {
     </TestApiProvider>,
     {
       mountedRoutes: { '/approvals': rootRouteRef },
-      routeEntries: ['/create/templates/default/template/request-github-admin'],
+      routeEntries: [
+        options.entry ?? '/create/templates/default/request-github-admin',
+      ],
     },
   );
 }
@@ -123,6 +130,31 @@ describe('GatedReviewStep', () => {
     });
     // Never the scaffolder's own create: the gate would throw on step one.
     expect(REVIEW_PROPS.handleCreate).not.toHaveBeenCalled();
+  });
+
+  it("reads the template from the scaffolder's wizard routes", async () => {
+    // `/templates/:namespace/:templateName` is the route the scaffolder mounts
+    // the wizard on; the older `/templates/:templateName` means the default
+    // namespace. Neither carries a kind.
+    for (const [path, entry] of [
+      [
+        '/create/templates/:namespace/:templateName',
+        '/create/templates/default/request-github-admin',
+      ],
+      [
+        '/create/templates/:templateName',
+        '/create/templates/request-github-admin',
+      ],
+    ]) {
+      const catalogApi = {
+        getEntityByRef: jest.fn(async () => template(true)),
+      };
+      const { unmount } = await render({ catalogApi, path, entry });
+
+      expect(await screen.findByTestId('request-approval')).toBeInTheDocument();
+      expect(catalogApi.getEntityByRef).toHaveBeenCalledWith(TEMPLATE_REF);
+      unmount();
+    }
   });
 
   it('shows who will be asked, and how many of them', async () => {

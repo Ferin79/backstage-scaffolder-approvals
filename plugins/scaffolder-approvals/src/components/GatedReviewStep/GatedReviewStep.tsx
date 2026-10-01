@@ -18,6 +18,10 @@ import {
   GATED_ANNOTATION,
   readGatePolicy,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
+import {
+  DEFAULT_NAMESPACE,
+  stringifyEntityRef,
+} from '@backstage/catalog-model';
 import { Progress } from '@backstage/core-components';
 import { alertApiRef, useApi, useRouteRef } from '@backstage/core-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
@@ -37,8 +41,10 @@ export interface GatedReviewStepProps extends ReviewStepProps {
    * What to render when the template is not gated, which is most of them.
    *
    * Required rather than defaulted, because this component deliberately does
-   * not reimplement the scaffolder's own review step. An adopter passes the
-   * one they were already using — usually the scaffolder's default.
+   * not reimplement the scaffolder's own review step. Setting a
+   * `ReviewStepComponent` replaces the scaffolder's built-in review step, which
+   * it does not export, so this has to be a complete one: the review table
+   * plus Back and Create.
    */
   children: React.ReactNode;
 
@@ -84,18 +90,26 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
   const rootPath = useRouteRef(rootRouteRef);
   const [busy, setBusy] = useState(false);
 
-  // The scaffolder routes a template by namespace/kind/name, which is what the
-  // wizard has in its URL. There is nothing in `ReviewStepProps` that names the
-  // template, so without an explicit prop this is the only place to learn it.
+  // The scaffolder routes the wizard as `/templates/:namespace/:templateName`,
+  // which is what the wizard has in its URL. There is nothing in
+  // `ReviewStepProps` that names the template, so without an explicit prop this
+  // is the only place to learn it. There is no kind in that route: what the
+  // scaffolder runs is always a Template.
   //
   // If the shape ever changes, `templateRef` is undefined and this renders the
   // ordinary review step — the behaviour an app had before installing this,
   // rather than a broken screen.
-  const { namespace, kind, templateName } = useParams();
+  const { namespace, templateName } = useParams();
   const templateRef =
     props.templateRef ??
-    (namespace && kind && templateName
-      ? `${kind}:${namespace}/${templateName}`
+    (templateName
+      ? stringifyEntityRef({
+          kind: 'Template',
+          // The scaffolder's older `/templates/:templateName` route has no
+          // namespace, and means the default one.
+          namespace: namespace ?? DEFAULT_NAMESPACE,
+          name: templateName,
+        })
       : undefined);
 
   const state = useAsync(async () => {
