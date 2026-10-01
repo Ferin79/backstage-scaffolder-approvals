@@ -19,6 +19,11 @@
  * `icon`, `size` and `children`. Status colour exists in BUI solely as CSS
  * variables, so the pill reads them directly — which also means it follows the
  * viewer's theme without a single hard-coded colour.
+ *
+ * Each status pairs a background with its `-on-bg` foreground. The pill sits
+ * on the request page's coloured header as well as on plain surfaces, and a
+ * transparent pill took whatever was behind it: "Completed" in green on the
+ * header's purple was close to unreadable.
  */
 
 .pill {
@@ -43,24 +48,29 @@
 }
 
 .pending {
-  color: var(--bui-fg-warning);
+  color: var(--bui-fg-warning-on-bg);
+  background: var(--bui-bg-warning);
 }
 
 .approved,
 .running {
-  color: var(--bui-fg-info);
+  color: var(--bui-fg-info-on-bg);
+  background: var(--bui-bg-info);
 }
 
 .completed {
-  color: var(--bui-fg-success);
+  color: var(--bui-fg-success-on-bg);
+  background: var(--bui-bg-success);
 }
 
 .rejected,
 .failed {
-  color: var(--bui-fg-danger);
+  color: var(--bui-fg-danger-on-bg);
+  background: var(--bui-bg-danger);
 }
 
 .cancelled,
 .expired {
   color: var(--bui-fg-secondary);
+  background: var(--bui-bg-neutral-1);
 }
