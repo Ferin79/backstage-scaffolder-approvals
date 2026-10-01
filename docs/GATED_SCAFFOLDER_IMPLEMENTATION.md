@@ -1004,7 +1004,9 @@ export const isNotRequester = createPermissionRule({
   toQuery: () => ({}),
 });
 
-export const hasTemplateRef = createPermissionRule({/* ...scoping rule... */});
+export const hasTemplateRef = createPermissionRule({
+  /* ...scoping rule... */
+});
 ```
 
 ### 4.2 Registration

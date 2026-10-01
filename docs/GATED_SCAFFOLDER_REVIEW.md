@@ -35,6 +35,7 @@ Every finding below comes with evidence: a test that fails, a run against a real
 ### What holds up, with evidence
 
 - **The approved path works end to end through the real scaffolder** ([E2](#e2)):
+
   - with `quorum: 2`, the requester's own approval is refused with 403 and a second vote with 409;
   - the task starts only after the second approval and consumes its grant;
   - it publishes the real `requestedBy` and `approvedBy`;
@@ -510,6 +511,7 @@ The action does its own job well. It fails closed without a grant or `values`, w
 Deriving _and stripping_ the annotation is a sound extension of Q18. So is warning rather than raising entity errors.
 
 - <a id="g9"></a>**G9** ✅ fixed: [catalog-module/src/ApprovalsGateProcessor.ts:L115-L155](workspaces/scaffolder-approvals/plugins/catalog-backend-module-approvals/src/ApprovalsGateProcessor.ts#L115-L155): 🔴 bug: this is the only ingestion-time check, and [E4](#e4) confirms 8 things it misses:
+
   - `if:` on the gate;
   - `each:` on the gate;
   - a later `always()` step;
@@ -566,6 +568,7 @@ The `scaffolder.task` topic is confirmed in `DatabaseTaskStore`. `cancelTask` pu
 What exists is well built. The problem is what does not exist.
 
 - <a id="g1"></a>**G1** ✅ fixed: [frontend/src/api/ApprovalsClient.ts:L96-L100](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/api/ApprovalsClient.ts#L96-L100): 🔴 bug: nothing calls `submitRequest`, and the §8.4 decorator was never built. Neither was the alternative `ReviewStepComponent`. The sequence a requester meets is:
+
   1. They run a gated template.
   2. The task fails, with a message telling them to "submit it from the approvals page" ([gate-module/src/createApprovalGateAction.ts:L37-L40](workspaces/scaffolder-approvals/plugins/scaffolder-backend-module-approvals/src/createApprovalGateAction.ts#L37-L40)).
   3. That page has no form.
@@ -588,6 +591,7 @@ What exists is well built. The problem is what does not exist.
   installing it. Mutants M68 and M69 break four and one tests.
 
 - <a id="g2"></a>**G2** ◨ three of four fixed: [frontend/src/components/RequestDetail/RequestDetail.tsx:L160](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L160), [L205-L224](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L205-L224): 🟡 risk: four things are missing:
+
   - the task id is plain text, although §10.1 and Phase 9 step 6 call for a link to the task log;
   - there is no Withdraw button (§5), so `api.cancel` is never called;
   - there is no Resubmit for a failed request (Q5, [L309](GATED_SCAFFOLDER_WORKFLOWS.md#L309));
@@ -677,6 +681,7 @@ The two things Phase 9 found are real and valuable: the unrendered summary, and 
 - <a id="d2"></a>**D2** ✅ fixed: [ws/README.md:L73-L79](workspaces/scaffolder-approvals/README.md#L73-L79): 🟡 risk: the worked example gives `github:repo:collaborator:add` made-up inputs (`repository`, `requestedBy`, `approvedBy`), so a copied example fails validation. **Fixed, and now checked rather than proofread.** The example uses the action's real inputs (`repoUrl`, `username`, `permission`) and asks for the GitHub username as a parameter, because an approved run has no user on it and `${{ user.* }}` would render empty. A test extracts the YAML from the README and puts it through `findGateStep`, `findSecretParameters` and `validateValues` — the same checks a real submission goes through — so the example cannot rot again without a test failing. Mutating it back to `${{ user.entity.metadata.name }}` breaks that test.
 - <a id="d3"></a>**D3** ✅ fixed: [ws/README.md:L101](workspaces/scaffolder-approvals/README.md#L101), [L138](workspaces/scaffolder-approvals/README.md#L138): 🟡 risk: claims a task link and live updates through signals. Neither exists. **Fixed.** The task link exists now ([G2](#g2)); the live updates do not, and all four places that claimed otherwise now say the page needs a reload to show somebody else's decision. "Not yet" lists it.
 - <a id="d4"></a>**D4** ✅ fixed: [ws/README.md](workspaces/scaffolder-approvals/README.md): 🟡 risk: "Things to know" leaves out:
+
   - the [S1](#s1) shapes;
   - empty `${{ user.* }}` ([S2](#s2));
   - `EXPERIMENTAL_recovery` ([C21](#c21));
@@ -835,6 +840,7 @@ _This is the Standards pass from the `code-review` skill, run by a separate revi
 - [common/src/eligibility.ts:L61](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-common/src/eligibility.ts#L61): 🟡 Possible Duplicated Code: the same "normalise the ref, or skip it" try/catch appears four times (here, L90, L148, and node `permissions.ts` L59). Fix: export one helper.
 - [backend/src/service/ApprovalService.ts:L204](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L204): 🟡 Possible Duplicated Code: `error instanceof Error ?` appears 10 times across 7 files, and four `Error` subclasses repeat the same boilerplate (e.g. `gatePolicy.ts` L31). Fix: use `stringifyError`, `assertError` and `CustomErrorBase` from `@backstage/errors`.
 - [backend/src/plugin.ts:L124](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/plugin.ts#L124): 🟡 Possible Duplicated Code: three places redo work that already has a helper:
+
   - `plugin.ts` re-lists the permission rules instead of using `scaffolderApprovalsPermissionRules` from the node package, which nothing uses;
   - `router.ts` L75 and L126 reimplement `isSha256Hex` and `isApprovalRequestStatus`;
   - `ApprovalService.ts` L256, L346 and L387 inline what `requireRequest` (L524) already does.
@@ -843,6 +849,7 @@ _This is the Standards pass from the `code-review` skill, run by a separate revi
 
 - [frontend/src/components/ApprovalsPage/RequestsTable.tsx:L48](workspaces/scaffolder-approvals/plugins/scaffolder-approvals/src/components/ApprovalsPage/RequestsTable.tsx#L48): 🟡 Possible Duplicated Code: `when()` is copied in `RequestDetail.tsx` L50, and it formats dates with native `toLocaleString`, where ADR010 and ADR012 prefer Luxon. Fix: share one Luxon helper.
 - [backend/src/index.ts:L25](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/index.ts#L25): 🟡 Possible Speculative Generality in several places:
+
   - `ApprovalObserver` is public, but no public API accepts one;
   - the `ids` filter and `getGrant` are used only by tests (ApprovalStore.ts L121 and L622);
   - `subscribeToTaskEvents.ts` L63 guesses a `taskId` spelling;
@@ -860,6 +867,7 @@ _Editor's note on the dependency finding: each listed line was checked against H
 _This is the Spec pass from the `code-review` skill, run by a separate reviewer. It is reproduced as reported, with light clean-up only: list formatting and links. It is kept apart from the Standards pass and has not been re-ranked. Each finding quotes the line of the spec it measures against._
 
 - [node/src/gateStep.ts:L74](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-node/src/gateStep.ts#L74): 🔴 The gate check covers only the gate's position and count, so a direct `POST /v2/tasks` can still reach real steps. Scaffolder-backend 4.1.0:
+
   - skips a gate whose `if:` is falsy (`NunjucksWorkflowRunner.cjs.js:L213`);
   - passes a gate whose `each:` resolves to an empty list (L302-311);
   - still runs later `always()`/`failure()` steps after the gate throws (L557-574);
@@ -875,6 +883,7 @@ _This is the Spec pass from the `code-review` skill, run by a separate reviewer.
 - [backend/src/service/router.ts:L244](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/service/router.ts#L244): 🟡 Group membership comes only from the sign-in `ent` claim, with no catalog fallback, yet the comment says changes apply "immediately". Spec: "fall back to one catalog read … cached ~1 minute" (§8/Q11). Add the fallback.
 - [backend/migrations/20260911000000_init.js:L39](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/migrations/20260911000000_init.js#L39): 🟡 No template uid or spec hash is stored, and approvers get no drift warning. Spec: "Store the template's `metadata.uid` plus a hash of its spec at submit, and warn the approver" (§10.3). Add both.
 - [backend/src/plugin.ts:L69](workspaces/scaffolder-approvals/plugins/scaffolder-approvals-backend/src/plugin.ts#L69): 🟡 Several spec items are missing:
+
   - auditor events;
   - a `launched` event (`ApprovalNotifier.ts:L35`);
   - a frontend signal subscription;
@@ -885,6 +894,7 @@ _This is the Spec pass from the `code-review` skill, run by a separate reviewer.
   Spec: "Auditor events on every decision" (P4); "`approval.launched`" (P3); "Resubmit" (§5); "homepage card" (Q22). Add them.
 
 - [gate-module/src/gate.integration.test.ts:L114](workspaces/scaffolder-approvals/plugins/scaffolder-backend-module-approvals/src/gate.integration.test.ts#L114): 🟡 The ticked "Steps 1–7 scripted" box is not met:
+
   - this test mocks `scaffold()`, uses quorum 1 and hard-coded `values`, and has no self-approval case;
   - `verify-gate.sh` covers only steps 1, 2 and 7;
   - the three-database box was ticked on SQLite alone.
@@ -1435,7 +1445,9 @@ describe('REVIEW e2e: approvals + real scaffolder over HTTP', () => {
     const log = await taskLog(running);
     // eslint-disable-next-line no-console
     console.log(
-      `[review] happy task ${task.status}; createdBy=${task.createdBy}; spec.user=${JSON.stringify(task.spec.user)}\n${log}`,
+      `[review] happy task ${task.status}; createdBy=${
+        task.createdBy
+      }; spec.user=${JSON.stringify(task.spec.user)}\n${log}`,
     );
     expect(task.status).toBe('completed');
     expect(log).toContain(`requestedBy=${REQUESTER}`);
@@ -2311,7 +2323,7 @@ const template = (steps: unknown[]): Entity =>
     kind: 'Template',
     metadata: { name: 't' },
     spec: { type: 'service', steps },
-  }) as Entity;
+  } as Entity);
 
 describe('REVIEW findGateStep spec tests (S1)', () => {
   it('control: a plain first-step gate is usable', () => {
@@ -2406,7 +2418,7 @@ const template = (steps: unknown[]): Entity =>
     kind: 'Template',
     metadata: { name: 't', namespace: 'default' },
     spec: { type: 'service', steps },
-  }) as Entity;
+  } as Entity);
 
 describe('REVIEW processor spec tests', () => {
   async function warningsFor(entity: Entity, cycles = 1) {
@@ -2519,11 +2531,9 @@ describe('REVIEW processor spec tests', () => {
 const path = require('node:path');
 const os = require('node:os');
 const nm = p => path.join(process.cwd(), 'node_modules', p);
-const { NunjucksWorkflowRunner } = require(
-  nm(
-    '@backstage/plugin-scaffolder-backend/dist/scaffolder/tasks/NunjucksWorkflowRunner.cjs.js',
-  ),
-);
+const { NunjucksWorkflowRunner } = require(nm(
+  '@backstage/plugin-scaffolder-backend/dist/scaffolder/tasks/NunjucksWorkflowRunner.cjs.js',
+));
 const { ScmIntegrations } = require(nm('@backstage/integration'));
 const { ConfigReader } = require(nm('@backstage/config'));
 
@@ -2590,7 +2600,9 @@ async function run(label, steps) {
     outcome = `failed (${e.message})`;
   }
   console.log(
-    `${label.padEnd(24)} task ${outcome}; ran without approval: ${JSON.stringify(ran)}`,
+    `${label.padEnd(
+      24,
+    )} task ${outcome}; ran without approval: ${JSON.stringify(ran)}`,
   );
 }
 
@@ -3236,7 +3248,9 @@ for (const [id, pkg, rel, find, replace, tests, what] of MUTANTS) {
     seconds: Math.round((Date.now() - started) / 1000),
   });
   console.log(
-    `${id} ${outcome} ${summary} (${Math.round((Date.now() - started) / 1000)}s) ${what}`,
+    `${id} ${outcome} ${summary} (${Math.round(
+      (Date.now() - started) / 1000,
+    )}s) ${what}`,
   );
 }
 restoreAll();
