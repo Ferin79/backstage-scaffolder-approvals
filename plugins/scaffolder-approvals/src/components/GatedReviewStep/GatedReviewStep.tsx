@@ -28,7 +28,7 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import type { JsonObject } from '@backstage/types';
-import { Box, Button, Flex, Text } from '@backstage/ui';
+import { Button, Flex, Text } from '@backstage/ui';
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
@@ -167,13 +167,15 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
 
   return (
     <Flex direction="column" gap="3">
-      <Box>
+      {/* A column, because `Text` is inline: in a plain box the heading and
+          the sentence after it run together on one line. */}
+      <Flex direction="column" gap="1">
         <Text variant="title-small">This template needs approval</Text>
         <Text>
           Submitting does not run it. It creates a request, and the template
           runs on its own once the approvers below agree.
         </Text>
-      </Box>
+      </Flex>
 
       <Approvers entity={state.value} />
 
@@ -223,7 +225,7 @@ function Approvers(props: { entity: TemplateEntityV1beta3 }) {
   }
 
   return (
-    <Box>
+    <Flex direction="column" gap="1">
       <Text variant="title-x-small">
         {quorum === 1
           ? 'One of these must approve'
@@ -232,6 +234,6 @@ function Approvers(props: { entity: TemplateEntityV1beta3 }) {
       {approvers.map(approver => (
         <Text key={approver}>{approver}</Text>
       ))}
-    </Box>
+    </Flex>
   );
 }
