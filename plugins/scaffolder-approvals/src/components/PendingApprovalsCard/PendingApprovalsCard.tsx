@@ -36,6 +36,25 @@ import { rootRouteRef } from '../../routes';
  * @public
  */
 export function PendingApprovalsCard() {
+  const rootPath = useRouteRef(rootRouteRef);
+
+  return (
+    <InfoCard title="Approvals" deepLink={{ title: 'Open', link: rootPath() }}>
+      <PendingApprovalsContent />
+    </InfoCard>
+  );
+}
+
+/**
+ * The card's body, without a card around it.
+ *
+ * This is what the home-page extensions render. `createCardExtension` and
+ * `HomePageWidgetBlueprint` both put their `Content` inside a titled card of
+ * their own, so handing them the whole card drew one card inside another.
+ *
+ * @internal
+ */
+export function PendingApprovalsContent() {
   const api = useApi(approvalsApiRef);
   const rootPath = useRouteRef(rootRouteRef);
 
@@ -45,7 +64,7 @@ export function PendingApprovalsCard() {
   );
 
   return (
-    <InfoCard title="Approvals" deepLink={{ title: 'Open', link: rootPath() }}>
+    <>
       {state.loading && <Progress />}
 
       {/* A home card that cannot reach its backend says so and stays out of
@@ -69,6 +88,6 @@ export function PendingApprovalsCard() {
           )}
         </Flex>
       )}
-    </InfoCard>
+    </>
   );
 }

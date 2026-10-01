@@ -107,7 +107,9 @@ const approvalsWidget = HomePageWidgetBlueprint.make({
     title: 'Approvals',
     description: 'Approval requests waiting on your decision',
     components: () =>
-      import('./components').then(m => ({ Content: m.PendingApprovalsCard })),
+      import('./components').then(m => ({
+        Content: m.PendingApprovalsContent,
+      })),
   },
 });
 

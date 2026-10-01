@@ -18,6 +18,7 @@ import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { screen } from '@testing-library/react';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { PendingApprovalsHomePageCard } from '../../plugin';
 import { PendingApprovalsCard } from './PendingApprovalsCard';
 
 function render(api: Partial<ApprovalsApi>) {
@@ -70,6 +71,29 @@ describe('PendingApprovalsCard', () => {
     expect(
       await screen.findByText('request is waiting on your decision.'),
     ).toBeInTheDocument();
+  });
+
+  it('is one card on the home page, not a card inside a card', async () => {
+    // The home-page extension wraps its content in a titled card of its own.
+    // It used to be handed this whole card, so two "Approvals" cards nested.
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [
+            approvalsApiRef,
+            {
+              listRequests: async () => ({ items: [], totalItems: 2 }),
+            } as Partial<ApprovalsApi> as ApprovalsApi,
+          ],
+        ]}
+      >
+        <PendingApprovalsHomePageCard />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+
+    expect(await screen.findByText('2')).toBeInTheDocument();
+    expect(screen.getAllByText('Approvals')).toHaveLength(1);
   });
 
   it('stays out of the way when the backend cannot be reached', async () => {

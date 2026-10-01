@@ -76,7 +76,7 @@ export const PendingApprovalsHomePageCard = scaffolderApprovalsPlugin.provide(
     description: 'Approval requests waiting on your decision',
     components: () =>
       import('./components').then(m => ({
-        Content: m.PendingApprovalsCard,
+        Content: m.PendingApprovalsContent,
       })),
   }),
 );

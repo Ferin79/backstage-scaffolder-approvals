@@ -14,4 +14,7 @@
  * limitations under the License.
  */
 
-export { PendingApprovalsCard } from './PendingApprovalsCard';
+export {
+  PendingApprovalsCard,
+  PendingApprovalsContent,
+} from './PendingApprovalsCard';
