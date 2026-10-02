@@ -171,7 +171,7 @@ That is all a template author writes. Nothing marks the template as gated by han
 
 What happens next:
 
-1. The requester opens the template in the scaffolder as usual and presses **Request approval** on the last screen. Their values are checked against the template's parameter schema straight away, so an approver's time is never spent on a request that could not run. (That last screen is `GatedReviewStep`; without it the button still says Create, and pressing it produces a failed task telling them to use the approvals page.)
+1. The requester opens the template in the scaffolder as usual and presses **Request approval** on the last screen. Their values are checked against the template's parameter schema straight away, so an approver's time is never spent on a request that could not run. (That last screen is `GatedReviewStep`; without it the button still says Create, and pressing it produces a failed task saying the template needs approval and that the app has not installed the review step.)
 2. The approvers are notified. Each approves or denies, optionally with a comment. The requester cannot approve their own request, even though they are in the group.
 3. When two have approved, the template starts. A single denial rejects the request outright, whatever the approval count.
 4. The request moves to `running`, then `completed` or `failed`. Nobody deciding within 72 hours moves it to `expired`.
@@ -306,7 +306,7 @@ On the new frontend system the same card is a home-page widget and needs no wiri
 
 #### Submitting from the scaffolder's own wizard
 
-Without this step a requester who opens a gated template in the scaffolder and presses **Create** gets a failed task telling them to use the approvals page. Pass `GatedReviewStep` as the wizard's review step and the wizard ends in a request instead:
+Without this step a requester who opens a gated template in the scaffolder and presses **Create** gets a failed task, and no way to ask for approval from the UI: the approvals page lists requests but cannot create one. Pass `GatedReviewStep` as the wizard's review step and the wizard ends in a request instead:
 
 ```tsx
 import { GatedReviewStep } from '@backstage-community/plugin-scaffolder-approvals';

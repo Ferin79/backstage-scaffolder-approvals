@@ -21,6 +21,7 @@ import {
   type ApprovalRequestStatus,
   type ApprovalRequestWithDecisions,
   type GatePolicy,
+  normaliseEntityRef,
   TERMINAL_APPROVAL_REQUEST_STATUSES,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
@@ -132,6 +133,17 @@ export interface ListApprovalRequestRows {
    * and the join matches whichever of them the policy happens to list.
    */
   approverRefs?: string[];
+  /**
+   * Keep only the requests this user can decide on right now: pending, not
+   * past their deadline, not already decided by them, and not their own when
+   * the gate forbids self-approval — the same rules as
+   * `checkDecisionEligibility`, apart from approver membership, which is what
+   * `approverRefs` is for.
+   *
+   * Pass the caller's user ref. `approverRefs` says whom a policy names; this
+   * says whether that person can still act, and an inbox needs both.
+   */
+  actionableBy?: string;
   /** Restrict to these ids, as a permission filter would. */
   ids?: string[];
   limit?: number;
@@ -242,6 +254,7 @@ export class ApprovalStore {
         status: pending,
         summary: input.summary ?? null,
         policy_snapshot: JSON.stringify(input.policySnapshot),
+        self_approve: input.policySnapshot.selfApprove,
         task_id: null,
         template_uid: input.templateUid ?? null,
         template_steps_hash: input.templateStepsHash ?? null,
@@ -309,6 +322,9 @@ export class ApprovalStore {
   async listRequests(
     options: ListApprovalRequestRows = {},
   ): Promise<ListApprovalRequestRowsResult> {
+    // Read once, so the count and the page agree about what has expired.
+    const now = this.now();
+
     const filtered = () => {
       const query = this.db<ApprovalRequestRow>(TABLE_REQUESTS);
       if (options.status !== undefined) {
@@ -335,6 +351,30 @@ export class ApprovalStore {
             .select('request_id')
             .whereIn('approver_ref', options.approverRefs),
         );
+      }
+      if (options.actionableBy !== undefined) {
+        // Both spellings, because the refs this is compared with are not all
+        // stored the same way: `requester_ref` is normalised at submit, while a
+        // decision stores the caller's ref as their token gave it.
+        // `checkDecisionEligibility` normalises both sides, and this has to
+        // agree with it.
+        const self = refSpellings(options.actionableBy);
+        query
+          .where('status', 'pending')
+          .where(builder =>
+            builder.whereNull('expires_at').orWhere('expires_at', '>', now),
+          )
+          .whereNotIn(
+            'id',
+            this.db<ApprovalDecisionRow>(TABLE_DECISIONS)
+              .select('request_id')
+              .whereIn('approver_ref', self),
+          )
+          // `self_approve` is never null (see its migration), so this cannot
+          // turn into an unknown that drops rows it should keep.
+          .whereNot(builder =>
+            builder.whereIn('requester_ref', self).where('self_approve', false),
+          );
       }
       return query;
     };
@@ -800,5 +840,15 @@ export class ApprovalStore {
   /** Read a grant back, for tests and operator introspection. */
   async getGrant(id: string): Promise<ApprovalGrantRow | undefined> {
     return await this.db<ApprovalGrantRow>(TABLE_GRANTS).where({ id }).first();
+  }
+}
+
+/** A user ref as given, and normalised, for matching refs stored either way. */
+function refSpellings(ref: string): string[] {
+  try {
+    return [...new Set([ref, normaliseEntityRef(ref)])];
+  } catch {
+    // Unparseable: it can only match itself, if it matches anything at all.
+    return [ref];
   }
 }

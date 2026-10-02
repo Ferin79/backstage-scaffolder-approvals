@@ -123,6 +123,13 @@ const listQuery = z.object({
           ),
     ),
   role: z.enum(['requester', 'approver']).optional(),
+  // A query string carries text, so `true` arrives as "true". Anything other
+  // than the two spellings is refused rather than read as false, so a typo
+  // cannot quietly turn an inbox back into a list of everything.
+  actionable: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform(value => (value === undefined ? undefined : value === 'true')),
   templateRef: z.string().optional(),
   requesterRef: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
@@ -355,8 +362,15 @@ export async function createRouter(
     const query = parseOrBadRequest(listQuery, req.query, 'query');
     const statuses = readStatuses(query.status);
 
+    if (query.actionable && query.role !== 'approver') {
+      throw new InputError(
+        "'actionable' needs role=approver: it narrows the requests that name you as an approver to the ones you can still decide on",
+      );
+    }
+
     let requesterRef = query.requesterRef;
     let approverRefs: string[] | undefined;
+    let actionableBy: string | undefined;
 
     if (query.role) {
       // `ownershipEntityRefs` is the user's own ref plus every group they
@@ -368,6 +382,12 @@ export async function createRouter(
         requesterRef = caller.userEntityRef;
       } else {
         approverRefs = caller.ownershipEntityRefs;
+        // Named is not the same as able to act. Without this an approver's
+        // inbox keeps every request they have already voted on, and their own
+        // where self-approval is forbidden (B2 in the browser review).
+        if (query.actionable) {
+          actionableBy = caller.userEntityRef;
+        }
       }
     }
 
@@ -377,6 +397,7 @@ export async function createRouter(
         templateRef: query.templateRef,
         requesterRef,
         approverRefs,
+        actionableBy,
         limit: query.limit,
         offset: query.offset,
       }),

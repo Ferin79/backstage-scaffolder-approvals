@@ -28,6 +28,32 @@ import type { DiscoveryApi, FetchApi } from '@backstage/core-plugin-api';
 import { ResponseError } from '@backstage/errors';
 import type { ApprovalsApi } from './ApprovalsApi';
 
+/**
+ * A `ResponseError` whose message is the sentence the backend wrote.
+ *
+ * `ResponseError.fromResponse` always sets `message` to the status line —
+ * "Request failed with 400 Bad Request" — and keeps what the server said in
+ * `cause`. Every caller of this client shows `message` to a person, and the
+ * backend's refusals are written to be read: which template shape is refused,
+ * which parameter is invalid, why a vote does not count. So the message is
+ * replaced with the server's, and everything else the error carries — status,
+ * body, cause — stays as it was, which is what `ResponseErrorPanel` reads.
+ *
+ * Only a Backstage JSON error body is trusted to be readable. Anything else —
+ * a proxy's HTML error page, say — keeps the status line rather than putting
+ * a page of markup in a toast.
+ */
+async function toReadableError(response: Response): Promise<ResponseError> {
+  const error = await ResponseError.fromResponse(response);
+  const isBackstageError = response.headers
+    .get('content-type')
+    ?.startsWith('application/json');
+  if (isBackstageError && error.cause.message) {
+    error.message = error.cause.message;
+  }
+  return error;
+}
+
 /** @public */
 export class ApprovalsClient implements ApprovalsApi {
   private readonly discoveryApi: DiscoveryApi;
@@ -45,9 +71,7 @@ export class ApprovalsClient implements ApprovalsApi {
     const response = await this.fetchApi.fetch(`${baseUrl}${path}`, init);
 
     if (!response.ok) {
-      // Carries the backend's own message through, which matters because the
-      // backend's refusals are written to be read by a person.
-      throw await ResponseError.fromResponse(response);
+      throw await toReadableError(response);
     }
 
     return (await response.json()) as T;
@@ -71,6 +95,9 @@ export class ApprovalsClient implements ApprovalsApi {
     }
     if (options.role) {
       params.set('role', options.role);
+    }
+    if (options.actionable) {
+      params.set('actionable', 'true');
     }
     if (options.templateRef) {
       params.set('templateRef', options.templateRef);

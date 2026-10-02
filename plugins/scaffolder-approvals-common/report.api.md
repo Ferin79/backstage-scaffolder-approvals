@@ -211,6 +211,7 @@ export function isTerminalStatus(status: ApprovalRequestStatus): boolean;
 
 // @public
 export interface ListApprovalRequestsOptions {
+  actionable?: boolean;
   // (undocumented)
   limit?: number;
   // (undocumented)

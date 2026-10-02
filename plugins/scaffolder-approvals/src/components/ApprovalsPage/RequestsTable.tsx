@@ -60,6 +60,13 @@ export interface RequestsTableProps {
    * reads as ARIA to a linter and to anyone skimming the JSX.
    */
   viewAs: ApprovalRequestRole;
+  /**
+   * With `viewAs="approver"`, only the requests the viewer can still decide
+   * on: not ones they have voted on, and not their own when self-approval is
+   * forbidden. What an inbox wants; a history of what someone was asked about
+   * does not.
+   */
+  actionable?: boolean;
   status?: ApprovalRequestStatus[];
   emptyTitle: string;
   emptyDescription: string;
@@ -77,8 +84,15 @@ export interface RequestsTableProps {
  * @public
  */
 export function RequestsTable(props: RequestsTableProps) {
-  const { api, viewAs, status, emptyTitle, emptyDescription, reloadToken } =
-    props;
+  const {
+    api,
+    viewAs,
+    actionable,
+    status,
+    emptyTitle,
+    emptyDescription,
+    reloadToken,
+  } = props;
 
   const requestRoute = useRouteRef(requestRouteRef);
 
@@ -133,6 +147,7 @@ export function RequestsTable(props: RequestsTableProps) {
       void reloadToken;
       const page = await api.listRequests({
         role: viewAs,
+        actionable,
         status,
         limit: pageSize,
         offset,

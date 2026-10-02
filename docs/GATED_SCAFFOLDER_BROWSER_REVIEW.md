@@ -10,7 +10,10 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 | **People**      | `requester`, `alice` and `bob` (all in `devx-team`), and `outsider` (in no group). Switched with `APP_CONFIG_auth_providers_guest_userEntityRef`, as the [repository README](../README.md#trying-an-approval-end-to-end) describes                                 |
 | **Data**        | A fresh database outside the repository, so `packages/backend/.local-db/` was not touched. Templates: the example, the four probes in `examples/scaffolder-approvals/probes.local.yaml`, and one review-only probe for template drift ([§3](#3-how-it-was-tested)) |
 | **Also run**    | `yarn tsc`, `yarn test` across the repository, `scripts/verify-gate.sh`, and the plugin's own dev harness                                                                                                                                                          |
-| **Screenshots** | 50, in [`browser-review/`](browser-review/)                                                                                                                                                                                                                        |
+| **Screenshots** | 50, in [`browser-review/`](browser-review/), and 51 more from the re-test, in [`browser-review/retest/`](browser-review/retest/)                                                                                                                                   |
+| **Fixed since** | B1, B2 and B3, then every journey walked again in the browser ([§10](#10-fixes-and-re-test))                                                                                                                                                                       |
+
+> **Update, 2 Oct 2026.** The three "fix now" findings, [B1](#b1), [B2](#b2) and [B3](#b3), are fixed. Each fix has tests that fail without it. The whole journey was then walked again in the browser on a fresh database, as all four people, and on an upgraded one. [§10](#10-fixes-and-re-test) has what changed and the evidence. Findings B4–B23 are unchanged.
 
 ## Contents
 
@@ -23,7 +26,8 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 7. [Polish](#7-polish): B15–B23
 8. [Automated checks](#8-automated-checks)
 9. [Not covered](#9-not-covered)
-10. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
+10. [Fixes and re-test](#10-fixes-and-re-test): B1–B3 fixed, every journey walked again
+11. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
 
 ---
 
@@ -38,43 +42,43 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 
 Denial, withdrawal, expiry, a failed run and Resubmit, duplicate collapse, the drift warning, notifications, the home card and the nav item also all work. So does the derived catalog annotation. Calling the scaffolder directly with a gated template fails at the gate, and every later step is skipped.
 
-Three things should be fixed before anyone relies on it:
+Three things needed fixing before anyone relied on it. All three are now fixed and re-tested ([§10](#10-fixes-and-re-test)):
 
-| #         | Finding                                                                                          | Why it cannot wait                                                                                                                            |
-| --------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| [B1](#b1) | Every refusal the backend explains reaches the user as **"Request failed with 400 Bad Request"** | The backend writes refusals for people to read, and the UI throws them away. A requester whose template is refused has no way to find out why |
-| [B2](#b2) | **"Waiting on you" and the home card count requests the viewer cannot act on**                   | The card is the only reminder an approver gets, so an inflated count teaches people to ignore it. This is review finding C27, still open      |
-| [B3](#b3) | **The gate's error sends people to "the approvals page"**, which has no way to submit anything   | It is the dead end [G1](GATED_SCAFFOLDER_REVIEW.md#g1) was meant to remove. G1 built the way out, but the message still points at the wall    |
+| #         | Finding                                                                                          | Why it could not wait                                                                                                                         | Status                                     |
+| --------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| [B1](#b1) | Every refusal the backend explains reaches the user as **"Request failed with 400 Bad Request"** | The backend writes refusals for people to read, and the UI throws them away. A requester whose template is refused has no way to find out why | ✅ [Fixed](#101-b1--readable-errors)       |
+| [B2](#b2) | **"Waiting on you" and the home card count requests the viewer cannot act on**                   | The card is the only reminder an approver gets, so an inflated count teaches people to ignore it. This is review finding C27                  | ✅ [Fixed](#102-b2--an-honest-inbox)       |
+| [B3](#b3) | **The gate's error sends people to "the approvals page"**, which has no way to submit anything   | It is the dead end [G1](GATED_SCAFFOLDER_REVIEW.md#g1) was meant to remove. G1 built the way out, but the message still points at the wall    | ✅ [Fixed](#103-b3--a-way-out-of-the-gate) |
 
 One finding from the code review is also still open: [T6](GATED_SCAFFOLDER_REVIEW.md#t6), three tests that fail in a repository-wide run and pass on their own ([B13](#b13)).
 
 ### Scorecard
 
-| Area                                         | Result | Screens        |
-| -------------------------------------------- | ------ | -------------- |
-| Backstage starts                             | ✅     | —              |
-| Sidebar item and home-page card              | ⚠️ B2  | 01, 15, 41     |
-| Approvals page: both tabs, paging, row links | ⚠️ B2  | 02, 12, 16, 38 |
-| Submitting from the wizard                   | ⚠️ B7  | 04, 05, 06     |
-| Non-gated templates unaffected               | ✅     | 14             |
-| Duplicate collapse                           | ✅     | 07             |
-| Value validation at submit                   | ⚠️ B1  | —              |
-| Refused template shapes                      | ⚠️ B1  | 08, 10         |
-| Self-approval, non-approver, second vote     | ✅     | 06, 20, 36     |
-| Approve and deny dialogs                     | ✅     | 19, 33         |
-| Quorum, launch, completion, task link        | ✅     | 20, 31, 32     |
-| Deny                                         | ✅     | 34             |
-| Withdraw                                     | ⚠️ B11 | 11             |
-| Failed run and Resubmit                      | ✅     | 23, 24, 39, 40 |
-| Expiry                                       | ⚠️ B4  | 21             |
-| Template drift warning                       | ✅     | 25, 35         |
-| Notifications                                | ✅     | 17, 37         |
-| Derived `gated` annotation                   | ✅     | 26             |
-| Direct scaffolder run blocked                | ⚠️ B3  | 13             |
-| Error and not-found pages                    | ❌ B6  | 43, 44         |
-| Dark theme                                   | ✅     | 27–30          |
-| Mobile width                                 | ⚠️ B14 | 45, 46         |
-| Plugin dev harness                           | ⚠️ B21 | 47, 48         |
+| Area                                         | Result                            | Screens                   |
+| -------------------------------------------- | --------------------------------- | ------------------------- |
+| Backstage starts                             | ✅                                | —                         |
+| Sidebar item and home-page card              | ✅ B2 fixed                       | 01, 15, 41; R19, R25, R50 |
+| Approvals page: both tabs, paging, row links | ✅ B2 fixed                       | 02, 12, 16, 38; R26, R49  |
+| Submitting from the wizard                   | ⚠️ B7                             | 04, 05, 06                |
+| Non-gated templates unaffected               | ✅                                | 14                        |
+| Duplicate collapse                           | ✅                                | 07                        |
+| Value validation at submit                   | ✅ B1 fixed                       | —                         |
+| Refused template shapes                      | ✅ B1 fixed                       | 08, 10; R10, R11          |
+| Self-approval, non-approver, second vote     | ✅                                | 06, 20, 36                |
+| Approve and deny dialogs                     | ✅                                | 19, 33                    |
+| Quorum, launch, completion, task link        | ✅                                | 20, 31, 32                |
+| Deny                                         | ✅                                | 34                        |
+| Withdraw                                     | ⚠️ B11                            | 11                        |
+| Failed run and Resubmit                      | ✅                                | 23, 24, 39, 40            |
+| Expiry                                       | ⚠️ B4                             | 21                        |
+| Template drift warning                       | ✅                                | 25, 35                    |
+| Notifications                                | ✅                                | 17, 37                    |
+| Derived `gated` annotation                   | ✅                                | 26                        |
+| Direct scaffolder run blocked                | ✅ B3 fixed                       | 13; R17                   |
+| Error and not-found pages                    | ⚠️ B6 (message readable since B1) | 43, 44; R32, R33          |
+| Dark theme                                   | ✅                                | 27–30                     |
+| Mobile width                                 | ⚠️ B14                            | 45, 46                    |
+| Plugin dev harness                           | ⚠️ B21                            | 47, 48                    |
 
 ---
 
@@ -156,6 +160,8 @@ Times in this report are the local times the UI displayed (UTC−3), so they mat
 
 ### <a id="b1"></a>B1 — The backend's explanations never reach the user
 
+> **✅ Fixed.** The client now puts the backend's sentence in the error's message. See [§10.1](#101-b1--readable-errors) for the change and the re-test.
+
 **Every failure the UI reports reads "Request failed with _N_ _Status_".** The backend's message is accurate and written for a person, and the UI never shows it.
 
 ![Refused if-gate template shows only "Request failed with 400 Bad Request"](browser-review/08-refused-if-on-gate.png)
@@ -186,6 +192,8 @@ The comment above the client's `throw` says it "carries the backend's own messag
 
 ### <a id="b2"></a>B2 — "Waiting on you" counts requests the viewer cannot decide
 
+> **✅ Fixed.** The inbox and the card ask for `actionable` requests only, which the backend answers with the same rules as the decide buttons. See [§10.2](#102-b2--an-honest-inbox).
+
 The inbox and the home card both list a request:
 
 - **after the viewer has already voted on it.** Once alice approved `payments-api`, her inbox and card still counted it: 4, when 3 needed her;
@@ -211,6 +219,8 @@ _42 — the first row is the viewer's own request._
 Then add a test asserting that every request the inbox returns is one `checkDecisionEligibility` allows for the same caller. The two must never disagree, which is the same argument the code already makes for sharing that function between the UI and the server.
 
 ### <a id="b3"></a>B3 — The gate's error message points at a page with no way to submit
+
+> **✅ Fixed.** The message now points at the template's own form, and says what it means when that form still ends in Create. See [§10.3](#103-b3--a-way-out-of-the-gate).
 
 Anyone who starts a gated template other than through the wizard is told:
 
@@ -397,6 +407,8 @@ $ ./scripts/verify-gate.sh
 The gate holds.
 ```
 
+The error quoted above is the original message. [B3](#b3) has since replaced it, and the gate behaves exactly as before ([R17](browser-review/retest/R17-B3-direct-run-new-message.png)).
+
 ### 5.16 Audit events and open reads
 
 The backend logged an audit event at `high` severity for every decision, including the refused second vote ("You have already decided on this request"), and for every grant consume. The consume event's actor was `plugin:scaffolder`, and the scaffolder's task-create event's actor was `plugin:scaffolder-approvals`, which is the §10.1 identity model working as described.
@@ -521,6 +533,139 @@ Every suite in all six plugin packages passes except that one file, including `g
 - **Email or other notification channels.** Only the in-app notifications inbox was checked.
 - **More than one backend replica.**
 - **A screen-reader pass.** The accessibility notes here come from the accessibility tree and console warnings, not from assistive technology.
+
+---
+
+## 10. Fixes and re-test
+
+B1, B2 and B3 were fixed on 2 Oct 2026. Each fix has tests that fail when it is removed. Then the whole journey from §3 was walked again in the browser, as all four people, on a fresh database. B2's migration was also run against the database from the first pass. Re-test screenshots are numbered `R01`–`R51`.
+
+### 10.1 B1 — Readable errors
+
+**What changed.** [`ApprovalsClient`](../plugins/scaffolder-approvals/src/api/ApprovalsClient.ts) still throws a `ResponseError`. When the response is a Backstage JSON error, it now sets the error's `message` to the sentence the backend wrote, which `ResponseError.fromResponse` had left in `cause`. Everything else the error carries is untouched: status code, body and cause, which is what `ResponseErrorPanel` renders. A response that is not a Backstage error, such as a proxy's HTML page, keeps the status line, so a toast never fills with markup.
+
+Because the fix is in the client, every consumer gets it at once: the submit toast, the decide, withdraw and resubmit toasts, the request page's error panel, and the home card's error line.
+
+**Tests.** A new [`ApprovalsClient.test.ts`](../plugins/scaffolder-approvals/src/api/ApprovalsClient.test.ts) builds real failing responses rather than mocking the API, which is how the component tests missed this. It checks four things: the backend's sentence becomes the message; status, name, body and cause survive; no stack trace leaks; and a non-JSON body keeps the status line. With the fix removed, 3 of its tests fail.
+
+**In the browser:**
+
+| Where                                                    | Before                                       | After                                                                                                                                   | Screen                                                            |
+| -------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Submitting `probe-if-gate`                               | "Request failed with 400 Bad Request"        | "Could not request approval: template:default/probe-if-gate has an unusable gate: 'approval:gate' must not carry an 'if:' condition; …" | [R10](browser-review/retest/R10-B1-refused-if-gate-readable.png)  |
+| Submitting `probe-secret`                                | "Request failed with 400 Bad Request"        | "Could not request approval: … its parameter(s) token are secret-typed, and a secret cannot survive the wait for an approval. …"        | [R11](browser-review/retest/R11-B1-refused-secret-readable.png)   |
+| Withdrawing a request withdrawn meanwhile in another tab | the status line                              | "Could not withdraw the request: Approval request … is no longer pending"                                                               | [R13](browser-review/retest/R13-B1-withdraw-refused-readable.png) |
+| Approving after voting in another tab                    | the status line                              | "Could not record your decision: You have already decided on this request"                                                              | [R27](browser-review/retest/R27-B1-decide-refused-readable.png)   |
+| Opening a malformed request id                           | "Error: Request failed with 400 Bad Request" | "Error: Invalid request id: must be a request id"                                                                                       | [R32](browser-review/retest/R32-B1-malformed-id-readable.png)     |
+| Opening an unknown request id                            | "Error: Request failed with 404 Not Found"   | "Error: No such approval request: 00000000-…"                                                                                           | [R33](browser-review/retest/R33-B1-unknown-id-readable.png)       |
+
+![The refused if-gate template now says why](browser-review/retest/R10-B1-refused-if-gate-readable.png)
+
+_R10 — the same submission as screenshot 08, after the fix._
+
+The error page is still a bare bar without page chrome. That is [B6](#b6), which is unchanged, but the bar now says something useful.
+
+### 10.2 B2 — An honest inbox
+
+**What changed.** A new list option, `actionable`, keeps only the requests the caller can decide on right now. The inbox tab and the home card ask for it.
+
+- **`-common`:** `ListApprovalRequestsOptions` gained `actionable?: boolean`, the only change in the API reports. The doc comment on `role` now says plainly that `approver` means "named as an approver", not "able to act".
+- **Router:** `GET /requests` accepts `actionable=true|false`. It answers 400 unless `role=approver` is also given, and 400 for any other value, so a typo cannot silently turn an inbox back into a list of everything.
+- **Store:** `actionableBy` keeps requests that are `pending`, not past their deadline, not already decided by the caller, and not the caller's own when the gate forbids self-approval. Those are `checkDecisionEligibility`'s rules apart from approver membership, which `approverRefs` already handles. Caller refs are matched both as given and normalised, because requester refs are stored normalised and decisions are not.
+- **Migration** [`20261001000000_self_approve.js`](../plugins/scaffolder-approvals-backend/migrations/20261001000000_self_approve.js) adds `self_approve`, a non-null boolean that defaults to false, backfilled from each stored policy snapshot. It is not nullable because a NULL would make the inbox's `NOT (own AND NOT self_approve)` condition unknown, which drops the row. A snapshot that will not parse stays at false, which keeps it out of its requester's inbox.
+- **Frontend:** the inbox tab and `PendingApprovalsCard` pass `actionable`, so the card and the list still run the same query.
+
+**Why a new option rather than changing `role=approver`.** "Every request that named me" is still a useful question for history and audit. The inbox opts in to the narrower one.
+
+**Tests.** The store tests set up nine requests covering every case, plus one test that compares the filter with `checkDecisionEligibility` request by request, in both directions. There are also router tests for the parameter, a migration test for the backfill on an upgraded database, and a client test for the query string. Three mutants were all caught: removing the whole filter fails 5 tests, dropping the already-voted clause fails 3, and dropping the own-request clause fails 5.
+
+**In the browser:**
+
+| Who, and when                                                            | Named as approver, pending | Before the fix | After                                             | Screens                                                                                                                                                                                 |
+| ------------------------------------------------------------------------ | -------------------------- | -------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| requester, on the **first pass's database** after the migration          | 3 (2 own, 1 already voted) | 2–3            | **0**                                             | [R01](browser-review/retest/R01-upgrade-requester-home-card.png), [R02](browser-review/retest/R02-upgrade-requester-inbox.png)                                                          |
+| requester, with five pending requests of their own                       | 5                          | 5              | **0**                                             | [R14](browser-review/retest/R14-B2-requester-card-ignores-own.png), [R15](browser-review/retest/R15-B2-requester-inbox-ignores-own.png)                                                 |
+| alice, one request past its deadline but not yet swept                   | 5                          | 5              | **4**                                             | [R19](browser-review/retest/R19-alice-home-card.png)                                                                                                                                    |
+| alice, after approving `payments-api` (1 of 2)                           | 5                          | stayed at 4    | **3**, and the request leaves her inbox           | [R25](browser-review/retest/R25-B2-alice-card-falls-to-3.png), [R26](browser-review/retest/R26-B2-alice-inbox-without-voted.png)                                                        |
+| bob, before and after deciding his three                                 | 3                          | —              | **3 → 0**                                         | [R37](browser-review/retest/R37-bob-card-before.png), [R42](browser-review/retest/R42-bob-card-after.png)                                                                               |
+| requester, after resubmitting their own request, with outsider's waiting | 2                          | 2              | **1** (outsider's only), **0** after approving it | [R48](browser-review/retest/R48-B2-requester-card-1.png), [R49](browser-review/retest/R49-B2-requester-inbox-only-others.png), [R50](browser-review/retest/R50-B2-requester-card-0.png) |
+
+![alice's inbox after she approved payments-api](browser-review/retest/R26-B2-alice-inbox-without-voted.png)
+
+_R26 — alice's inbox after approving `payments-api`: three left, and the one she voted on is gone._
+
+**The upgrade path held.** Started against the first pass's database, the backend ran `20261001000000_self_approve.js` over nine stored requests and initialised normally.
+
+The deadline rule also covers the inbox half of [B9](#b9): a request past its deadline leaves the inbox at once, without waiting for the sweep. The other half of B9 is still open: until the sweep runs, the request page's pill still reads "Awaiting approval", although the sentence under it already says it timed out ([R30](browser-review/retest/R30-expired.png)).
+
+### 10.3 B3 — A way out of the gate
+
+**What changed.** The gate's message in [`createApprovalGateAction.ts`](../plugins/scaffolder-backend-module-approvals/src/createApprovalGateAction.ts) now reads:
+
+> This template requires approval before it can run, so it cannot be started directly. Submit it from the template's form instead: the last step asks for approval rather than running it, and the template starts on its own once the request has been approved. If that step offers Create rather than Request approval, this Backstage app has not installed the approvals plugin's review step.
+
+The last sentence is there for an app without `GatedReviewStep`, including any app on the new frontend system, where the advice would otherwise loop back to this same error. It keeps the opening "requires approval before it can run", which `verify-gate.sh` and three tests match on. The two README passages that described the old message were corrected.
+
+**Tests.** The existing assertion now expects the new instruction. A new test asserts that the message never mentions "approvals page".
+
+**In the browser.** A direct `POST /v2/tasks` still fails at "Await approval", with "Grant the access" skipped, and now shows the new instruction ([R17](browser-review/retest/R17-B3-direct-run-new-message.png)). `verify-gate.sh` still prints "The gate holds."
+
+![Direct run, new message](browser-review/retest/R17-B3-direct-run-new-message.png)
+
+### 10.4 Every journey, again
+
+On a fresh database. Nothing regressed.
+
+| Person    | Journey                                                                                           | Result                 | Screens                                                                                                                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| requester | Empty home card and inbox; template list                                                          | ✅                     | [R03](browser-review/retest/R03-home-empty.png), [R04](browser-review/retest/R04-inbox-empty.png), [R05](browser-review/retest/R05-create-list.png)                                                                                                                             |
+| requester | Wizard, gated review step, request created and pending, self-approval refused                     | ✅                     | [R06](browser-review/retest/R06-wizard-form.png), [R07](browser-review/retest/R07-gated-review-step.png), [R08](browser-review/retest/R08-request-pending-requester.png)                                                                                                        |
+| requester | Duplicate collapses onto the same id                                                              | ✅                     | [R09](browser-review/retest/R09-duplicate-collapsed.png)                                                                                                                                                                                                                        |
+| requester | Refused shapes, with reasons (B1)                                                                 | ✅                     | [R10](browser-review/retest/R10-B1-refused-if-gate-readable.png), [R11](browser-review/retest/R11-B1-refused-secret-readable.png)                                                                                                                                               |
+| requester | Withdraw; a stale Withdraw refused with a reason (B1)                                             | ✅                     | [R12](browser-review/retest/R12-withdrawn.png), [R13](browser-review/retest/R13-B1-withdraw-refused-readable.png)                                                                                                                                                               |
+| requester | Own requests absent from the inbox (B2); "Your requests"                                          | ✅                     | [R14](browser-review/retest/R14-B2-requester-card-ignores-own.png), [R15](browser-review/retest/R15-B2-requester-inbox-ignores-own.png), [R16](browser-review/retest/R16-your-requests.png)                                                                                     |
+| requester | Direct scaffolder run blocked, new message (B3); non-gated template unaffected                    | ✅                     | [R17](browser-review/retest/R17-B3-direct-run-new-message.png), [R18](browser-review/retest/R18-ungated-normal-review.png)                                                                                                                                                      |
+| alice     | Home card, inbox, notifications (7)                                                               | ✅                     | [R19](browser-review/retest/R19-alice-home-card.png), [R20](browser-review/retest/R20-alice-inbox.png), [R21](browser-review/retest/R21-alice-notifications.png)                                                                                                                |
+| alice     | Approve dialog, 1 of 2, count falls (B2)                                                          | ✅                     | [R22](browser-review/retest/R22-alice-can-decide.png), [R23](browser-review/retest/R23-approve-dialog.png), [R24](browser-review/retest/R24-alice-approved-1-of-2.png), [R25](browser-review/retest/R25-B2-alice-card-falls-to-3.png)                                           |
+| alice     | Stale approval refused with a reason (B1)                                                         | ✅                     | [R27](browser-review/retest/R27-B1-decide-refused-readable.png)                                                                                                                                                                                                                 |
+| alice     | Approved run fails; task link and log                                                             | ✅                     | [R28](browser-review/retest/R28-probe-fails-failed.png), [R29](browser-review/retest/R29-probe-fails-task-log.png)                                                                                                                                                              |
+| alice     | Expiry, before and after the sweep                                                                | ✅ (B4, B9 still open) | [R30](browser-review/retest/R30-expired.png), [R34](browser-review/retest/R34-expired-after-sweep.png)                                                                                                                                                                          |
+| alice     | Drift notice; error pages (B1); dark theme                                                        | ✅                     | [R31](browser-review/retest/R31-drift-notice.png), [R32](browser-review/retest/R32-B1-malformed-id-readable.png), [R33](browser-review/retest/R33-B1-unknown-id-readable.png), [R35](browser-review/retest/R35-dark-inbox.png), [R36](browser-review/retest/R36-dark-drift.png) |
+| bob       | Quorum met, completed, task log names requester, alice and bob                                    | ✅                     | [R38](browser-review/retest/R38-completed.png), [R39](browser-review/retest/R39-completed-task-actors.png)                                                                                                                                                                      |
+| bob       | Deny after alice's approval: the first deny still rejects                                         | ✅                     | [R40](browser-review/retest/R40-denied.png)                                                                                                                                                                                                                                     |
+| bob       | Drifted template runs the added step                                                              | ✅                     | [R41](browser-review/retest/R41-drift-ran-new-step.png)                                                                                                                                                                                                                         |
+| outsider  | Empty inbox; submits; "not an approver" in the UI and 403 from the API; can read others' requests | ✅                     | [R43](browser-review/retest/R43-outsider-inbox-empty.png), [R44](browser-review/retest/R44-outsider-own-request.png)                                                                                                                                                            |
+| requester | Notifications: approved, denied, failed, expired, and outsider's request                          | ✅                     | [R45](browser-review/retest/R45-requester-notifications.png)                                                                                                                                                                                                                    |
+| requester | Resubmit a failed run; approve outsider's request; history                                        | ✅                     | [R46](browser-review/retest/R46-failed-offers-resubmit.png), [R47](browser-review/retest/R47-resubmitted.png), [R51](browser-review/retest/R51-your-requests-final.png)                                                                                                         |
+| —         | `scripts/verify-gate.sh` against the running backend                                              | ✅                     | "The gate holds."                                                                                                                                                                                                                                                               |
+
+Open findings seen again, as expected: [B4](#b4) (the expired request still says "already been decided", [R34](browser-review/retest/R34-expired-after-sweep.png)), [B9](#b9) (the pill until the sweep), and [B10](#b10) (a reload is still needed to see a task finish).
+
+### 10.5 Checks after the fixes
+
+| Check                        | Result                                                                                                                                               |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `yarn tsc`                   | ✅ Clean                                                                                                                                             |
+| `backstage-cli package lint` | ✅ All four changed packages. One warning, `no-mixed-plugin-imports` in `gate.integration.test.ts`, predates this work                               |
+| `yarn prettier:check`        | ✅                                                                                                                                                   |
+| `yarn build:api-reports`     | ✅ Only `ListApprovalRequestsOptions.actionable` added to `-common`'s report                                                                         |
+| Changed packages' suites     | ✅ backend 249/249, gate module 29/29, common 57/57, frontend 51/51 (on its own; see below)                                                          |
+| `yarn test` (whole repo)     | ✅ **468 / 468**, 32 suites: the 454 from before plus 14 new. The three T6 tests passed this time, but T6 is intermittent, so [B13](#b13) stays open |
+| `scripts/verify-gate.sh`     | ✅ "The gate holds."                                                                                                                                 |
+
+The first run of the four changed packages in parallel failed two `PendingApprovalsCard` tests: a 5-second test timeout, and a `findBy` that gave up while the card was still loading. Neither test asserts on anything that changed. The file passes 5/5 on its own, twice, and in the whole-repo run, so the cause was load from four suites at once. It is recorded here rather than dismissed, like the code review's T6.
+
+### 10.6 Files changed
+
+| Package                               | Files                                                                                                                                                                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scaffolder-approvals` (frontend)     | `src/api/ApprovalsClient.ts`, `src/api/ApprovalsClient.test.ts` (new), `src/components/ApprovalsPage/{ApprovalsPage,RequestsTable}.tsx`, `src/components/PendingApprovalsCard/PendingApprovalsCard.tsx`, and two component tests |
+| `scaffolder-approvals-backend`        | `migrations/20261001000000_self_approve.js` (new), `src/database/{ApprovalStore,tables}.ts`, `src/service/router.ts`, and the store, router, migration and row-mapping tests                                                     |
+| `scaffolder-approvals-common`         | `src/types.ts`, `report.api.md`                                                                                                                                                                                                  |
+| `scaffolder-backend-module-approvals` | `src/createApprovalGateAction.ts` and its test                                                                                                                                                                                   |
+| docs                                  | `docs/README.md` (two sentences about the gate message), and this report                                                                                                                                                         |
+
+Nothing is committed.
 
 ---
 

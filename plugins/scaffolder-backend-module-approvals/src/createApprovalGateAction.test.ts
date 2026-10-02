@@ -118,8 +118,16 @@ describe('approval:gate', () => {
 
     it('tells the caller what to do instead of leaking why', async () => {
       await expect(action.handler(context({ secrets: {} }))).rejects.toThrow(
-        /Submit it from the approvals page/,
+        /Submit it from the template's form instead/,
       );
+    });
+
+    it('does not send the caller to the approvals page, which cannot submit', async () => {
+      // The page lists requests; it has no form. Pointing people at it was a
+      // dead end (B3 in the browser review).
+      await expect(
+        action.handler(context({ secrets: {} })),
+      ).rejects.not.toThrow(/approvals page/);
     });
   });
 

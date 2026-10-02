@@ -29,8 +29,11 @@ import { rootRouteRef } from '../../routes';
  * see the count, a request that arrived while somebody was on holiday waits
  * until it expires.
  *
- * Counted with `role=approver` and `status=pending`, which is the same query
- * the inbox tab runs — so the number here and the list there cannot disagree.
+ * Counted with `role=approver`, `actionable` and `status=pending`, which is the
+ * same query the inbox tab runs — so the number here and the list there cannot
+ * disagree. `actionable` is what lets the number fall when somebody votes: a
+ * request they have decided, or their own that they may not approve, is not
+ * waiting on them.
  * `limit: 1` because only `totalItems` is wanted; the rows are the page's job.
  *
  * @public
@@ -59,7 +62,13 @@ export function PendingApprovalsContent() {
   const rootPath = useRouteRef(rootRouteRef);
 
   const state = useAsync(
-    () => api.listRequests({ role: 'approver', status: ['pending'], limit: 1 }),
+    () =>
+      api.listRequests({
+        role: 'approver',
+        actionable: true,
+        status: ['pending'],
+        limit: 1,
+      }),
     [api],
   );
 

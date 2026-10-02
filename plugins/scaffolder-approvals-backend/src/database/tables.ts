@@ -41,6 +41,11 @@ export interface ApprovalRequestRow {
   summary: string | null;
   /** JSON. */
   policy_snapshot: string;
+  /**
+   * `selfApprove` from the snapshot, unpacked for the inbox query. Drivers
+   * return a boolean, or 0/1 where the engine has no boolean type.
+   */
+  self_approve: boolean | number;
   task_id: string | null;
   /** `metadata.uid` of the template at submit; null if never recorded. */
   template_uid: string | null;

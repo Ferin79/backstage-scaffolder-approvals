@@ -80,6 +80,7 @@ describe('migrations', () => {
         'policy_snapshot',
         'redacted_at',
         'requester_ref',
+        'self_approve',
         'status',
         'summary',
         'task_id',
@@ -162,6 +163,58 @@ describe('migrations', () => {
       expect(rows).toEqual([
         { request_id: requestId, approver_ref: 'group:default/devx-team' },
         { request_id: requestId, approver_ref: 'user:default/lead' },
+      ]);
+    });
+
+    it('backfills self_approve from the snapshots already stored', async () => {
+      // The upgrade path: requests stored before the column existed hold
+      // `selfApprove` only inside their JSON, and the inbox query reads the
+      // column. Roll back just the newest migration to get there.
+      await knex.migrate.latest({ directory: migrationsDir });
+      await knex.migrate.down({ directory: migrationsDir });
+
+      const snapshotted = (id: string, policySnapshot: string) => ({
+        id,
+        template_ref: 'template:default/gated',
+        values_json: '{}',
+        values_hash: id.slice(-1).repeat(64),
+        requester_ref: 'user:default/requester',
+        status: 'pending',
+        policy_snapshot: policySnapshot,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+      const allows = '3f1e4c8a-0000-4000-8000-00000000000a';
+      const forbids = '3f1e4c8a-0000-4000-8000-00000000000b';
+      const silent = '3f1e4c8a-0000-4000-8000-00000000000c';
+      const broken = '3f1e4c8a-0000-4000-8000-00000000000d';
+      await knex(TABLE_REQUESTS).insert([
+        snapshotted(
+          allows,
+          JSON.stringify({ approvers: [], quorum: 1, selfApprove: true }),
+        ),
+        snapshotted(
+          forbids,
+          JSON.stringify({ approvers: [], quorum: 1, selfApprove: false }),
+        ),
+        // Written before `readGatePolicy` filled in the default.
+        snapshotted(silent, JSON.stringify({ approvers: [], quorum: 1 })),
+        // Must not fail the migration for every other request.
+        snapshotted(broken, '{not json'),
+      ]);
+
+      await knex.migrate.latest({ directory: migrationsDir });
+
+      const rows = await knex(TABLE_REQUESTS)
+        .select('id', 'self_approve')
+        .orderBy('id');
+      // Drivers disagree on the type — a boolean on Postgres, 0/1 elsewhere —
+      // and what matters here is only which way each one went.
+      expect(rows.map(row => [row.id, Boolean(row.self_approve)])).toEqual([
+        [allows, true],
+        [forbids, false],
+        [silent, false],
+        [broken, false],
       ]);
     });
 

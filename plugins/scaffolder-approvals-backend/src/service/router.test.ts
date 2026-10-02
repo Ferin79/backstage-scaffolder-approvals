@@ -326,6 +326,49 @@ describe('createRouter', () => {
         expect(notMine.body.totalItems).toBe(0);
       });
 
+      it('narrows the approver view to what the caller can act on', async () => {
+        // B2 in the browser review. The requester is in devx-team too, so the
+        // gate names them — but it does not let them approve their own
+        // request, and "waiting on you" must not say it is waiting on them.
+        const id = await submit();
+
+        const named = await request(app)
+          .get('/requests?role=approver&status=pending')
+          .set('authorization', as(REQUESTER));
+        expect(named.body.items.map((i: { id: string }) => i.id)).toEqual([id]);
+
+        const actionable = await request(app)
+          .get('/requests?role=approver&status=pending&actionable=true')
+          .set('authorization', as(REQUESTER));
+        expect(actionable.status).toBe(200);
+        expect(actionable.body).toEqual({ items: [], totalItems: 0 });
+
+        // Somebody else in the group still has it to do.
+        const alice = await request(app)
+          .get('/requests?role=approver&status=pending&actionable=true')
+          .set('authorization', as('user:default/alice'));
+        expect(alice.body.items.map((i: { id: string }) => i.id)).toEqual([id]);
+
+        // And `false` means the same as leaving it out.
+        const off = await request(app)
+          .get('/requests?role=approver&status=pending&actionable=false')
+          .set('authorization', as(REQUESTER));
+        expect(off.body.totalItems).toBe(1);
+      });
+
+      it('refuses actionable without the approver role, and anything but true or false', async () => {
+        for (const query of [
+          '?actionable=true',
+          '?role=requester&actionable=true',
+          '?role=approver&actionable=yes',
+        ]) {
+          const response = await request(app)
+            .get(`/requests${query}`)
+            .set('authorization', as('user:default/alice'));
+          expect([query, response.status]).toEqual([query, 400]);
+        }
+      });
+
       it('filters by status, accepting a repeated or comma-joined param', async () => {
         const id = await submit();
         await store.transition(id, 'pending', 'rejected');

@@ -100,10 +100,14 @@ describe('ApprovalsPage', () => {
     await render({ listRequests });
 
     // Somebody looking for work does not want a history of everything they
-    // ever approved.
+    // ever approved, nor the requests they have already voted on (B2).
     await waitFor(() =>
       expect(listRequests).toHaveBeenCalledWith(
-        expect.objectContaining({ role: 'approver', status: ['pending'] }),
+        expect.objectContaining({
+          role: 'approver',
+          actionable: true,
+          status: ['pending'],
+        }),
       ),
     );
   });

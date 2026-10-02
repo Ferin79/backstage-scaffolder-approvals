@@ -42,8 +42,11 @@ describe('PendingApprovalsCard', () => {
     await render({ listRequests });
 
     expect(await screen.findByText('3')).toBeInTheDocument();
+    // `actionable`, so a request the viewer has already voted on, or their own
+    // under a gate that forbids self-approval, does not keep the count up (B2).
     expect(listRequests).toHaveBeenCalledWith({
       role: 'approver',
+      actionable: true,
       status: ['pending'],
       limit: 1,
     });

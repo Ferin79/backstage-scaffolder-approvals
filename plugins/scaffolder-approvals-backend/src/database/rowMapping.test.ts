@@ -30,6 +30,7 @@ const ROW: ApprovalRequestRow = {
   status: 'pending',
   summary: 'Admin on backstage',
   policy_snapshot: '{"approvers":["group:default/devx"],"quorum":1}',
+  self_approve: false,
   task_id: null,
   last_checked_at: null,
   template_uid: null,

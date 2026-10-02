@@ -363,10 +363,26 @@ export interface ListApprovalRequestsOptions {
   status?: ApprovalRequestStatus | ApprovalRequestStatus[];
 
   /**
-   * Restrict to requests the caller submitted (`requester`) or may decide on
-   * (`approver`).
+   * Restrict to requests the caller submitted (`requester`), or whose policy
+   * names the caller or one of their groups as an approver (`approver`).
+   *
+   * `approver` is about who is named, not who can still act: it includes
+   * requests the caller has already voted on, and their own. Add `actionable`
+   * for an inbox.
    */
   role?: ApprovalRequestRole;
+
+  /**
+   * With `role: 'approver'`, keep only the requests the caller can decide on
+   * right now — exactly the ones `checkDecisionEligibility` would allow:
+   * pending, not past their deadline, not already decided by the caller, and
+   * not the caller's own when the gate forbids self-approval.
+   *
+   * This is what "waiting on you" means. Without it an approver's count never
+   * falls when they vote, and a requester who is also an approver sees their
+   * own request as work to do.
+   */
+  actionable?: boolean;
 
   templateRef?: string;
   requesterRef?: string;

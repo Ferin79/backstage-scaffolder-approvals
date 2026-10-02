@@ -33,11 +33,19 @@ import { createTemplateAction } from '@backstage/plugin-scaffolder-node';
  * What the caller sees when a gated template is run without going through the
  * approvals flow. Written for a template author or an engineer reading a failed
  * task, not for a machine.
+ *
+ * It points at the template's own form, because that is where a request is
+ * made: the approvals page lists requests and cannot create one. And it says
+ * what it means when that form still ends in Create, since then the app has not
+ * installed the review step and following the advice would land here again.
  */
 const NO_GRANT_MESSAGE =
-  'This template requires approval before it can run. Submit it from the ' +
-  'approvals page instead of running it directly; it will start on its own ' +
-  'once the request has been approved.';
+  'This template requires approval before it can run, so it cannot be ' +
+  "started directly. Submit it from the template's form instead: the last " +
+  'step asks for approval rather than running it, and the template starts ' +
+  'on its own once the request has been approved. If that step offers ' +
+  'Create rather than Request approval, this Backstage app has not installed ' +
+  "the approvals plugin's review step.";
 
 /**
  * The gate: an action that refuses to let a template proceed without a grant.

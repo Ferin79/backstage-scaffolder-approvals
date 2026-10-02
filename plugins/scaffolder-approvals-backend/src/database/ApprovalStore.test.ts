@@ -16,7 +16,10 @@
 
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import { TestDatabases } from '@backstage/backend-test-utils';
-import type { GatePolicy } from '@backstage-community/plugin-scaffolder-approvals-common';
+import {
+  checkDecisionEligibility,
+  type GatePolicy,
+} from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
   computeValuesHash,
   generateGrantToken,
@@ -604,6 +607,132 @@ describe('ApprovalStore', () => {
 
         expect(page.totalItems).toBe(3);
         expect(page.items).toHaveLength(1);
+      });
+    });
+
+    describe('listRequests with actionableBy', () => {
+      // B2 in the browser review: the inbox listed every request that named
+      // the caller, so an approver's count never fell when they voted, and a
+      // requester in the approver group saw their own request as work to do.
+      const ALICE = 'user:default/alice';
+      const ALICE_REFS = [ALICE, 'group:default/devx-team'];
+      const ids: Record<string, string> = {};
+
+      beforeEach(async () => {
+        const create = async (
+          name: string,
+          overrides: Partial<NewApprovalRequest> = {},
+        ) => {
+          const values = { name };
+          ids[name] = (
+            await store.createOrCollapse(
+              newRequest({ values, policySnapshot: POLICY, ...overrides }),
+            )
+          ).id;
+        };
+
+        clock = new Date('2026-09-12T10:00:00.000Z');
+        await create('waiting');
+        await create('votedOn');
+        await create('ownForbidden', { requesterRef: ALICE });
+        await create('ownAllowed', {
+          requesterRef: ALICE,
+          policySnapshot: { ...POLICY, selfApprove: true },
+        });
+        await create('othersVoted');
+        await create('deadlinePassed', {
+          expiresAt: new Date('2026-09-12T11:00:00.000Z'),
+        });
+        await create('deadlineAhead', {
+          expiresAt: new Date('2026-09-13T10:00:00.000Z'),
+        });
+        await create('settled');
+        await create('notNamed', {
+          policySnapshot: { ...POLICY, approvers: ['group:default/other'] },
+        });
+
+        await store.recordDecision({
+          requestId: ids.votedOn,
+          approverRef: ALICE,
+          decision: 'approve',
+        });
+        await store.recordDecision({
+          requestId: ids.othersVoted,
+          approverRef: 'user:default/bob',
+          decision: 'approve',
+        });
+        await store.transition(ids.settled, 'pending', 'rejected');
+
+        // Past one deadline, not the other, and the sweep has not run: the
+        // request is still `pending` in the table.
+        clock = new Date('2026-09-12T12:00:00.000Z');
+      });
+
+      it('keeps only what the caller can still decide', async () => {
+        const { items, totalItems } = await store.listRequests({
+          approverRefs: ALICE_REFS,
+          actionableBy: ALICE,
+        });
+
+        const byId = new Map(Object.entries(ids).map(([k, v]) => [v, k]));
+        expect(items.map(item => byId.get(item.id)).sort()).toEqual([
+          'deadlineAhead',
+          'othersVoted',
+          'ownAllowed',
+          'waiting',
+        ]);
+        // Counted the same way, so "4 waiting on you" and the list agree.
+        expect(totalItems).toBe(4);
+      });
+
+      it('agrees with checkDecisionEligibility, request by request', async () => {
+        // The inbox and the decide buttons answer the same question; if they
+        // ever disagree, somebody is shown work they cannot do, or not shown
+        // work they can. Checked both ways over everything that names her.
+        const named = await store.listRequests({ approverRefs: ALICE_REFS });
+        const actionable = new Set(
+          (
+            await store.listRequests({
+              approverRefs: ALICE_REFS,
+              actionableBy: ALICE,
+            })
+          ).items.map(item => item.id),
+        );
+
+        for (const request of named.items) {
+          const eligibility = checkDecisionEligibility(
+            request,
+            { userEntityRef: ALICE, ownershipEntityRefs: ALICE_REFS },
+            await store.listDecisions(request.id),
+            clock,
+          );
+          expect([request.id, actionable.has(request.id)]).toEqual([
+            request.id,
+            eligibility.allowed,
+          ]);
+        }
+      });
+
+      it('pages and counts after filtering', async () => {
+        const page = await store.listRequests({
+          approverRefs: ALICE_REFS,
+          actionableBy: ALICE,
+          limit: 1,
+        });
+
+        expect(page.items).toHaveLength(1);
+        expect(page.totalItems).toBe(4);
+      });
+
+      it('matches a caller ref however it is spelled', async () => {
+        // Requester refs are stored normalised; a token can carry another
+        // spelling of the same user.
+        const { items } = await store.listRequests({
+          approverRefs: ALICE_REFS,
+          actionableBy: 'User:default/alice',
+        });
+
+        expect(items.map(item => item.id)).not.toContain(ids.ownForbidden);
       });
     });
 

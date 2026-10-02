@@ -52,8 +52,11 @@ export function ApprovalsPage() {
             <RequestsTable
               api={api}
               viewAs="approver"
-              // Only what still needs a decision. Somebody looking for work does
-              // not want a history of everything they ever approved.
+              // Only what still needs a decision from *this* person: not what
+              // they have already voted on, nor their own request when the
+              // gate forbids self-approval. Somebody looking for work does not
+              // want a history of everything they were ever asked about.
+              actionable
               status={['pending']}
               emptyTitle="Nothing is waiting on you"
               emptyDescription="Requests you can decide on will appear here."
