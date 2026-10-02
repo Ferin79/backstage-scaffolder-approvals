@@ -2,18 +2,18 @@
 
 Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 of the [implementation guide](GATED_SCAFFOLDER_IMPLEMENTATION.md) and the evidence base of the [code review](GATED_SCAFFOLDER_REVIEW.md#2-evidence-base) all record "rendering in a real browser" as not verified. This review closes that gap. It drives every user-facing feature in the running app, as four different people, and keeps a screenshot of each.
 
-|                 |                                                                                                                                                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Reviewed**    | 1 Oct 2026, at `bc64c07` on `main`                                                                                                                                                                                                                                 |
-| **App**         | Backstage 1.55, legacy frontend system, SQLite. Frontend on :3000, backend on :7007                                                                                                                                                                                |
-| **Browser**     | Chromium, driven through the Playwright MCP server, at 1440×900; 390×844 for the mobile checks                                                                                                                                                                     |
-| **People**      | `requester`, `alice` and `bob` (all in `devx-team`), and `outsider` (in no group). Switched with `APP_CONFIG_auth_providers_guest_userEntityRef`, as the [repository README](../README.md#trying-an-approval-end-to-end) describes                                 |
-| **Data**        | A fresh database outside the repository, so `packages/backend/.local-db/` was not touched. Templates: the example, the four probes in `examples/scaffolder-approvals/probes.local.yaml`, and one review-only probe for template drift ([§3](#3-how-it-was-tested)) |
-| **Also run**    | `yarn tsc`, `yarn test` across the repository, `scripts/verify-gate.sh`, and the plugin's own dev harness                                                                                                                                                          |
-| **Screenshots** | 50, in [`browser-review/`](browser-review/); 51 from the B1–B3 re-test, in [`browser-review/retest/`](browser-review/retest/); and 21 from the B4–B10 re-test, in [`browser-review/b4-b10/`](browser-review/b4-b10/)                                               |
-| **Fixed since** | B1–B3 ([§10](#10-fixes-and-re-test)), then B4–B10, which also settled B12 ([§11](#11-fixes-and-re-test-b4b10))                                                                                                                                                     |
+|                 |                                                                                                                                                                                                                                                                                                            |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Reviewed**    | 1 Oct 2026, at `bc64c07` on `main`                                                                                                                                                                                                                                                                         |
+| **App**         | Backstage 1.55, legacy frontend system, SQLite. Frontend on :3000, backend on :7007                                                                                                                                                                                                                        |
+| **Browser**     | Chromium, driven through the Playwright MCP server, at 1440×900; 390×844 for the mobile checks                                                                                                                                                                                                             |
+| **People**      | `requester`, `alice` and `bob` (all in `devx-team`), and `outsider` (in no group). Switched with `APP_CONFIG_auth_providers_guest_userEntityRef`, as the [repository README](../README.md#trying-an-approval-end-to-end) describes                                                                         |
+| **Data**        | A fresh database outside the repository, so `packages/backend/.local-db/` was not touched. Templates: the example, the four probes in `examples/scaffolder-approvals/probes.local.yaml`, and one review-only probe for template drift ([§3](#3-how-it-was-tested))                                         |
+| **Also run**    | `yarn tsc`, `yarn test` across the repository, `scripts/verify-gate.sh`, and the plugin's own dev harness                                                                                                                                                                                                  |
+| **Screenshots** | 50, in [`browser-review/`](browser-review/); 51 from the B1–B3 re-test, in [`browser-review/retest/`](browser-review/retest/); 21 from the B4–B10 re-test, in [`browser-review/b4-b10/`](browser-review/b4-b10/); and 14 from the B11–B15 re-test, in [`browser-review/b11-b15/`](browser-review/b11-b15/) |
+| **Fixed since** | B1–B3 ([§10](#10-fixes-and-re-test)), then B4–B10, which also settled B12 ([§11](#11-fixes-and-re-test-b4b10)), then B11 and B13–B15 ([§12](#12-fixes-and-re-test-b11b15))                                                                                                                                 |
 
-> **Update, 2 Oct 2026.** Ten findings are now fixed: [B1](#b1)–[B3](#b3) first ([§10](#10-fixes-and-re-test)), then [B4](#b4)–[B10](#b10) ([§11](#11-fixes-and-re-test-b4b10)). Fixing B10 also settled [B12](#b12). Each fix has tests that fail without it, and each was verified in the browser. B11 and B13–B23 are still open.
+> **Update, 2 Oct 2026.** All of B1–B15 are now fixed: [B1](#b1)–[B3](#b3) first ([§10](#10-fixes-and-re-test)), then [B4](#b4)–[B10](#b10) ([§11](#11-fixes-and-re-test-b4b10)), which also settled [B12](#b12), then [B11](#b11) and [B13](#b13)–[B15](#b15) ([§12](#12-fixes-and-re-test-b11b15)). Each fix has tests that fail without it, and each was verified in the browser. B16–B23, the polish items, are still open.
 
 ## Contents
 
@@ -28,7 +28,8 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 9. [Not covered](#9-not-covered)
 10. [Fixes and re-test](#10-fixes-and-re-test): B1–B3 fixed, every journey walked again
 11. [Fixes and re-test: B4–B10](#11-fixes-and-re-test-b4b10)
-12. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
+12. [Fixes and re-test: B11–B15](#12-fixes-and-re-test-b11b15)
+13. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
 
 ---
 
@@ -51,36 +52,36 @@ Three things needed fixing before anyone relied on it. All three are now fixed a
 | [B2](#b2) | **"Waiting on you" and the home card count requests the viewer cannot act on**                   | The card is the only reminder an approver gets, so an inflated count teaches people to ignore it. This is review finding C27                  | ✅ [Fixed](#102-b2--an-honest-inbox)       |
 | [B3](#b3) | **The gate's error sends people to "the approvals page"**, which has no way to submit anything   | It is the dead end [G1](GATED_SCAFFOLDER_REVIEW.md#g1) was meant to remove. G1 built the way out, but the message still points at the wall    | ✅ [Fixed](#103-b3--a-way-out-of-the-gate) |
 
-One finding from the code review is also still open: [T6](GATED_SCAFFOLDER_REVIEW.md#t6), three tests that fail in a repository-wide run and pass on their own ([B13](#b13)).
+One finding from the code review was also open: [T6](GATED_SCAFFOLDER_REVIEW.md#t6), three tests that failed in a repository-wide run and passed on their own ([B13](#b13)). It is now fixed, and its cause found ([§12](#12-fixes-and-re-test-b11b15)).
 
 ### Scorecard
 
-| Area                                         | Result                    | Screens                    |
-| -------------------------------------------- | ------------------------- | -------------------------- |
-| Backstage starts                             | ✅                        | —                          |
-| Sidebar item and home-page card              | ✅ B2 fixed               | 01, 15, 41; R19, R25, R50  |
-| Approvals page: both tabs, paging, row links | ✅ B2 fixed               | 02, 12, 16, 38; R26, R49   |
-| Submitting from the wizard                   | ✅ B7 fixed               | 04, 05, 06; B01, B02       |
-| Non-gated templates unaffected               | ✅                        | 14                         |
-| Duplicate collapse                           | ✅                        | 07                         |
-| Value validation at submit                   | ✅ B1 fixed               | —                          |
-| Refused template shapes                      | ✅ B1, B8 fixed           | 08, 10; R10, R11; B03, B04 |
-| Self-approval, non-approver, second vote     | ✅                        | 06, 20, 36                 |
-| Approve and deny dialogs                     | ✅                        | 19, 33                     |
-| Quorum, launch, completion, task link        | ✅                        | 20, 31, 32                 |
-| Deny                                         | ✅                        | 34                         |
-| Withdraw                                     | ⚠️ B11 (partly addressed) | 11; B05                    |
-| Failed run and Resubmit                      | ✅                        | 23, 24, 39, 40             |
-| Expiry                                       | ✅ B4, B9 fixed           | 21; B10, B12, B13          |
-| Template drift warning                       | ✅                        | 25, 35                     |
-| Notifications                                | ✅                        | 17, 37                     |
-| Live updates: page, inbox, home card         | ✅ B10 fixed              | B07, B14, B16, B17b, B19   |
-| Derived `gated` annotation                   | ✅                        | 26                         |
-| Direct scaffolder run blocked                | ✅ B3 fixed               | 13; R17                    |
-| Error and not-found pages                    | ✅ B6 fixed               | 43, 44; B08, B09           |
-| Dark theme                                   | ✅                        | 27–30                      |
-| Mobile width                                 | ⚠️ B14                    | 45, 46                     |
-| Plugin dev harness                           | ⚠️ B21                    | 47, 48                     |
+| Area                                         | Result           | Screens                           |
+| -------------------------------------------- | ---------------- | --------------------------------- |
+| Backstage starts                             | ✅               | —                                 |
+| Sidebar item and home-page card              | ✅ B2 fixed      | 01, 15, 41; R19, R25, R50         |
+| Approvals page: both tabs, paging, row links | ✅ B2, B15 fixed | 02, 12, 16, 38; R26, R49; C10–C12 |
+| Submitting from the wizard                   | ✅ B7 fixed      | 04, 05, 06; B01, B02              |
+| Non-gated templates unaffected               | ✅               | 14                                |
+| Duplicate collapse                           | ✅               | 07                                |
+| Value validation at submit                   | ✅ B1 fixed      | —                                 |
+| Refused template shapes                      | ✅ B1, B8 fixed  | 08, 10; R10, R11; B03, B04        |
+| Self-approval, non-approver, second vote     | ✅               | 06, 20, 36                        |
+| Approve and deny dialogs                     | ✅               | 19, 33                            |
+| Quorum, launch, completion, task link        | ✅               | 20, 31, 32                        |
+| Deny                                         | ✅               | 34                                |
+| Withdraw                                     | ✅ B11 fixed     | 11; B05; C01–C04                  |
+| Failed run and Resubmit                      | ✅               | 23, 24, 39, 40                    |
+| Expiry                                       | ✅ B4, B9 fixed  | 21; B10, B12, B13                 |
+| Template drift warning                       | ✅               | 25, 35                            |
+| Notifications                                | ✅ B11 fixed     | 17, 37; C03, C05                  |
+| Live updates: page, inbox, home card         | ✅ B10 fixed     | B07, B14, B16, B17b, B19          |
+| Derived `gated` annotation                   | ✅               | 26                                |
+| Direct scaffolder run blocked                | ✅ B3 fixed      | 13; R17                           |
+| Error and not-found pages                    | ✅ B6 fixed      | 43, 44; B08, B09                  |
+| Dark theme                                   | ✅               | 27–30; C04, C14                   |
+| Mobile width                                 | ✅ B14 fixed     | 45, 46; C06–C08, C13              |
+| Plugin dev harness                           | ⚠️ B21           | 47, 48                            |
 
 ---
 
@@ -425,7 +426,7 @@ Every approvals screen is readable in the dark theme, and the status pills keep 
 | ------------------------------------- | ---------------------------------------------- | -------------------------------------------- | ----------------------------------------- |
 | ![](browser-review/27-dark-inbox.png) | ![](browser-review/28-dark-request-detail.png) | ![](browser-review/29-dark-drift-notice.png) | ![](browser-review/30-dark-home-card.png) |
 
-At 390 px wide neither page scrolls sideways, and the request page reads well ([45](browser-review/45-mobile-request-detail.png)). See [B14](#b14) for the header pill and the table.
+At 390 px wide neither page scrolls sideways, and the request page reads well ([45](browser-review/45-mobile-request-detail.png)). See [B14](#b14) for the header pill and the table, both since fixed.
 
 ### 5.18 The plugin's dev harness
 
@@ -489,7 +490,7 @@ After alice approved `probe-fails`, the page said **Running**. The task failed a
 
 ### <a id="b11"></a>B11 — Withdrawing is silent and unconfirmed
 
-> **◨ Partly addressed by B10.** Withdrawing now publishes an event and a signal, so an open page or inbox updates. The confirmation step and the stale "Approval requested" notification are still open.
+> **✅ Fixed.** Withdraw asks first, in a dialog that says what withdrawing does and that it cannot be undone. Each approver's "Approval requested" is replaced by "Approval request withdrawn", not joined by it, so there is still no fifth kind of notification. B10 had already made withdrawal publish an event and a signal. See [§12](#12-fixes-and-re-test-b11b15).
 
 - **No confirmation.** Approve and Deny both ask "are you sure?". Withdraw, which is just as final, does not.
 - **Approvers are not told.** Their "Approval requested" notification for the withdrawn request stays unread in their inbox ([17](browser-review/17-notifications-alice.png), fourth row). Clicking it leads to a request they can no longer act on.
@@ -506,9 +507,13 @@ Not notifying a person about "1 of 2" is a reasonable choice. An event subscribe
 
 ### <a id="b13"></a>B13 — Three migration tests still fail in a repository-wide run
 
+> **✅ Fixed, and the cause found.** The database refused every duplicate; Jest did not recognise the refusal. better-sqlite3's error class belongs to whichever test file loaded it first in a worker, so in any later file its errors fail `instanceof Error`. The tests now check the refusal's message instead. See [§12](#12-fixes-and-re-test-b11b15).
+
 This is the code review's [T6](GATED_SCAFFOLDER_REVIEW.md#t6), reproduced. `yarn test` from the root: **451 passed, 3 failed**. All three failures are the SQLite "a duplicate insert must be refused" tests in `migrations.test.ts`, each with "Received function did not throw". The same file run on its own passes 9/9. The constraint itself works in the running app: alice's second vote got a 409. But a green CI run here would be luck, as T6 says.
 
 ### <a id="b14"></a>B14 — Narrow screens
+
+> **✅ Fixed.** The status is a labelled header item, under the subtitle on a phone and on the right on a wide screen. Below 768 px the list shows only **Template** and **Status**, and the Status column is never narrower than its longest pill. See [§12](#12-fixes-and-re-test-b11b15).
 
 - On the request page, the status pill sits on top of the "Requested by …" subtitle ([45](browser-review/45-mobile-request-detail.png)).
 - In the list, all four columns truncate, including the pills: "Awaiting a…", "Complete…" ([46](browser-review/46-mobile-requests-list.png)). On a narrow screen, hide **Requested by** and **Requested**, or stack the summary under the pill.
@@ -517,7 +522,7 @@ This is the code review's [T6](GATED_SCAFFOLDER_REVIEW.md#t6), reproduced. `yarn
 
 ## 7. Polish
 
-- <a id="b15"></a>**B15** — The empty inbox draws its empty state inside a scroll box with a visible scrollbar, and without column headers ([02](browser-review/02-approvals-inbox-empty.png)).
+- <a id="b15"></a>**B15** ✅ fixed ([§12](#12-fixes-and-re-test-b11b15)) — The empty inbox draws its empty state inside a scroll box with a visible scrollbar, and without column headers ([02](browser-review/02-approvals-inbox-empty.png)).
 - <a id="b16"></a>**B16** — People and templates appear as raw entity refs everywhere: `user:default/requester`, `template:default/request-github-admin`, `group:default/devx-team`. None of them link to the catalog. `EntityRefLink` from `plugin-catalog-react`, already a dependency, would give names and links for free.
 - <a id="b17"></a>**B17** — On **Create…**, nothing distinguishes a gated template from any other ([03](browser-review/03-create-template-list.png)). A requester learns it on the last wizard step. The derived annotation is there to read.
 - <a id="b18"></a>**B18** — "**2 of these** must approve" above a single group reads oddly ([05](browser-review/05-gated-review-step.png)). For example, "2 approvals are needed, from:".
@@ -776,6 +781,86 @@ Behaviour changes to know about:
 ### 11.5 Still open
 
 [B11](#b11): partly. Withdrawal now updates open pages, but still has no confirmation, and approvers' "Approval requested" notification stays unread. [B13](#b13): the three intermittent migration tests, which failed again in one full-package run during this work and passed on their own. And B14–B23.
+
+B11 and B13–B15 have since been fixed: see [§12](#12-fixes-and-re-test-b11b15).
+
+---
+
+## 12. Fixes and re-test: B11–B15
+
+B11, B13, B14 and B15 were fixed on 2 Oct 2026, on the branch `fix/scaffolder-approvals-browser-review`. Each has tests that fail when it is removed. Each was verified in the browser on a fresh database, as requester, alice and bob, at 390, 767, 768, 800 and 1280 px wide, and in both themes. [B12](#b12), fixed in §11, was checked again. Screenshots are numbered `C01`–`C14`, in [`browser-review/b11-b15/`](browser-review/b11-b15/).
+
+### 12.1 What changed
+
+| Finding                                        | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [B11](#b11) withdrawing silent and unconfirmed | **Withdraw asks first.** A dialog, "Withdraw this request?", says what withdrawing does: nobody will be asked to decide, any approvals already given are discarded, and it cannot be undone, so asking again means a new request. **Keep it**, Escape and the close button all leave the request alone. **Approvers' inboxes stay honest.** On withdrawal the notifier sends "Approval request withdrawn … Nothing is waiting on you." to the approvers, never the requester, under the same scope as their "Approval requested" and at `low` severity. The notifications backend replaces a notification that has the same recipient, scope and origin, so each approver still has one item for the request, and it now tells the truth. Q20's four kinds of notification stay four.                                                                                                                            |
+| [B13](#b13) migration tests fail in a full run | **Not a database problem.** The database refused every duplicate; Jest did not recognise the refusal. better-sqlite3 builds its errors from a class it registers with its native addon once per process, while Jest gives each test file its own realm. In a worker that has already run another SQLite suite, the constraint error comes from that earlier file's class, fails Jest's `instanceof Error`, and `rejects.toThrow()` reports "did not throw". That is why it depended on which files shared a worker, and why every attempt to instrument it changed the outcome. With `migrations.test.ts` forced to run last in one worker, it failed every time. The three tests now read the refusal's message and match it against `/unique\|duplicate/i`. That works in any realm, on all three engines, and still fails if the write succeeds or is refused for some other reason, such as a missing table. |
+| [B14](#b14) narrow screens                     | **Request header:** the pill is now the value of a `HeaderLabel` named **Status**, the way catalog entity pages show their owner and lifecycle. Backstage's header puts it on the right on a wide screen and under the subtitle on a narrow one, so it no longer lands on the subtitle. **List:** below BUI's `sm` breakpoint, 768 px, the **Requested by** and **Requested** columns are hidden; both are on the request page, one tap away. The **Status** column is never narrower than 160 px, the width "Awaiting approval" needs.                                                                                                                                                                                                                                                                                                                                                                          |
+| [B15](#b15) empty state                        | A heading and a sentence in BUI type, in place of core-components' illustrated `EmptyState`. Its image was taller than the table's empty row and made the table scroll. The other half of the finding, missing column headers, did not reproduce on the current code: the headers were there before the fix ([C10](browser-review/b11-b15/C10-B15-before-empty-inbox.png)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+### 12.2 Tests
+
+New or changed tests:
+
+- **Backend:**
+  - on withdrawal, the notifier replaces the approvers' request notification: the recipients, the requester left out, the title and wording, `low` severity and the `:requested` scope;
+  - the three migration tests, as described above.
+- **Frontend:**
+  - Withdraw goes through the dialog, and declining it withdraws nothing;
+  - the request header has a **Status** item;
+  - at 390 px the list has only the **Template** and **Status** columns;
+  - the empty inbox keeps its column headers and draws no image.
+
+The narrow-screen test is a file of its own, `RequestsTable.narrow.test.tsx`. jsdom has no `matchMedia`, so `setupTests.ts` gains a stand-in that answers BUI's `min-width` queries from `window.innerWidth`. BUI caches its first answer, so the window has to be narrow before anything renders.
+
+Six mutants, all caught:
+
+| Mutant                                                    | Result                                                                                   |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| B11: Withdraw without the dialog                          | 2 failed, 33 passed, 35 total                                                            |
+| B11: the withdrawal notification adds instead of replaces | 1 failed, 19 passed, 20 total                                                            |
+| B13: no one-vote-per-approver index                       | 1 failed, 9 passed, 10 total; it reads `Received string: "nothing: the write succeeded"` |
+| B14: the list never narrows                               | 1 failed, 7 passed, 8 total                                                              |
+| B14: a bare pill in the header again                      | 1 failed, 34 passed, 35 total                                                            |
+| B15: the illustration back                                | 1 failed, 7 passed, 8 total                                                              |
+
+**B13, before and after.** With the sequencer forcing `migrations.test.ts` to run last in a single worker, the old tests failed every time. The new ones passed 253/253 in two runs, and the whole repository passed 508/508 in two more, in its normal order.
+
+### 12.3 In the browser
+
+| Finding | What was done                                                                                                     | What was seen                                                                                                                                                                                                                                      | Screens                                                                                                                                                                                                                                                                                                                                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| B11     | As the requester, submitted two requests through the wizard, then pressed **Withdraw** on one                     | The dialog, naming the request. **Keep it** left it **Awaiting approval**; confirming made it **Withdrawn**, with the page's settled wording                                                                                                       | [C01](browser-review/b11-b15/C01-B11-withdraw-asks-first.png), [C02](browser-review/b11-b15/C02-B11-withdrawn-after-confirming.png)                                                                                                                                                                                                        |
+| B11     | Opened alice's notifications, then read the notifications table                                                   | Two items, "1–2 of 2": "Approval request withdrawn" for the withdrawn request, in place of its "Approval requested", and "Approval requested" for the other. In the table: one row per approver per request, alice and bob, none for the requester | [C03](browser-review/b11-b15/C03-B11-approver-notification-replaced.png)                                                                                                                                                                                                                                                                   |
+| B11     | At 390 px in the dark theme, opened the dialog; tried **Keep it**, Escape and the close button                    | The dialog fits the screen and nothing scrolls sideways. The close button is labelled "Close" and the dialog is named by its heading. All three left the request **Awaiting approval**                                                             | [C04](browser-review/b11-b15/C04-B11-withdraw-dialog-390-dark.png)                                                                                                                                                                                                                                                                         |
+| B12     | As alice, approved the other request, 1 of 2; then opened the requester's notifications                           | "1 of 2 approvals needed." The requester has no notifications, and the table has no row for them                                                                                                                                                   | [C05](browser-review/b11-b15/C05-B12-requester-not-notified-of-partial-vote.png)                                                                                                                                                                                                                                                           |
+| B14     | Opened the request at 390 px and measured the header                                                              | Title, subtitle, **Status**, then the pill, top to bottom, with no overlap; the pill is not clipped and nothing scrolls sideways                                                                                                                   | [C06](browser-review/b11-b15/C06-B14-request-header-390.png)                                                                                                                                                                                                                                                                               |
+| B14     | As bob, opened the inbox at 390, 767, 768, 800 and 1280 px                                                        | Two columns up to 767 px and four from 768 px, switching as the window is resized. The "Awaiting approval" pill (124 px) fits its cell at every width, including 768 px, where the Status column holds at 160 px                                   | [C07](browser-review/b11-b15/C07-B14-inbox-390.png), [C08](browser-review/b11-b15/C08-B14-inbox-800.png)                                                                                                                                                                                                                                   |
+| B14     | The same request at 1280 px                                                                                       | **Status** and its pill on the right of the header                                                                                                                                                                                                 | [C09](browser-review/b11-b15/C09-B14-request-header-1280.png)                                                                                                                                                                                                                                                                              |
+| B15     | Opened an empty inbox before and after the fix, then **Your requests**, at 1440 and 390 px, and in the dark theme | Before: the illustration and a scrollbar. After: the heading and sentence under the column headers, and no element on the page that scrolls                                                                                                        | [C10](browser-review/b11-b15/C10-B15-before-empty-inbox.png) → [C11](browser-review/b11-b15/C11-B15-after-empty-inbox.png), [C12](browser-review/b11-b15/C12-B15-after-your-requests-empty.png), [C13](browser-review/b11-b15/C13-B15-after-empty-inbox-390.png), [C14](browser-review/b11-b15/C14-B15-after-your-requests-empty-dark.png) |
+
+![Alice's inbox after the requester withdrew](browser-review/b11-b15/C03-B11-approver-notification-replaced.png)
+
+_C03 — alice's notifications after the withdrawal: the withdrawn request's item now says so, at low severity, in place of "Approval requested". The other request's item is untouched._
+
+In [C02](browser-review/b11-b15/C02-B11-withdrawn-after-confirming.png) the toast still showing is the submission's, "Approval requested (1 newer message)". Backstage shows one alert at a time and queues the withdrawal's behind it.
+
+### 12.4 Checks
+
+| Check                        | Result                                                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `yarn tsc`                   | ✅ Clean                                                                                                                                           |
+| `backstage-cli package lint` | ✅ Both changed packages, no warnings                                                                                                              |
+| `prettier --check`           | ✅                                                                                                                                                 |
+| `yarn build:api-reports`     | ✅ No change to any public API. The tool did reorder one union in the frontend's alpha report, with no change to the alpha code; that was reverted |
+| `yarn test` (whole repo)     | ✅ **508 / 508**, 35 suites, in two runs                                                                                                           |
+
+Behaviour change to know about: **withdrawing now notifies the approvers**, by replacing their "Approval requested" for that request. Its `low` severity means a user who filters notifications above `low` will not see the replacement, but will no longer see the stale "Approval requested" either. The README's event table says so.
+
+### 12.5 Still open
+
+B16–B23, all of them polish ([§7](#7-polish)).
 
 ---
 

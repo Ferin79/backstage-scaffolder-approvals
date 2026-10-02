@@ -20,13 +20,15 @@ import {
   type ApprovalRequestStatus,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { parseEntityRef } from '@backstage/catalog-model';
-import { EmptyState } from '@backstage/core-components';
 import { useRouteRef } from '@backstage/core-plugin-api';
 import {
   Cell,
   CellText,
+  Flex,
   type OffsetParams,
   Table,
+  Text,
+  useBreakpoint,
   useTable,
 } from '@backstage/ui';
 import { useMemo } from 'react';
@@ -98,6 +100,13 @@ export function RequestsTable(props: RequestsTableProps) {
 
   const requestRoute = useRouteRef(requestRouteRef);
 
+  // Below BUI's `sm` breakpoint (768px) there is room for what a request is
+  // and where it stands, not for four columns: every column truncated, and the
+  // status pills were clipped mid-word (B14 in the browser review). Who asked
+  // and when are on the request page, one tap away.
+  const { up } = useBreakpoint();
+  const narrow = !up('sm');
+
   const columnConfig = useMemo(
     () => [
       {
@@ -119,11 +128,15 @@ export function RequestsTable(props: RequestsTableProps) {
       {
         id: 'requesterRef',
         label: 'Requested by',
+        isHidden: narrow,
         cell: (item: Row) => <CellText title={shortRef(item.requesterRef)} />,
       },
       {
         id: 'status',
         label: 'Status',
+        // Wide enough for the longest label, "Awaiting approval", so a pill is
+        // never cut off however the other columns share the width.
+        minWidth: 160,
         // `CellText` takes a plain string title, so a pill needs the generic
         // `Cell` wrapper — which the table still requires at the top level.
         cell: (item: Row) => (
@@ -137,10 +150,11 @@ export function RequestsTable(props: RequestsTableProps) {
       {
         id: 'createdAt',
         label: 'Requested',
+        isHidden: narrow,
         cell: (item: Row) => <CellText title={when(item.createdAt)} />,
       },
     ],
-    [],
+    [narrow],
   );
 
   const { tableProps, reload } = useTable<Row>({
@@ -171,11 +185,15 @@ export function RequestsTable(props: RequestsTableProps) {
       columnConfig={columnConfig}
       rowConfig={{ getHref: item => requestRoute({ requestId: item.id }) }}
       emptyState={
-        <EmptyState
-          missing="content"
-          title={emptyTitle}
-          description={emptyDescription}
-        />
+        // A heading and a sentence, not core-components' `EmptyState`: its
+        // illustration is taller than the table's empty row, so the table
+        // overflowed BUI's scroll container and showed a scrollbar with
+        // nothing to scroll (B15 in the browser review). This sits in the row
+        // under the column headers, and says the same thing.
+        <Flex direction="column" gap="1" py="6" px="2">
+          <Text variant="title-small">{emptyTitle}</Text>
+          <Text color="secondary">{emptyDescription}</Text>
+        </Flex>
       }
     />
   );

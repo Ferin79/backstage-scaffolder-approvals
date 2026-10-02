@@ -38,6 +38,39 @@ const ALL_TABLES = [
   TABLE_REQUEST_APPROVERS,
 ];
 
+/**
+ * What the database said when it refused a write, or that it did not refuse.
+ *
+ * Not `rejects.toThrow()`, which is what these tests used and why they failed
+ * intermittently (T6 in the code review, B13 in the browser review). The write
+ * *was* refused every time. But better-sqlite3 registers its error class with
+ * its native addon once per process, and Jest gives each test file its own
+ * realm. So in a worker that has already run another SQLite suite, a
+ * constraint error is built from that earlier suite's class, fails Jest's
+ * `instanceof Error`, and `toThrow` reports "did not throw". Which file runs
+ * first in a worker varies run to run, hence the flake; with the order forced,
+ * it failed every time.
+ *
+ * So the tests ask the realm-independent question instead: what was the
+ * reason? Matching it against {@link UNIQUE_VIOLATION} matters as much as the
+ * refusal itself, because "no such table" is a refusal too, and would
+ * otherwise hide a broken schema.
+ */
+function refusal(write: PromiseLike<unknown>): Promise<string> {
+  return Promise.resolve(write).then(
+    () => 'nothing: the write succeeded',
+    (reason: unknown) =>
+      String((reason as { message?: unknown } | null)?.message),
+  );
+}
+
+/**
+ * How SQLite ("UNIQUE constraint failed"), Postgres ("duplicate key value
+ * violates unique constraint") and MySQL ("Duplicate entry") word it, since
+ * this suite runs on all three.
+ */
+const UNIQUE_VIOLATION = /unique|duplicate/i;
+
 describe('migrations', () => {
   const databases = TestDatabases.create();
 
@@ -241,7 +274,9 @@ describe('migrations', () => {
         approver_ref: 'group:default/devx-team',
       };
       await knex(TABLE_REQUEST_APPROVERS).insert(row);
-      await expect(knex(TABLE_REQUEST_APPROVERS).insert(row)).rejects.toThrow();
+      expect(await refusal(knex(TABLE_REQUEST_APPROVERS).insert(row))).toMatch(
+        UNIQUE_VIOLATION,
+      );
     });
 
     it('drops every table on the way down', async () => {
@@ -302,11 +337,13 @@ describe('migrations', () => {
         vote('3f1e4c8a-0000-4000-8000-000000000002'),
       );
 
-      await expect(
-        knex(TABLE_DECISIONS).insert(
-          vote('3f1e4c8a-0000-4000-8000-000000000003'),
+      expect(
+        await refusal(
+          knex(TABLE_DECISIONS).insert(
+            vote('3f1e4c8a-0000-4000-8000-000000000003'),
+          ),
         ),
-      ).rejects.toThrow();
+      ).toMatch(UNIQUE_VIOLATION);
     });
 
     it('refuses two grants with the same token for one request', async () => {
@@ -337,11 +374,13 @@ describe('migrations', () => {
         grant('3f1e4c8a-0000-4000-8000-000000000011'),
       );
 
-      await expect(
-        knex(TABLE_GRANTS).insert(
-          grant('3f1e4c8a-0000-4000-8000-000000000012'),
+      expect(
+        await refusal(
+          knex(TABLE_GRANTS).insert(
+            grant('3f1e4c8a-0000-4000-8000-000000000012'),
+          ),
         ),
-      ).rejects.toThrow();
+      ).toMatch(UNIQUE_VIOLATION);
     });
   });
 });

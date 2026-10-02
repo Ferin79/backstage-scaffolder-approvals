@@ -369,11 +369,13 @@ If the events backend is installed, every state change is published on the `scaf
 | `completed` | The task finished successfully          | None         | `taskId`                  |
 | `failed`    | The task failed, or the approval lapsed | Both         | `reason`                  |
 | `expired`   | Nobody decided in time                  | Both         | —                         |
-| `withdrawn` | The requester withdrew it               | None         | —                         |
+| `withdrawn` | The requester withdrew it               | Approvers²   | —                         |
 
 ¹ Only when the vote settles the request — a denial, or the approval that meets the quorum. A vote that leaves it pending is still published, with `status: pending`, so a subscriber sees every vote; it notifies nobody, because "Request approved" with an approval still missing would be untrue.
 
-`launched`, `completed` and `withdrawn` carry no notification on purpose: four notifications is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
+² Not a new item: it replaces each approver's "Approval requested" for that request, at `low` severity, so their inbox no longer asks them to decide something that is gone.
+
+`launched` and `completed` carry no notification on purpose: four kinds of notification is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
 
 `status` is the status the request has **after** the change, so a `decided` event on an approved request says `approved`, not `pending`.
 

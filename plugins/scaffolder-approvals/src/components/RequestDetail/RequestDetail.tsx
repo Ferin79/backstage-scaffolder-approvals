@@ -26,6 +26,7 @@ import {
   Content,
   EmptyState,
   Header,
+  HeaderLabel,
   Page,
   Progress,
   ResponseErrorPanel,
@@ -49,6 +50,7 @@ import { useOnApprovalsChange } from '../useOnApprovalsChange';
 import { DecisionDialog } from './DecisionDialog';
 import { DriftNotice } from './DriftNotice';
 import { RequesterActions } from './RequesterActions';
+import { WithdrawDialog } from './WithdrawDialog';
 
 /**
  * Why the decide buttons are not available, in the approver's words.
@@ -136,6 +138,8 @@ export function RequestDetail(props: RequestDetailProps) {
 
   const [reload, setReload] = useState(0);
   const [deciding, setDeciding] = useState<ApprovalDecisionOutcome>();
+  // Withdrawing asks first, as approving and denying do (B11).
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const state = useAsync(async () => {
@@ -198,6 +202,7 @@ export function RequestDetail(props: RequestDetailProps) {
       });
     } finally {
       setBusy(false);
+      setConfirmingWithdraw(false);
     }
   }, [api, alertApi, requestId]);
 
@@ -266,7 +271,11 @@ export function RequestDetail(props: RequestDetailProps) {
         title={request.summary ?? request.templateRef}
         subtitle={`Requested by ${request.requesterRef}`}
       >
-        <StatusPill status={status} />
+        {/* In a `HeaderLabel`, as Backstage pages put their header items. The
+            header lays its children out in a spaced grid whose negative
+            margins expect grid items; a bare pill was not one, so on a narrow
+            screen it slid up over the subtitle (B14). */}
+        <HeaderLabel label="Status" value={<StatusPill status={status} />} />
       </Header>
 
       <Content>
@@ -364,7 +373,7 @@ export function RequestDetail(props: RequestDetailProps) {
                   request.requesterRef.toLocaleLowerCase('en-US')
                 }
                 busy={busy}
-                onWithdraw={withdraw}
+                onWithdraw={() => setConfirmingWithdraw(true)}
                 onResubmit={resubmit}
               />
 
@@ -401,6 +410,15 @@ export function RequestDetail(props: RequestDetailProps) {
             busy={busy}
             onCancel={() => setDeciding(undefined)}
             onConfirm={comment => decide(deciding, comment)}
+          />
+        )}
+
+        {confirmingWithdraw && (
+          <WithdrawDialog
+            summary={request.summary ?? request.templateRef}
+            busy={busy}
+            onCancel={() => setConfirmingWithdraw(false)}
+            onConfirm={withdraw}
           />
         )}
       </Content>

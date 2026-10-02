@@ -339,15 +339,36 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('withdrawn', () => {
-    it('publishes an event and a signal but never a notification', async () => {
-      // B10: a page open on a withdrawn request never updated, because nothing
-      // was published. Q20 still settles on four notifications.
+    it("replaces the approvers' request notification instead of adding one", async () => {
+      // B11: "Approval requested" stayed unread after a withdrawal, leading to
+      // a request nobody could act on. Q20's four kinds stay four: this one
+      // takes the scope of the notification it makes obsolete.
       await notifier().onWithdrawn({
         ...REQUEST,
         status: 'cancelled' as const,
       });
 
-      expect(send).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledTimes(1);
+      const [{ recipients, payload }] = send.mock.calls[0];
+      expect(recipients.entityRef).toEqual(REQUEST.policySnapshot.approvers);
+      expect(recipients.excludeEntityRef).toEqual([REQUEST.requesterRef]);
+      expect(payload.title).toBe('Approval request withdrawn');
+      expect(payload.description).toMatch(/Nothing is waiting on you/);
+      expect(payload.severity).toBe('low');
+      // The scope of the notification `onSubmitted` sent, so it is replaced.
+      expect(payload.scope).toBe(
+        `scaffolder-approvals:${REQUEST.id}:requested`,
+      );
+    });
+
+    it('publishes an event and a signal', async () => {
+      // B10: a page open on a withdrawn request never updated, because nothing
+      // was published.
+      await notifier().onWithdrawn({
+        ...REQUEST,
+        status: 'cancelled' as const,
+      });
+
       expect(publishSignal).toHaveBeenCalledWith(
         expect.objectContaining({
           message: {

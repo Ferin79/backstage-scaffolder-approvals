@@ -143,12 +143,29 @@ export class ApprovalNotifier implements ApprovalObserver {
   }
 
   /**
-   * The requester withdrew it. Event and signal only, as for `launched`: Q20
-   * settles on four notifications, and this was the one change that published
-   * nothing, so a page open on it never noticed (B10).
+   * The requester withdrew it.
+   *
+   * An event and a signal, because this was the one change that published
+   * nothing, so a page open on it never noticed (B10). And a notification that
+   * *replaces* each approver's "Approval requested" rather than adding a fifth
+   * kind (Q20): without it, that one stayed unread and led to a request nobody
+   * could act on (B11).
    */
   async onWithdrawn(request: ApprovalRequest): Promise<void> {
-    await this.fanOut('withdrawn', request, { recipients: [] });
+    await this.fanOut('withdrawn', request, {
+      // The notifications service marks a replacement unread, so it shows
+      // up again; `low` says it needs nothing from them.
+      recipients: this.approvers(request),
+      exclude: [request.requesterRef],
+      title: 'Approval request withdrawn',
+      description: `${
+        request.requesterRef
+      } withdrew their request to run ${this.describe(
+        request,
+      )}. Nothing is waiting on you.`,
+      severity: 'low',
+      replaces: 'requested',
+    });
   }
 
   /** The task finished successfully. Event and signal only, as for `launched`. */
@@ -199,8 +216,15 @@ export class ApprovalNotifier implements ApprovalObserver {
       exclude?: string[];
       title?: string;
       description?: string;
-      severity?: 'normal' | 'high';
+      severity?: 'low' | 'normal' | 'high';
       extra?: Record<string, string>;
+      /**
+       * Which notification this one replaces. Defaults to this action's own,
+       * so a re-notification replaces rather than piles up; a withdrawal
+       * names `requested` instead, so it overwrites the approvers' now-stale
+       * "Approval requested" rather than adding a second item.
+       */
+      replaces?: ApprovalEventAction;
     },
   ): Promise<void> {
     const recipients = [...new Set(message.recipients)].filter(Boolean);
@@ -223,7 +247,9 @@ export class ApprovalNotifier implements ApprovalObserver {
           topic: SCAFFOLDER_APPROVALS_PLUGIN_ID,
           // Scoped per request so a re-notification replaces rather than piles
           // up in somebody's inbox.
-          scope: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:${request.id}:${action}`,
+          scope: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:${request.id}:${
+            message.replaces ?? action
+          }`,
         },
       });
     });

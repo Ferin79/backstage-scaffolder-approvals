@@ -124,6 +124,18 @@ describe('RequestDetail', () => {
     expect(screen.getByText('Nobody has decided yet.')).toBeInTheDocument();
   });
 
+  it('puts the status in a labelled header item', async () => {
+    // B14: as a bare child of the header's spaced grid, the pill slid over
+    // the subtitle on a narrow screen. A `HeaderLabel` is a grid item, and
+    // names what the pill is.
+    await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
+
+    await screen.findByText('Admin on backstage');
+    const header = screen.getByRole('banner');
+    expect(header).toHaveTextContent('Status');
+    expect(header).toHaveTextContent('Awaiting approval');
+  });
+
   it('approves through a confirmation step', async () => {
     // A confirmation rather than a bare button: approving starts the template
     // immediately.
@@ -295,8 +307,36 @@ describe('RequestDetail', () => {
           name: 'Withdraw',
         }),
       );
+      // B11: it asks first, as Approve and Deny do — withdrawing is as final.
+      expect(
+        await screen.findByText('Withdraw this request?'),
+      ).toBeInTheDocument();
+      expect(cancel).not.toHaveBeenCalled();
 
-      expect(cancel).toHaveBeenCalledWith(REQUEST.id);
+      await userEvent.click(
+        screen.getAllByRole('button', { name: 'Withdraw' }).at(-1)!,
+      );
+
+      await waitFor(() => expect(cancel).toHaveBeenCalledWith(REQUEST.id));
+    });
+
+    it('withdraws nothing when the confirmation is declined', async () => {
+      const cancel = jest.fn().mockResolvedValue(REQUEST);
+      await render({ getRequest: async () => REQUEST, cancel }, REQUESTER);
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Withdraw' }),
+      );
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Keep it' }),
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Withdraw this request?'),
+        ).not.toBeInTheDocument(),
+      );
+      expect(cancel).not.toHaveBeenCalled();
     });
 
     it('offers Resubmit once the request has failed', async () => {

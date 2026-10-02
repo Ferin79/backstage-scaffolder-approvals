@@ -72,6 +72,13 @@ describe('ApprovalsPage', () => {
     expect(
       await screen.findByText('Nothing is waiting on you'),
     ).toBeInTheDocument();
+    // B15: inside the table, under its column headers, and without the
+    // illustrated empty state, whose image was taller than the empty row and
+    // left the table with a scrollbar and nothing to scroll.
+    expect(
+      screen.getAllByRole('columnheader').map(header => header.textContent),
+    ).toEqual(['Template', 'Requested by', 'Status', 'Requested']);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('lists a pending request with its summary and status', async () => {
