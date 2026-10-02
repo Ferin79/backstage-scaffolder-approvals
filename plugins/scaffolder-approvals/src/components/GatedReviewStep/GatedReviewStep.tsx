@@ -15,11 +15,6 @@
  */
 
 import {
-  checkGatedTemplate,
-  GATED_ANNOTATION,
-  type GatePolicy,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
-import {
   DEFAULT_NAMESPACE,
   stringifyEntityRef,
 } from '@backstage/catalog-model';
@@ -39,6 +34,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { PolicySummary } from '../PolicySummary';
+import { readGate } from '../readGate';
 
 /** @public */
 export interface GatedReviewStepProps extends ReviewStepProps {
@@ -124,10 +121,10 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
     const entity = (await catalogApi.getEntityByRef(templateRef)) as
       | TemplateEntityV1beta3
       | undefined;
-    if (entity?.metadata.annotations?.[GATED_ANNOTATION] !== 'true') {
-      return undefined;
-    }
-    return entity;
+    // The same reading the template card on the Create page uses (B17), and
+    // the same checks the backend runs at submit (B8), so a template it would
+    // refuse is not offered for approval in the first place.
+    return entity && readGate(entity, templateRef);
   }, [catalogApi, templateRef]);
 
   const submit = useCallback(async () => {
@@ -166,17 +163,8 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
   // Not gated, or the catalog could not say. Either way this is an ordinary
   // template and the ordinary review step applies: failing open here costs
   // nothing, because the gate is what enforces anything.
-  if (!state.value) {
-    return <>{children}</>;
-  }
-
-  // The same check the backend runs at submit (B8), so a template it would
-  // refuse is not offered for approval in the first place.
-  const check = checkGatedTemplate(state.value, templateRef!);
-
-  // The annotation is derived by the catalog and can lag a template that just
-  // lost its gate. With no gate step there is nothing to ask for.
-  if (!check.gated) {
+  const check = state.value;
+  if (!check) {
     return <>{children}</>;
   }
 
@@ -205,7 +193,11 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
             </Text>
           </Flex>
 
-          <Approvers policy={check.policy} />
+          {/* Who will be asked, from the policy the request will freeze:
+              "who sees this" is the question people have at this point, and
+              a gate naming a group nobody is in is worth noticing before
+              waiting three days for it. */}
+          <PolicySummary policy={check.policy} linkTarget="_blank" />
 
           <Flex gap="2">
             <Button
@@ -248,30 +240,6 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
           </Flex>
         </>
       )}
-    </Flex>
-  );
-}
-
-/**
- * Who will be asked, from the policy the request will freeze.
- *
- * Shown before submitting rather than after, because "who sees this" is the
- * question people actually have at this point — and because a gate naming a
- * group nobody is in is worth noticing before waiting three days for it.
- */
-function Approvers(props: { policy: GatePolicy }) {
-  const { approvers, quorum } = props.policy;
-
-  return (
-    <Flex direction="column" gap="1">
-      <Text variant="title-x-small">
-        {quorum === 1
-          ? 'One of these must approve'
-          : `${quorum} of these must approve`}
-      </Text>
-      {approvers.map(approver => (
-        <Text key={approver}>{approver}</Text>
-      ))}
     </Flex>
   );
 }

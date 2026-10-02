@@ -15,9 +15,11 @@
  */
 
 import type { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { entityPresentationApiRef } from '@backstage/plugin-catalog-react';
 import { signalApiRef } from '@backstage/plugin-signals-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsPage } from './ApprovalsPage';
@@ -38,6 +40,22 @@ const PENDING: ApprovalRequest = {
   createdAt: '2026-09-13T10:00:00.000Z',
   updatedAt: '2026-09-13T10:00:00.000Z',
 };
+
+/**
+ * The catalog's presentation API, answering from a fixed list of titles, the
+ * way the real one answers from each entity's title or display name.
+ */
+function fakePresentation(titles: Record<string, string>) {
+  return {
+    forEntity(entityRef: string) {
+      const snapshot = {
+        entityRef,
+        primaryTitle: titles[entityRef] ?? entityRef,
+      };
+      return { snapshot, promise: Promise.resolve(snapshot) };
+    },
+  };
+}
 
 function render(api: Partial<ApprovalsApi>) {
   return renderInTestApp(
@@ -99,6 +117,66 @@ describe('ApprovalsPage', () => {
     expect(
       screen.getByRole('rowheader', { name: /request-github-admin/ }),
     ).toBeInTheDocument();
+  });
+
+  it('names templates and people as the catalog does', async () => {
+    // B16: the list showed the last segment of each ref, "request-github-admin"
+    // and "requester", rather than what the catalog calls them.
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [
+            approvalsApiRef,
+            {
+              listRequests: async () => ({ items: [PENDING], totalItems: 1 }),
+            } as Partial<ApprovalsApi> as ApprovalsApi,
+          ],
+          [
+            entityPresentationApiRef,
+            fakePresentation({
+              'template:default/request-github-admin':
+                'Request GitHub admin access',
+              'user:default/requester': 'Riley Requester',
+            }),
+          ],
+        ]}
+      >
+        <ApprovalsPage />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+
+    expect(
+      await screen.findByText('Request GitHub admin access'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Riley Requester')).toBeInTheDocument();
+    // The summary still sits under the template's name.
+    expect(screen.getByText('Admin on backstage')).toBeInTheDocument();
+  });
+
+  it('leaves out who asked on "Your requests", since it is always you', async () => {
+    // B20: a "Requested by" column whose every row named the viewer.
+    const listRequests = jest
+      .fn()
+      .mockResolvedValue({ items: [PENDING], totalItems: 1 });
+    await render({ listRequests });
+
+    await userEvent.click(
+      await screen.findByRole('tab', { name: 'Your requests' }),
+    );
+
+    await waitFor(() =>
+      expect(listRequests).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'requester' }),
+      ),
+    );
+    const panel = await screen.findByRole('tabpanel');
+    await within(panel).findByText('Admin on backstage');
+    expect(
+      within(panel)
+        .getAllByRole('columnheader')
+        .map(header => header.textContent),
+    ).toEqual(['Template', 'Status', 'Requested']);
   });
 
   it('asks the backend only for pending requests in the inbox', async () => {

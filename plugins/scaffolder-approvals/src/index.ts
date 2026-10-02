@@ -33,8 +33,13 @@ export { rootRouteRef, requestRouteRef } from './routes';
 // it, and because an app that wants to mount the page itself can.
 export {
   GatedReviewStep,
+  GatedTemplateCard,
   PendingApprovalsCard,
   Router,
   StatusPill,
 } from './components';
-export type { GatedReviewStepProps, StatusPillProps } from './components';
+export type {
+  GatedReviewStepProps,
+  GatedTemplateCardProps,
+  StatusPillProps,
+} from './components';

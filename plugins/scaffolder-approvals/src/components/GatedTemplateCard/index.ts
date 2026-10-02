@@ -14,8 +14,5 @@
  * limitations under the License.
  */
 
-export {
-  PendingApprovalsActions,
-  PendingApprovalsCard,
-  PendingApprovalsContent,
-} from './PendingApprovalsCard';
+export { GatedTemplateCard } from './GatedTemplateCard';
+export type { GatedTemplateCardProps } from './GatedTemplateCard';

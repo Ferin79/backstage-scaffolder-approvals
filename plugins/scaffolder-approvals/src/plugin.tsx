@@ -80,6 +80,9 @@ export const PendingApprovalsHomePageCard = scaffolderApprovalsPlugin.provide(
       // and review code, none of which a home page needs to load.
       import('./components/PendingApprovalsCard').then(m => ({
         Content: m.PendingApprovalsContent,
+        // The extension draws its own card, so the way to the page has to be
+        // handed over as well, or the home page has none (B19).
+        Actions: m.PendingApprovalsActions,
       })),
   }),
 );

@@ -22,9 +22,11 @@ import {
   DialogHeader,
   Text,
 } from '@backstage/ui';
+import type { ReactNode } from 'react';
 
 export interface WithdrawDialogProps {
-  summary: string;
+  /** What the request is called: its summary, or its template's name. */
+  summary: ReactNode;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -59,7 +61,9 @@ export function WithdrawDialog(props: WithdrawDialogProps) {
 
       <DialogBody>
         <Text>
-          {`Withdrawing stops ${summary}. Nobody will be asked to decide on it, any approvals it already has are discarded, and it cannot be undone: to ask again, you will have to submit a new request.`}
+          Withdrawing stops {summary}. Nobody will be asked to decide on it, any
+          approvals it already has are discarded, and it cannot be undone: to
+          ask again, you will have to submit a new request.
         </Text>
       </DialogBody>
 

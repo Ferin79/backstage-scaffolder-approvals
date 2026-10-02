@@ -339,6 +339,40 @@ It is a review step rather than a decorator on `scaffolderApiRef` because of wha
 
 `ReviewStepProps` does not carry the template ref, so the component reads it from the scaffolder's route parameters. If your app mounts the wizard somewhere else, pass `templateRef` explicitly; without it the component renders your ordinary review step rather than a broken screen.
 
+#### Marking gated templates on Create…
+
+Without this, a requester finds out that a template needs approval on the wizard's last step. `GatedTemplateCard` is the scaffolder's own template card with one link per approver added, "Approver: DevX team", each to that approver's catalog page. Every other template's card is unchanged.
+
+```tsx
+import { GatedTemplateCard } from '@backstage-community/plugin-scaffolder-approvals';
+
+<ScaffolderPage
+  components={{
+    ReviewStepComponent: YourGatedReviewStep,
+    TemplateCardComponent: GatedTemplateCard,
+  }}
+/>;
+```
+
+It reads a template's gate the same way `GatedReviewStep` does, so a card never promises an approval that the last step does not ask for. A gate the backend would refuse shows **Needs approval** instead of approvers; the review step says what is wrong with it. Legacy frontend system only, like the review step: the new system's templates page takes a swappable card, and one that wraps the scaffolder's own would render itself.
+
+#### Names and links
+
+People, groups and templates appear by the name the catalog gives them, "Riley Requester" or "Request GitHub admin access", and link to their catalog pages, so the app needs the catalog's entity page mounted, as any app with the scaffolder has. Until the catalog answers, and for an entity it does not know, the name comes from the ref. Notifications say "alice approved your request …": they go out in the middle of a decision, so they name people from their refs rather than waiting on the catalog.
+
+#### Matching BUI to an MUI theme
+
+The plugin's pages are Backstage UI (BUI) inside core-components page chrome. BUI draws its text in `system-ui`; Backstage's Material UI themes use `"Helvetica Neue", Helvetica, Roboto, Arial, sans-serif`. In an app that keeps an MUI theme, the home-page card then sits beside MUI cards in a different typeface, and every page mixes the two under its header. Point BUI at the theme's font in a stylesheet loaded after BUI's own, as [`packages/app/src/bui-theme.css`](../packages/app/src/bui-theme.css) does:
+
+```css
+:root,
+[data-theme-mode] {
+  --bui-font-regular: 'Helvetica Neue', Helvetica, Roboto, Arial, sans-serif;
+}
+```
+
+Unlayered, so it beats BUI's own `@layer tokens` without `!important`.
+
 ### Configuration
 
 Gate policy lives in each template. The global configuration is only this:

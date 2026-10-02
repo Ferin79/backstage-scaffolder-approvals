@@ -34,6 +34,7 @@ import { HomePageWidgetBlueprint } from '@backstage/plugin-home-react/alpha';
 import { discoveryApiRef, fetchApiRef } from '@backstage/core-plugin-api';
 import { createElement } from 'react';
 import { ApprovalsClient, approvalsApiRef } from './api';
+import { ApprovalsIcon } from './components/ApprovalsIcon';
 import { requestRouteRef, rootRouteRef } from './routes';
 
 const approvalsApi = ApiBlueprint.make({
@@ -54,31 +55,8 @@ const approvalsApi = ApiBlueprint.make({
  * and `icon`, outputs them as `core.title` and `core.icon`, and the app builds
  * the sidebar entry from that. An earlier `NavItemBlueprint` did exist and is
  * what other workspaces on older versions still use.
- *
- * The icon is an inline SVG rather than one from an icon set, which keeps this
- * package from taking a dependency for a single glyph. `currentColor` is what
- * makes it follow the sidebar's own colour in both themes.
  */
-const navIcon = createElement(
-  'svg',
-  {
-    width: 24,
-    height: 24,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 2,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-    'aria-hidden': true,
-  },
-  // A clipboard with a tick: a list of things waiting to be agreed to.
-  createElement('path', {
-    d: 'M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2',
-  }),
-  createElement('rect', { x: 9, y: 2, width: 6, height: 4, rx: 1 }),
-  createElement('path', { d: 'm9 14 2 2 4-4' }),
-);
+const navIcon = createElement(ApprovalsIcon);
 
 const approvalsPage = PageBlueprint.make({
   params: {
@@ -112,6 +90,9 @@ const approvalsWidget = HomePageWidgetBlueprint.make({
       // and review code, none of which a home page needs to load.
       import('./components/PendingApprovalsCard').then(m => ({
         Content: m.PendingApprovalsContent,
+        // The extension draws its own card, so the way to the page has to be
+        // handed over as well, or the home page has none (B19).
+        Actions: m.PendingApprovalsActions,
       })),
   },
 });

@@ -103,7 +103,34 @@ describe('PendingApprovalsCard', () => {
       await screen.findByText('2', undefined, { timeout: 10_000 }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Approvals')).toHaveLength(1);
+    // B19: the extension draws its own card, and used to take only the
+    // content from this one, so the home page had no way to the page.
+    expect(
+      screen.getByRole('link', { name: 'Open approvals' }),
+    ).toHaveAttribute('href', '/scaffolder-approvals');
   }, 20_000);
+
+  it('has the same way to the page on its own as on the home page', async () => {
+    await render({
+      listRequests: async () => ({ items: [], totalItems: 0 }),
+    });
+
+    expect(
+      await screen.findByRole('link', { name: 'Open approvals' }),
+    ).toHaveAttribute('href', '/scaffolder-approvals');
+  });
+
+  it('writes its sentence at the size of the cards beside it', async () => {
+    // B19: BUI's default body text is 14px; the Material UI cards a home page
+    // puts next to this one use 16px, which is BUI's `body-large`.
+    await render({
+      listRequests: async () => ({ items: [], totalItems: 0 }),
+    });
+
+    expect(
+      await screen.findByText('Nothing is waiting on you.'),
+    ).toHaveAttribute('data-variant', 'body-large');
+  });
 
   it('stays out of the way when the backend cannot be reached', async () => {
     // A home card that throws takes the whole home page with it.

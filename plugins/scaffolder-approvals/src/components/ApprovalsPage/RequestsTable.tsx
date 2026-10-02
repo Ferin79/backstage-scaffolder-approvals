@@ -19,8 +19,8 @@ import {
   type ApprovalRequestRole,
   type ApprovalRequestStatus,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
-import { parseEntityRef } from '@backstage/catalog-model';
 import { useRouteRef } from '@backstage/core-plugin-api';
+import { useEntityPresentation } from '@backstage/plugin-catalog-react';
 import {
   Cell,
   CellText,
@@ -41,12 +41,33 @@ import { useOnApprovalsChange } from '../useOnApprovalsChange';
 /** A row is a request; BUI's table only needs it to have an id. */
 type Row = ApprovalRequest;
 
-function shortRef(ref: string): string {
-  try {
-    return parseEntityRef(ref).name;
-  } catch {
-    return ref;
-  }
+/**
+ * The template's catalog title, with the request's summary under it.
+ *
+ * The catalog's name rather than the ref's last segment (B16): "Request GitHub
+ * admin access", not "request-github-admin". Not a link, because the whole row
+ * already is one. Until the catalog answers, and for an entity it does not
+ * know, this is the name from the ref, as it was before.
+ */
+function TemplateCell(props: { item: Row }) {
+  const { item } = props;
+  const { primaryTitle } = useEntityPresentation(item.templateRef);
+  return (
+    <CellText
+      title={primaryTitle}
+      // The summary is what an approver actually needs to read, and it is
+      // null once the retention sweep has been through.
+      description={item.summary ?? undefined}
+    />
+  );
+}
+
+/** Who asked, by the name the catalog has for them (B16). */
+function RequesterCell(props: { item: Row }) {
+  const { primaryTitle } = useEntityPresentation(props.item.requesterRef, {
+    defaultKind: 'user',
+  });
+  return <CellText title={primaryTitle} />;
 }
 
 function when(iso: string): string {
@@ -107,6 +128,10 @@ export function RequestsTable(props: RequestsTableProps) {
   const { up } = useBreakpoint();
   const narrow = !up('sm');
 
+  // On "Your requests" every row was asked for by the viewer, so a column
+  // saying so is noise (B20).
+  const hideRequester = narrow || viewAs === 'requester';
+
   const columnConfig = useMemo(
     () => [
       {
@@ -116,20 +141,13 @@ export function RequestsTable(props: RequestsTableProps) {
         // the browser without it ("A table must have at least one Column with
         // the isRowHeader prop set to true"); jsdom never reached that check.
         isRowHeader: true,
-        cell: (item: Row) => (
-          <CellText
-            title={shortRef(item.templateRef)}
-            // The summary is what an approver actually needs to read, and it
-            // is null once the retention sweep has been through.
-            description={item.summary ?? undefined}
-          />
-        ),
+        cell: (item: Row) => <TemplateCell item={item} />,
       },
       {
         id: 'requesterRef',
         label: 'Requested by',
-        isHidden: narrow,
-        cell: (item: Row) => <CellText title={shortRef(item.requesterRef)} />,
+        isHidden: hideRequester,
+        cell: (item: Row) => <RequesterCell item={item} />,
       },
       {
         id: 'status',
@@ -154,7 +172,7 @@ export function RequestsTable(props: RequestsTableProps) {
         cell: (item: Row) => <CellText title={when(item.createdAt)} />,
       },
     ],
-    [narrow],
+    [narrow, hideRequester],
   );
 
   const { tableProps, reload } = useTable<Row>({

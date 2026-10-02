@@ -16,9 +16,10 @@
 
 import type { ApprovalRequestWithDecisions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
+import { entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { signalApiRef } from '@backstage/plugin-signals-react';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
@@ -106,7 +107,11 @@ function render(
     {
       // Only the root ref: `mountedRoutes` takes route refs, not sub route
       // refs, and a sub route resolves relative to its parent anyway.
-      mountedRoutes: { '/scaffolder-approvals': rootRouteRef },
+      // And the catalog's entity page, which people and the template link to.
+      mountedRoutes: {
+        '/scaffolder-approvals': rootRouteRef,
+        '/catalog/:namespace/:kind/:name': entityRouteRef,
+      },
     },
   );
 }
@@ -496,12 +501,11 @@ describe('RequestDetail', () => {
     ).toBeInTheDocument();
     // The decision history is what survives, and it is the point of keeping the
     // row at all.
-    expect(
-      screen.getByText('user:default/alice', { exact: false }),
-    ).toBeInTheDocument();
-    // With no summary, the template ref stands in as the title.
-    expect(screen.getAllByText(/request-github-admin/).length).toBeGreaterThan(
-      0,
+    expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
+    // With no summary, the template's name stands in as the title: not its
+    // raw ref (B16).
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      /^request-github-admin$/,
     );
   });
 
@@ -585,10 +589,65 @@ describe('RequestDetail', () => {
     });
 
     expect(
-      await screen.findByText(
-        'Needs 2 approvals from group:default/devx-team or user:default/lead. The requester cannot approve their own request.',
-      ),
+      await screen.findByText(/^Needs 2 approvals from/),
+    ).toHaveTextContent(
+      'Needs 2 approvals from devx-team or lead. The requester cannot approve their own request.',
+    );
+    // Each approver links to their catalog page, so a requester can see who
+    // is in the group they are waiting on (B16).
+    expect(screen.getByRole('link', { name: 'devx-team' })).toHaveAttribute(
+      'href',
+      '/catalog/default/group/devx-team',
+    );
+    expect(screen.getByRole('link', { name: 'lead' })).toHaveAttribute(
+      'href',
+      '/catalog/default/user/lead',
+    );
+  });
+
+  it('names people and the template, each linked to its catalog page', async () => {
+    // B16: "user:default/requester", "template:default/request-github-admin"
+    // and "group:default/devx-team" everywhere, none of them links.
+    await render({
+      getRequest: async () => ({
+        ...REQUEST,
+        decisions: [
+          {
+            id: 'd1',
+            requestId: REQUEST.id,
+            approverRef: 'user:default/alice',
+            decision: 'approve' as const,
+            createdAt: '2026-09-13T10:05:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    await screen.findByText('Admin on backstage');
+    const links = Object.fromEntries(
+      screen
+        .getAllByRole('link')
+        .map(link => [link.textContent, link.getAttribute('href')]),
+    );
+    expect(links).toEqual(
+      expect.objectContaining({
+        requester: '/catalog/default/user/requester',
+        'request-github-admin':
+          '/catalog/default/template/request-github-admin',
+        'devx-team': '/catalog/default/group/devx-team',
+        alice: '/catalog/default/user/alice',
+      }),
+    );
+    // The requester is named in the header, where the raw ref used to be, as
+    // one piece of text: the header styles a string subtitle for the banner,
+    // and left a link there black on purple.
+    expect(
+      within(screen.getByRole('banner')).getByText('Requested by requester'),
     ).toBeInTheDocument();
+    // And no raw ref is left anywhere a person reads.
+    expect(document.body).not.toHaveTextContent(
+      /(user|group|template):default\//,
+    );
   });
 
   describe('a request past its deadline that the sweep has not reached yet', () => {

@@ -25,12 +25,13 @@ import {
   Text,
   TextAreaField,
 } from '@backstage/ui';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 /** @public */
 export interface DecisionDialogProps {
   decision: ApprovalDecisionOutcome;
-  summary: string;
+  /** What the request is called: its summary, or its template's name. */
+  summary: ReactNode;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (comment?: string) => void;
@@ -72,9 +73,17 @@ export function DecisionDialog(props: DecisionDialogProps) {
       <DialogBody>
         <Flex direction="column" gap="4">
           <Text>
-            {denying
-              ? `Denying rejects ${summary} outright. Nobody else's approval can undo it, and the requester will have to ask again.`
-              : `Approving counts towards the quorum for ${summary}. Once the quorum is met the template starts straight away.`}
+            {denying ? (
+              <>
+                Denying rejects {summary} outright. Nobody else's approval can
+                undo it, and the requester will have to ask again.
+              </>
+            ) : (
+              <>
+                Approving counts towards the quorum for {summary}. Once the
+                quorum is met the template starts straight away.
+              </>
+            )}
           </Text>
 
           <TextAreaField

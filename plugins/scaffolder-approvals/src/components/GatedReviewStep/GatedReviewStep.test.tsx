@@ -19,7 +19,7 @@ import {
   GATED_ANNOTATION,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { alertApiRef } from '@backstage/core-plugin-api';
-import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
@@ -102,7 +102,11 @@ function render(options: {
       </Routes>
     </TestApiProvider>,
     {
-      mountedRoutes: { '/approvals': rootRouteRef },
+      mountedRoutes: {
+        '/approvals': rootRouteRef,
+        // The approvers link to their catalog pages.
+        '/catalog/:namespace/:kind/:name': entityRouteRef,
+      },
       routeEntries: [
         options.entry ?? '/create/templates/default/request-github-admin',
       ],
@@ -160,11 +164,42 @@ describe('GatedReviewStep', () => {
   it('shows who will be asked, and how many of them', async () => {
     await render({ entity: template(true) });
 
+    // One sentence, the same the request page uses afterwards. It used to be
+    // "2 of these must approve" above a list, which with a single group read
+    // as if two groups were expected (B18).
     expect(
-      await screen.findByText('2 of these must approve'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('group:default/devx-team')).toBeInTheDocument();
-    expect(screen.getByText('user:default/lead')).toBeInTheDocument();
+      await screen.findByText(/^Needs 2 approvals from/),
+    ).toHaveTextContent(
+      'Needs 2 approvals from devx-team or lead. The requester cannot approve their own request.',
+    );
+    expect(screen.queryByText(/of these must approve/)).not.toBeInTheDocument();
+  });
+
+  it('links each approver to their catalog page, in a new tab', async () => {
+    // B16: by name, not as a raw ref, and somewhere to find out who is in the
+    // group. A new tab, because leaving the wizard throws away the form.
+    await render({ entity: template(true) });
+
+    const group = await screen.findByRole('link', { name: 'devx-team' });
+    expect(group).toHaveAttribute('href', '/catalog/default/group/devx-team');
+    expect(group).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: 'lead' })).toHaveAttribute(
+      'href',
+      '/catalog/default/user/lead',
+    );
+  });
+
+  it('says how many approvals one approver must give', async () => {
+    const entity = template(true);
+    entity.spec.steps[0].input = {
+      approvers: ['group:default/devx-team'],
+      quorum: 1,
+    } as (typeof entity.spec.steps)[0]['input'];
+    await render({ entity });
+
+    expect(
+      await screen.findByText(/^Needs one approval from/),
+    ).toHaveTextContent('Needs one approval from devx-team.');
   });
 
   it('shows the values being submitted, as the ordinary review step does', async () => {

@@ -132,6 +132,38 @@ describe('ApprovalNotifier', () => {
     });
   });
 
+  describe('the words a person reads', () => {
+    // B16: every inbox read "user:default/requester is asking to run …". The
+    // event payload keeps full refs for whatever subscribes to it; the
+    // sentences people read name people.
+    it('names people, not their entity refs', async () => {
+      const n = notifier();
+      await n.onSubmitted(REQUEST);
+      await n.onDecided({ ...REQUEST, status: 'approved' as const }, APPROVAL);
+      await n.onWithdrawn({ ...REQUEST, status: 'cancelled' as const });
+
+      expect(
+        send.mock.calls.map(([{ payload }]) => payload.description),
+      ).toEqual([
+        'requester is asking to run Admin on backstage',
+        'alice approved your request to run Admin on backstage',
+        'requester withdrew their request to run Admin on backstage. Nothing is waiting on you.',
+      ]);
+    });
+
+    it('keeps a namespace that is not the default one', async () => {
+      // Two people in different namespaces can share a name.
+      await notifier().onSubmitted({
+        ...REQUEST,
+        requesterRef: 'user:ops/sam',
+      });
+
+      expect(send.mock.calls[0][0].payload.description).toBe(
+        'ops/sam is asking to run Admin on backstage',
+      );
+    });
+  });
+
   describe('onSubmitted', () => {
     it('tells the approvers, not the requester', async () => {
       await notifier().onSubmitted(REQUEST);
@@ -409,16 +441,16 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('a redacted request', () => {
-    it('falls back to the template ref once the summary has gone', async () => {
+    it('falls back to the template once the summary has gone', async () => {
       // The retention sweep nulls the summary, and a notification about a
-      // failure can outlive it.
+      // failure can outlive it. Named, like a person, rather than as a ref.
       await notifier().onFailed(
         { ...REQUEST, summary: null, values: null },
         'the task failed',
       );
 
-      expect(send.mock.calls[0][0].payload.description).toMatch(
-        /template:default\/request-github-admin/,
+      expect(send.mock.calls[0][0].payload.description).toBe(
+        'request-github-admin did not complete: the task failed',
       );
     });
   });

@@ -3,6 +3,9 @@
 # `selfApprove` is false, so `requester` cannot approve their own request even
 # though they are a member of devx-team — which is exactly the case worth having
 # real data for.
+#
+# Display names that differ from the entity names, so the approvals UI can be
+# seen naming people as the catalog does rather than echoing their refs.
 apiVersion: backstage.io/v1alpha1
 kind: Group
 metadata:
@@ -10,6 +13,8 @@ metadata:
   description: Owns developer experience, and approves access requests
 spec:
   type: team
+  profile:
+    displayName: DevX team
   children: []
 ---
 apiVersion: backstage.io/v1alpha1
@@ -17,6 +22,8 @@ kind: User
 metadata:
   name: requester
 spec:
+  profile:
+    displayName: Riley Requester
   memberOf: [devx-team]
 ---
 apiVersion: backstage.io/v1alpha1
@@ -24,6 +31,8 @@ kind: User
 metadata:
   name: alice
 spec:
+  profile:
+    displayName: Alice Approver
   memberOf: [devx-team]
 ---
 apiVersion: backstage.io/v1alpha1
@@ -31,6 +40,8 @@ kind: User
 metadata:
   name: bob
 spec:
+  profile:
+    displayName: Bob Approver
   memberOf: [devx-team]
 ---
 apiVersion: backstage.io/v1alpha1
@@ -38,4 +49,6 @@ kind: User
 metadata:
   name: outsider
 spec:
+  profile:
+    displayName: Oscar Outsider
   memberOf: []

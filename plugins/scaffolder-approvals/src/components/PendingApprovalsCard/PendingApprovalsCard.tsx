@@ -16,7 +16,7 @@
 
 import { InfoCard, Progress } from '@backstage/core-components';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
-import { Flex, Link, Text } from '@backstage/ui';
+import { ButtonLink, Flex, Link, Text } from '@backstage/ui';
 import { useState } from 'react';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
@@ -41,12 +41,32 @@ import { useOnApprovalsChange } from '../useOnApprovalsChange';
  * @public
  */
 export function PendingApprovalsCard() {
+  return (
+    <InfoCard title="Approvals" actions={<PendingApprovalsActions />}>
+      <PendingApprovalsContent />
+    </InfoCard>
+  );
+}
+
+/**
+ * The card's footer: the way to the approvals page, whatever the count, since
+ * that is also where somebody's own requests are.
+ *
+ * In the card's actions rather than as an `InfoCard` deep link, because the
+ * home-page extensions draw their own card and take only `Content` and
+ * `Actions` from this one. With a deep link, the card on the home page had no
+ * way to the page at all (B19 in the browser review). This way the standalone
+ * card and both extensions are the same card.
+ *
+ * @internal
+ */
+export function PendingApprovalsActions() {
   const rootPath = useRouteRef(rootRouteRef);
 
   return (
-    <InfoCard title="Approvals" deepLink={{ title: 'Open', link: rootPath() }}>
-      <PendingApprovalsContent />
-    </InfoCard>
+    <ButtonLink href={rootPath()} variant="tertiary">
+      Open approvals
+    </ButtonLink>
   );
 }
 
@@ -94,7 +114,9 @@ export function PendingApprovalsContent() {
       {state.value && (
         <Flex direction="column" gap="2">
           <Text variant="title-medium">{state.value.totalItems}</Text>
-          <Text>
+          {/* `body-large`, the size of the body text in the MUI cards a home
+              page puts beside this one (B19). */}
+          <Text variant="body-large">
             {state.value.totalItems === 0
               ? 'Nothing is waiting on you.'
               : `${

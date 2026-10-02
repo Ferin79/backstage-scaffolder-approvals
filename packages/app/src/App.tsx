@@ -26,7 +26,10 @@ import { searchPage } from './components/search/SearchPage';
 import { Root } from './components/Root';
 import { HomePage } from './components/home/HomePage';
 import { ReviewStep } from './components/scaffolder/ReviewStep';
-import { ApprovalsIndexPage } from '@backstage-community/plugin-scaffolder-approvals';
+import {
+  ApprovalsIndexPage,
+  GatedTemplateCard,
+} from '@backstage-community/plugin-scaffolder-approvals';
 
 import {
   AlertDisplay,
@@ -87,9 +90,15 @@ const routes = (
     <Route
       path="/create"
       element={
-        // A gated template's last step submits an approval request instead of
-        // starting a task. Every other template is unaffected.
-        <ScaffolderPage components={{ ReviewStepComponent: ReviewStep }} />
+        // A gated template's card names its approvers, and its last step
+        // submits an approval request instead of starting a task. Every other
+        // template is unaffected.
+        <ScaffolderPage
+          components={{
+            ReviewStepComponent: ReviewStep,
+            TemplateCardComponent: GatedTemplateCard,
+          }}
+        />
       }
     />
     {/* Notification links assume this mount path. */}

@@ -16,11 +16,11 @@
 
 import {
   type ApprovalDecisionOutcome,
+  type ApprovalRequest,
   type ApprovalRequestStatus,
   checkDecisionEligibility,
   computeQuorumProgress,
   type DecisionIneligibility,
-  type GatePolicy,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
   Content,
@@ -37,6 +37,11 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
+import {
+  EntityDisplayName,
+  EntityRefLink,
+  useEntityPresentation,
+} from '@backstage/plugin-catalog-react';
 import { Button, ButtonLink, Card, Flex, Link, Text } from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
 import { type ReactNode, useCallback, useState } from 'react';
@@ -44,6 +49,7 @@ import { useNavigate } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { PolicySummary } from '../PolicySummary';
 import { StatusPill } from '../StatusPill';
 import { effectiveStatus } from '../StatusPill/effectiveStatus';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
@@ -85,26 +91,52 @@ const OUTCOME: Record<Exclude<ApprovalRequestStatus, 'pending'>, string> = {
   expired: 'Timed out before it was approved.',
 };
 
-/** "a, b or c" */
-function oneOf(refs: string[]): string {
-  return refs.length <= 1
-    ? refs.join('')
-    : `${refs.slice(0, -1).join(', ')} or ${refs[refs.length - 1]}`;
+/**
+ * What a request is called: its gate's rendered summary, or the template's
+ * catalog name when there is none — a gate need not define a summary, and
+ * redaction removes it. Never the raw template ref (B16).
+ */
+function RequestTitle(props: {
+  request: Pick<ApprovalRequest, 'summary' | 'templateRef'>;
+}) {
+  const { summary, templateRef } = props.request;
+  return summary ? (
+    <>{summary}</>
+  ) : (
+    <EntityDisplayName entityRef={templateRef} hideIcon disableTooltip />
+  );
 }
 
 /**
- * Who can approve, and how many of them it takes, from the frozen policy.
+ * The page header: what the request is, who asked, and where it stands.
  *
- * The requester needs to know whom to chase, and anyone can notice from this a
- * gate that names a group nobody is in (B5).
+ * The catalog's names, not raw refs (B16), but as plain strings: the core
+ * header styles a string subtitle for the banner and leaves anything else
+ * unstyled, which put black text on purple. The requester's link to their
+ * catalog page is in the Request card instead.
  */
-function describePolicy(policy: GatePolicy): string {
-  const count =
-    policy.quorum === 1 ? 'one approval' : `${policy.quorum} approvals`;
-  const self = policy.selfApprove
-    ? 'The requester may approve their own request.'
-    : 'The requester cannot approve their own request.';
-  return `Needs ${count} from ${oneOf(policy.approvers)}. ${self}`;
+function RequestHeader(props: {
+  request: Pick<ApprovalRequest, 'summary' | 'templateRef' | 'requesterRef'>;
+  status: ApprovalRequestStatus;
+}) {
+  const { request, status } = props;
+  const template = useEntityPresentation(request.templateRef);
+  const requester = useEntityPresentation(request.requesterRef, {
+    defaultKind: 'user',
+  });
+
+  return (
+    <Header
+      title={request.summary ?? template.primaryTitle}
+      subtitle={`Requested by ${requester.primaryTitle}`}
+    >
+      {/* In a `HeaderLabel`, as Backstage pages put their header items. The
+          header lays its children out in a spaced grid whose negative margins
+          expect grid items; a bare pill was not one, so on a narrow screen it
+          slid up over the subtitle (B14). */}
+      <HeaderLabel label="Status" value={<StatusPill status={status} />} />
+    </Header>
+  );
 }
 
 function when(iso: string): string {
@@ -267,16 +299,7 @@ export function RequestDetail(props: RequestDetailProps) {
 
   return (
     <Page themeId="tool">
-      <Header
-        title={request.summary ?? request.templateRef}
-        subtitle={`Requested by ${request.requesterRef}`}
-      >
-        {/* In a `HeaderLabel`, as Backstage pages put their header items. The
-            header lays its children out in a spaced grid whose negative
-            margins expect grid items; a bare pill was not one, so on a narrow
-            screen it slid up over the subtitle (B14). */}
-        <HeaderLabel label="Status" value={<StatusPill status={status} />} />
-      </Header>
+      <RequestHeader request={request} status={status} />
 
       <Content>
         <Flex direction="column" gap="4">
@@ -288,7 +311,18 @@ export function RequestDetail(props: RequestDetailProps) {
             <Flex direction="column" gap="3">
               <Text variant="title-small">Request</Text>
 
-              <Detail label="Template" value={request.templateRef} />
+              <Detail
+                label="Requested by"
+                value={
+                  <EntityRefLink entityRef={request.requesterRef} hideIcon />
+                }
+              />
+              <Detail
+                label="Template"
+                value={
+                  <EntityRefLink entityRef={request.templateRef} hideIcon />
+                }
+              />
               <Detail label="Requested" value={when(request.createdAt)} />
               {/* A deadline only means something while the request is waiting.
                   On a settled one, "Expires" read as if it still could. */}
@@ -335,7 +369,10 @@ export function RequestDetail(props: RequestDetailProps) {
             <Flex direction="column" gap="3">
               <Text variant="title-small">Decisions</Text>
 
-              <Text>{describePolicy(request.policySnapshot)}</Text>
+              {/* Who can approve, from the frozen policy: the requester needs
+                  to know whom to chase, and anyone can notice a gate that
+                  names a group nobody is in (B5). */}
+              <PolicySummary policy={request.policySnapshot} />
 
               <Text>
                 {status === 'pending'
@@ -353,7 +390,10 @@ export function RequestDetail(props: RequestDetailProps) {
                   // ran straight on from the timestamp.
                   <Flex key={decision.id} direction="column" gap="1">
                     <Text>
-                      <strong>{decision.approverRef}</strong>{' '}
+                      <EntityRefLink
+                        entityRef={decision.approverRef}
+                        hideIcon
+                      />{' '}
                       {decision.decision === 'approve' ? 'approved' : 'denied'}{' '}
                       on {when(decision.createdAt)}
                     </Text>
@@ -406,7 +446,7 @@ export function RequestDetail(props: RequestDetailProps) {
         {deciding && (
           <DecisionDialog
             decision={deciding}
-            summary={request.summary ?? request.templateRef}
+            summary={<RequestTitle request={request} />}
             busy={busy}
             onCancel={() => setDeciding(undefined)}
             onConfirm={comment => decide(deciding, comment)}
@@ -415,7 +455,7 @@ export function RequestDetail(props: RequestDetailProps) {
 
         {confirmingWithdraw && (
           <WithdrawDialog
-            summary={request.summary ?? request.templateRef}
+            summary={<RequestTitle request={request} />}
             busy={busy}
             onCancel={() => setConfirmingWithdraw(false)}
             onConfirm={withdraw}

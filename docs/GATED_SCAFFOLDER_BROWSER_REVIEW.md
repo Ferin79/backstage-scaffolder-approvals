@@ -2,18 +2,18 @@
 
 Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 of the [implementation guide](GATED_SCAFFOLDER_IMPLEMENTATION.md) and the evidence base of the [code review](GATED_SCAFFOLDER_REVIEW.md#2-evidence-base) all record "rendering in a real browser" as not verified. This review closes that gap. It drives every user-facing feature in the running app, as four different people, and keeps a screenshot of each.
 
-|                 |                                                                                                                                                                                                                                                                                                            |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Reviewed**    | 1 Oct 2026, at `bc64c07` on `main`                                                                                                                                                                                                                                                                         |
-| **App**         | Backstage 1.55, legacy frontend system, SQLite. Frontend on :3000, backend on :7007                                                                                                                                                                                                                        |
-| **Browser**     | Chromium, driven through the Playwright MCP server, at 1440×900; 390×844 for the mobile checks                                                                                                                                                                                                             |
-| **People**      | `requester`, `alice` and `bob` (all in `devx-team`), and `outsider` (in no group). Switched with `APP_CONFIG_auth_providers_guest_userEntityRef`, as the [repository README](../README.md#trying-an-approval-end-to-end) describes                                                                         |
-| **Data**        | A fresh database outside the repository, so `packages/backend/.local-db/` was not touched. Templates: the example, the four probes in `examples/scaffolder-approvals/probes.local.yaml`, and one review-only probe for template drift ([§3](#3-how-it-was-tested))                                         |
-| **Also run**    | `yarn tsc`, `yarn test` across the repository, `scripts/verify-gate.sh`, and the plugin's own dev harness                                                                                                                                                                                                  |
-| **Screenshots** | 50, in [`browser-review/`](browser-review/); 51 from the B1–B3 re-test, in [`browser-review/retest/`](browser-review/retest/); 21 from the B4–B10 re-test, in [`browser-review/b4-b10/`](browser-review/b4-b10/); and 14 from the B11–B15 re-test, in [`browser-review/b11-b15/`](browser-review/b11-b15/) |
-| **Fixed since** | B1–B3 ([§10](#10-fixes-and-re-test)), then B4–B10, which also settled B12 ([§11](#11-fixes-and-re-test-b4b10)), then B11 and B13–B15 ([§12](#12-fixes-and-re-test-b11b15))                                                                                                                                 |
+|                 |                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Reviewed**    | 1 Oct 2026, at `bc64c07` on `main`                                                                                                                                                                                                                                                                                                                                                               |
+| **App**         | Backstage 1.55, legacy frontend system, SQLite. Frontend on :3000, backend on :7007                                                                                                                                                                                                                                                                                                              |
+| **Browser**     | Chromium, driven through the Playwright MCP server, at 1440×900; 390×844 for the mobile checks                                                                                                                                                                                                                                                                                                   |
+| **People**      | `requester`, `alice` and `bob` (all in `devx-team`), and `outsider` (in no group). Switched with `APP_CONFIG_auth_providers_guest_userEntityRef`, as the [repository README](../README.md#trying-an-approval-end-to-end) describes                                                                                                                                                               |
+| **Data**        | A fresh database outside the repository, so `packages/backend/.local-db/` was not touched. Templates: the example, the four probes in `examples/scaffolder-approvals/probes.local.yaml`, and one review-only probe for template drift ([§3](#3-how-it-was-tested))                                                                                                                               |
+| **Also run**    | `yarn tsc`, `yarn test` across the repository, `scripts/verify-gate.sh`, and the plugin's own dev harness                                                                                                                                                                                                                                                                                        |
+| **Screenshots** | 50, in [`browser-review/`](browser-review/); 51 from the B1–B3 re-test, in [`browser-review/retest/`](browser-review/retest/); 21 from the B4–B10 re-test, in [`browser-review/b4-b10/`](browser-review/b4-b10/); 14 from the B11–B15 re-test, in [`browser-review/b11-b15/`](browser-review/b11-b15/); and 17 from the B16–B20 re-test, in [`browser-review/b16-b20/`](browser-review/b16-b20/) |
+| **Fixed since** | B1–B3 ([§10](#10-fixes-and-re-test)), then B4–B10, which also settled B12 ([§11](#11-fixes-and-re-test-b4b10)), then B11 and B13–B15 ([§12](#12-fixes-and-re-test-b11b15)), then B16–B20 ([§13](#13-fixes-and-re-test-b16b20))                                                                                                                                                                   |
 
-> **Update, 2 Oct 2026.** All of B1–B15 are now fixed: [B1](#b1)–[B3](#b3) first ([§10](#10-fixes-and-re-test)), then [B4](#b4)–[B10](#b10) ([§11](#11-fixes-and-re-test-b4b10)), which also settled [B12](#b12), then [B11](#b11) and [B13](#b13)–[B15](#b15) ([§12](#12-fixes-and-re-test-b11b15)). Each fix has tests that fail without it, and each was verified in the browser. B16–B23, the polish items, are still open.
+> **Update, 2 Oct 2026.** All of B1–B20 are now fixed: [B1](#b1)–[B3](#b3) first ([§10](#10-fixes-and-re-test)), then [B4](#b4)–[B10](#b10) ([§11](#11-fixes-and-re-test-b4b10)), which also settled [B12](#b12), then [B11](#b11) and [B13](#b13)–[B15](#b15) ([§12](#12-fixes-and-re-test-b11b15)), then [B16](#b16)–[B20](#b20) ([§13](#13-fixes-and-re-test-b16b20)). Each fix has tests that fail without it, and each was verified in the browser. B21–B23 are still open.
 
 ## Contents
 
@@ -29,7 +29,8 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 10. [Fixes and re-test](#10-fixes-and-re-test): B1–B3 fixed, every journey walked again
 11. [Fixes and re-test: B4–B10](#11-fixes-and-re-test-b4b10)
 12. [Fixes and re-test: B11–B15](#12-fixes-and-re-test-b11b15)
-13. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
+13. [Fixes and re-test: B16–B20](#13-fixes-and-re-test-b16b20)
+14. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
 
 ---
 
@@ -56,32 +57,34 @@ One finding from the code review was also open: [T6](GATED_SCAFFOLDER_REVIEW.md#
 
 ### Scorecard
 
-| Area                                         | Result           | Screens                           |
-| -------------------------------------------- | ---------------- | --------------------------------- |
-| Backstage starts                             | ✅               | —                                 |
-| Sidebar item and home-page card              | ✅ B2 fixed      | 01, 15, 41; R19, R25, R50         |
-| Approvals page: both tabs, paging, row links | ✅ B2, B15 fixed | 02, 12, 16, 38; R26, R49; C10–C12 |
-| Submitting from the wizard                   | ✅ B7 fixed      | 04, 05, 06; B01, B02              |
-| Non-gated templates unaffected               | ✅               | 14                                |
-| Duplicate collapse                           | ✅               | 07                                |
-| Value validation at submit                   | ✅ B1 fixed      | —                                 |
-| Refused template shapes                      | ✅ B1, B8 fixed  | 08, 10; R10, R11; B03, B04        |
-| Self-approval, non-approver, second vote     | ✅               | 06, 20, 36                        |
-| Approve and deny dialogs                     | ✅               | 19, 33                            |
-| Quorum, launch, completion, task link        | ✅               | 20, 31, 32                        |
-| Deny                                         | ✅               | 34                                |
-| Withdraw                                     | ✅ B11 fixed     | 11; B05; C01–C04                  |
-| Failed run and Resubmit                      | ✅               | 23, 24, 39, 40                    |
-| Expiry                                       | ✅ B4, B9 fixed  | 21; B10, B12, B13                 |
-| Template drift warning                       | ✅               | 25, 35                            |
-| Notifications                                | ✅ B11 fixed     | 17, 37; C03, C05                  |
-| Live updates: page, inbox, home card         | ✅ B10 fixed     | B07, B14, B16, B17b, B19          |
-| Derived `gated` annotation                   | ✅               | 26                                |
-| Direct scaffolder run blocked                | ✅ B3 fixed      | 13; R17                           |
-| Error and not-found pages                    | ✅ B6 fixed      | 43, 44; B08, B09                  |
-| Dark theme                                   | ✅               | 27–30; C04, C14                   |
-| Mobile width                                 | ✅ B14 fixed     | 45, 46; C06–C08, C13              |
-| Plugin dev harness                           | ⚠️ B21           | 47, 48                            |
+| Area                                         | Result                | Screens                                     |
+| -------------------------------------------- | --------------------- | ------------------------------------------- |
+| Backstage starts                             | ✅                    | —                                           |
+| Sidebar item and home-page card              | ✅ B2, B19 fixed      | 01, 15, 41; R19, R25, R50; D01, D07         |
+| Approvals page: both tabs, paging, row links | ✅ B2, B15, B20 fixed | 02, 12, 16, 38; R26, R49; C10–C12; D05, D08 |
+| Submitting from the wizard                   | ✅ B7, B18 fixed      | 04, 05, 06; B01, B02; D03                   |
+| Gated templates marked on **Create…**        | ✅ B17 fixed          | 03; D02, D06, D14                           |
+| People and templates by name, linked         | ✅ B16 fixed          | D04, D05, D08–D11, D17                      |
+| Non-gated templates unaffected               | ✅                    | 14                                          |
+| Duplicate collapse                           | ✅                    | 07                                          |
+| Value validation at submit                   | ✅ B1 fixed           | —                                           |
+| Refused template shapes                      | ✅ B1, B8 fixed       | 08, 10; R10, R11; B03, B04                  |
+| Self-approval, non-approver, second vote     | ✅                    | 06, 20, 36                                  |
+| Approve and deny dialogs                     | ✅                    | 19, 33                                      |
+| Quorum, launch, completion, task link        | ✅                    | 20, 31, 32                                  |
+| Deny                                         | ✅                    | 34                                          |
+| Withdraw                                     | ✅ B11 fixed          | 11; B05; C01–C04                            |
+| Failed run and Resubmit                      | ✅                    | 23, 24, 39, 40                              |
+| Expiry                                       | ✅ B4, B9 fixed       | 21; B10, B12, B13                           |
+| Template drift warning                       | ✅                    | 25, 35                                      |
+| Notifications                                | ✅ B11 fixed          | 17, 37; C03, C05                            |
+| Live updates: page, inbox, home card         | ✅ B10 fixed          | B07, B14, B16, B17b, B19                    |
+| Derived `gated` annotation                   | ✅                    | 26                                          |
+| Direct scaffolder run blocked                | ✅ B3 fixed           | 13; R17                                     |
+| Error and not-found pages                    | ✅ B6 fixed           | 43, 44; B08, B09                            |
+| Dark theme                                   | ✅                    | 27–30; C04, C14; D15, D16                   |
+| Mobile width                                 | ✅ B14 fixed          | 45, 46; C06–C08, C13; D12–D14               |
+| Plugin dev harness                           | ⚠️ B21                | 47, 48                                      |
 
 ---
 
@@ -523,11 +526,11 @@ This is the code review's [T6](GATED_SCAFFOLDER_REVIEW.md#t6), reproduced. `yarn
 ## 7. Polish
 
 - <a id="b15"></a>**B15** ✅ fixed ([§12](#12-fixes-and-re-test-b11b15)) — The empty inbox draws its empty state inside a scroll box with a visible scrollbar, and without column headers ([02](browser-review/02-approvals-inbox-empty.png)).
-- <a id="b16"></a>**B16** — People and templates appear as raw entity refs everywhere: `user:default/requester`, `template:default/request-github-admin`, `group:default/devx-team`. None of them link to the catalog. `EntityRefLink` from `plugin-catalog-react`, already a dependency, would give names and links for free.
-- <a id="b17"></a>**B17** — On **Create…**, nothing distinguishes a gated template from any other ([03](browser-review/03-create-template-list.png)). A requester learns it on the last wizard step. The derived annotation is there to read.
-- <a id="b18"></a>**B18** — "**2 of these** must approve" above a single group reads oddly ([05](browser-review/05-gated-review-step.png)). For example, "2 approvals are needed, from:".
-- <a id="b19"></a>**B19** — The home card's body uses BUI type, so it does not match the MUI card beside it ([01](browser-review/01-home-card-empty.png)). The legacy card also lacks the "Open" header link that `PendingApprovalsCard` defines, because the card extension renders only the content.
-- <a id="b20"></a>**B20** — **Your requests** has a **Requested by** column, which is always the viewer ([38](browser-review/38-your-requests-all-statuses.png)).
+- <a id="b16"></a>**B16** ✅ fixed ([§13](#13-fixes-and-re-test-b16b20)) — People and templates appear as raw entity refs everywhere: `user:default/requester`, `template:default/request-github-admin`, `group:default/devx-team`. None of them link to the catalog. `EntityRefLink` from `plugin-catalog-react`, already a dependency, would give names and links for free.
+- <a id="b17"></a>**B17** ✅ fixed ([§13](#13-fixes-and-re-test-b16b20)) — On **Create…**, nothing distinguishes a gated template from any other ([03](browser-review/03-create-template-list.png)). A requester learns it on the last wizard step. The derived annotation is there to read.
+- <a id="b18"></a>**B18** ✅ fixed ([§13](#13-fixes-and-re-test-b16b20)) — "**2 of these** must approve" above a single group reads oddly ([05](browser-review/05-gated-review-step.png)). For example, "2 approvals are needed, from:".
+- <a id="b19"></a>**B19** ✅ fixed ([§13](#13-fixes-and-re-test-b16b20)) — The home card's body uses BUI type, so it does not match the MUI card beside it ([01](browser-review/01-home-card-empty.png)). The legacy card also lacks the "Open" header link that `PendingApprovalsCard` defines, because the card extension renders only the content.
+- <a id="b20"></a>**B20** ✅ fixed ([§13](#13-fixes-and-re-test-b16b20)) — **Your requests** has a **Requested by** column, which is always the viewer ([38](browser-review/38-your-requests-all-statuses.png)).
 - <a id="b21"></a>**B21** — The dev harness signs in as a guest who is not in `devx-team`, while every mock request names `devx-team`. So the harness's inbox lists a request its user cannot act on, and the approve and deny flow cannot be tried there ([48](browser-review/48-dev-harness-detail.png)).
 - <a id="b22"></a>**B22** — The README says "press **Enter** to sign in as a guest"; sign-in is automatic.
 - <a id="b23"></a>**B23** — The Approvals page logs one React Aria warning, "A `textValue` prop is required for `<Tag>` elements with non-plain text children". It comes from inside BUI's components rather than the plugin's own code, but it is worth checking against the BUI version before upstreaming.
@@ -862,6 +865,96 @@ Behaviour change to know about: **withdrawing now notifies the approvers**, by r
 
 B16–B23, all of them polish ([§7](#7-polish)).
 
+B16–B20 have since been fixed: see [§13](#13-fixes-and-re-test-b16b20).
+
+---
+
+## 13. Fixes and re-test: B16–B20
+
+B16–B20 were fixed on 2 Oct 2026, on the branch `fix/scaffolder-approvals-browser-review`. Each has tests that fail when it is removed. Each was verified in the browser on a fresh database as requester, alice and bob, at 1440 and 390 px wide, and in both themes. Screenshots are numbered `D01`–`D17`, in [`browser-review/b16-b20/`](browser-review/b16-b20/).
+
+To show names coming from the catalog rather than from refs, the example people and group in [`examples/scaffolder-approvals/org.yaml`](../examples/scaffolder-approvals/org.yaml) now have display names: Riley Requester, Alice Approver, Bob Approver, Oscar Outsider and DevX team.
+
+### 13.1 What changed
+
+| Finding                                         | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [B16](#b16) raw entity refs everywhere          | **Request page:** the requester, the template, every approver in the policy sentence and everyone who decided appear by the catalog's name, each linked to their catalog page. A **Requested by** row joins the Request card. The header names the requester and, for a gate with no summary, the template, as plain text: the core header styles a string subtitle for the banner and leaves anything else unstyled. **List:** the template column shows the template's title and the requester column their display name; not links, since the whole row is one. **Review step:** approvers by name, linked, in a new tab so the form survives. **Notifications:** "alice approved your request …" rather than "user:default/alice …"; the namespace stays when it is not `default`. They do not ask the catalog for display names, because they go out in the middle of a decision. Event payloads keep full refs. |
+| [B17](#b17) gated templates look like any other | A new public component, `GatedTemplateCard`, installed as the scaffolder page's `TemplateCardComponent`. It is the scaffolder's own card with one link per approver added, "Approver: DevX team", to that approver's catalog page, through the card's slot for app-added links, which is how the scaffolder adds "View TechDocs". A gate the backend would refuse shows **Needs approval** instead. It reads the gate through the same function as the review step, `readGate`, so the card and the last step cannot disagree. Its props are its own, not an alias of the scaffolder's alpha `TemplateCardProps`, so an alpha change cannot move this public API.                                                                                                                                                                                                                                                     |
+| [B18](#b18) "2 of these must approve"           | One sentence, `PolicySummary`, used by the review step and the request page alike: "Needs 2 approvals from DevX team. The requester cannot approve their own request." "Needs one approval from …" for a quorum of one, and "from A or B" for several approvers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| [B19](#b19) home card                           | **The way to the page:** a footer link, **Open approvals**, in the card's `Actions`. The home-page extensions draw their own card and took only `Content` from this one, so the home page had no way to the page; both extensions and the standalone card now pass the same footer. **Type:** the sentence is BUI's `body-large`, 16 px, the size of the MUI card text beside it. The typeface is the app's to set: BUI uses `system-ui` and the MUI theme Helvetica Neue, Helvetica, Roboto, Arial. The app now points BUI's `--bui-font-regular` at the theme's stack in [`bui-theme.css`](../packages/app/src/bui-theme.css), and the README says how. That also aligns every page that puts BUI content under an MUI header.                                                                                                                                                                                      |
+| [B20](#b20) "Requested by" on Your requests     | The column is hidden on **Your requests**, where every row is the viewer's, as well as below 768 px.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+The plugin's two dialogs now take the request's title as an element, so a request without a summary reads "Withdrawing stops Probe - fails after approval" rather than quoting a template ref. The nav icon moved into a shared module, so the alpha entrypoint and the template card use one glyph.
+
+### 13.2 Tests
+
+New or changed tests:
+
+- **Backend:** notification text names people, and keeps a non-default namespace; a redacted request names its template.
+- **Frontend:**
+  - the request page links the requester, the template, the approvers and whoever decided to their catalog pages, names the requester in the header as one piece of text, and leaves no raw ref anywhere;
+  - a request with no summary takes the template's name as its title;
+  - the review step's sentence, and its links in a new tab;
+  - the list names templates and people as the catalog does, and has no **Requested by** on **Your requests**;
+  - the template card: approvers named and linked, a fallback without the presentation API, nothing added to an ungated template, **Needs approval** for an unusable gate, the app's own links kept after the approvers, and **Choose** handing over the template;
+  - the home card's footer, both standalone and as the home-page extension, and its 16 px sentence.
+
+Ten mutants, all caught:
+
+| Mutant                                                       | Result                        |
+| ------------------------------------------------------------ | ----------------------------- |
+| B16: approvers as raw refs in the policy sentence            | 5 failed, 43 passed, 48 total |
+| B16: the list ignores the catalog's title                    | 1 failed, 9 passed, 10 total  |
+| B16: the header subtitle as an element (black on the banner) | 1 failed, 35 passed, 36 total |
+| B16: notifications with raw refs                             | 3 failed, 19 passed, 22 total |
+| B17: the card names no approvers                             | 2 failed, 4 passed, 6 total   |
+| B17: **Choose** hands over nothing                           | 1 failed, 5 passed, 6 total   |
+| B18: the old "of these must approve" wording                 | 3 failed, 45 passed, 48 total |
+| B19: the home-page extension without the footer              | 1 failed, 7 passed, 8 total   |
+| B19: the sentence back at 14 px                              | 1 failed, 7 passed, 8 total   |
+| B20: **Requested by** back on **Your requests**              | 1 failed, 9 passed, 10 total  |
+
+### 13.3 In the browser
+
+| Finding  | What was done                                                                                                                     | What was seen                                                                                                                                                                                                                               | Screens                                                                                                                                                                                                                                       |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B19      | Opened the home page as the requester, then as alice with one request waiting, measured the type, and followed **Open approvals** | Both cards' body text in Helvetica Neue at 16 px, where the approvals card used to be `system-ui` at 14 px. The footer link went to the approvals page without a reload. Same in the dark theme and at 390 px                               | [D01](browser-review/b16-b20/D01-B19-home-card-empty.png), [D07](browser-review/b16-b20/D07-B19-home-card-one-waiting.png), [D13](browser-review/b16-b20/D13-B19-home-card-390.png), [D15](browser-review/b16-b20/D15-B19-home-card-dark.png) |
+| B17      | Opened **Create…**                                                                                                                | Every gated template's card reads "Approver: DevX team", linked to the group's page. The two the backend refuses read **Needs approval**. The example Node.js template is unchanged. At 390 px the link wraps, as the card's other links do | [D02](browser-review/b16-b20/D02-B17-create-page.png), [D06](browser-review/b16-b20/D06-B17-gated-card.png), [D14](browser-review/b16-b20/D14-B17-create-card-390.png)                                                                        |
+| B18, B16 | Filled in the gated wizard and pressed Review                                                                                     | "Needs 2 approvals from DevX team. The requester cannot approve their own request.", DevX team linked in a new tab; no "of these must approve". "devx-team" for a moment, until the catalog answers                                         | [D03](browser-review/b16-b20/D03-B18-review-step.png)                                                                                                                                                                                         |
+| B16      | Submitted it, and opened the request                                                                                              | "Requested by Riley Requester" in the header, white on the banner; Riley Requester, Request GitHub admin access and DevX team linked in the cards; no raw ref on the page                                                                   | [D04](browser-review/b16-b20/D04-B16-request-page-names.png)                                                                                                                                                                                  |
+| B20, B16 | Opened **Your requests**                                                                                                          | Template, Status and Requested: no **Requested by**. The row reads "Request GitHub admin access", not "request-github-admin"                                                                                                                | [D05](browser-review/b16-b20/D05-B20-your-requests.png)                                                                                                                                                                                       |
+| B16      | As alice, opened the inbox and her notifications, then approved, 1 of 2                                                           | The inbox keeps **Requested by**, reading "Riley Requester". The notification reads "requester is asking to run Admin on acme/payments-api". The decision reads "Alice Approver approved on …", linked                                      | [D08](browser-review/b16-b20/D08-B16-inbox-names.png), [D09](browser-review/b16-b20/D09-B16-notification-names.png), [D10](browser-review/b16-b20/D10-B16-decision-by-name.png)                                                               |
+| B16      | As alice, submitted `probe-fails`, whose gate has no summary, and opened Withdraw                                                 | The title, the browser tab and the dialog all say "Probe - fails after approval", the template's title                                                                                                                                      | [D11](browser-review/b16-b20/D11-B16-no-summary-title.png)                                                                                                                                                                                    |
+| B16      | The request at 390 px, and in the dark theme                                                                                      | Nothing scrolls sideways; the subtitle stays white above the Status label. The links take the dark theme's link colour                                                                                                                      | [D12](browser-review/b16-b20/D12-B16-request-page-390.png), [D16](browser-review/b16-b20/D16-B16-request-page-dark.png)                                                                                                                       |
+| B16      | As bob, approved the request, which completed; then opened the requester's notifications                                          | "bob approved your request to run Admin on acme/payments-api", "alice is asking to run probe-fails", and "probe-fails did not complete: the task failed"                                                                                    | [D17](browser-review/b16-b20/D17-B16-requester-notification-names.png)                                                                                                                                                                        |
+
+![The gated template's card on Create…](browser-review/b16-b20/D06-B17-gated-card.png)
+
+_D06 — a gated template on **Create…**: the scaffolder's own card, with its approver added._
+
+**One regression, caught here and fixed.** The first version passed the header an element for its subtitle, with the requester as a link. The core header styles only a string subtitle, so it rendered black on the purple banner. The header now gets plain text, the link sits in the Request card, and a test asserts the subtitle is one piece of text. The mutant that puts the element back fails it.
+
+### 13.4 Checks
+
+| Check                        | Result                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `yarn tsc`                   | ✅ Clean                                                                                                                                                                             |
+| `backstage-cli package lint` | ✅ The frontend plugin, the backend plugin and the app, no warnings                                                                                                                  |
+| `prettier --check`           | ✅                                                                                                                                                                                   |
+| `yarn build:api-reports`     | ✅ The frontend gains `GatedTemplateCard` and `GatedTemplateCardProps`, both documented. The alpha report's union was reordered again with no change to the alpha code, and reverted |
+| `yarn test` (whole repo)     | ✅ **523 / 523**, 36 suites, in two runs                                                                                                                                             |
+
+Behaviour changes to know about:
+
+- **The request page and the review step need the catalog's entity page mounted**, because names link to it. Any app with the scaffolder has one.
+- **Notification wording changed**: names instead of refs. Anything matching on the old text needs updating; event payloads are unchanged.
+- **This app's BUI text is now in the MUI theme's typeface**, on every page, not only the approvals ones.
+
+### 13.5 Still open
+
+B21–B23. One more observation, not caused by these changes, is in the [appendix](#appendix-console-noise-that-is-not-the-plugins): once, the browser tab lost the request's name after a live update.
+
 ---
 
 ## Appendix: console noise that is not the plugin's
@@ -873,4 +966,5 @@ These appear on most pages and come from Backstage or its dependencies, not from
 - React Router v7 future-flag warnings;
 - `Support for defaultProps will be removed`, from `material-table` on the Notifications page;
 - `WebSocket connection to 'ws://localhost:7007/api/signals' failed`, only while the backend was restarting between identities;
+- the unread count that the notifications plugin puts in the browser tab, "(2) …". It keeps its own copy of the page's title and rewrites the tab, throttled. Once during §13, after the live updates that follow an approval, it left the tab reading "(2) Scaffolded Backstage App" instead of the request's name until a reload. A second attempt with every title change logged showed the page setting the request's name each time and the counter re-adding its prefix to it. The page always passes the right title; the race is in the counter;
 - the `ui:field: Secret` input renders no field in this app's wizard ([09](browser-review/09-secret-probe-form.png)). That is the scaffolder's field registration, not the plugin's, and it does not change the outcome, since the backend refuses the template whatever is typed.
