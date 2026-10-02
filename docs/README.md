@@ -436,7 +436,7 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 
 See the [repository README](../README.md) for running the app, trying an approval end to end as several different people, and running `scripts/verify-gate.sh`.
 
-To work on the approvals page on its own, run `yarn start` inside `plugins/scaffolder-approvals`, which serves it against a mock API.
+To work on the approvals page on its own, run `yarn start` inside `plugins/scaffolder-approvals`, which serves it against a mock API. With no backend running, sign in as a guest and accept the fallback to the legacy guest token. The mock makes whoever signs in an approver, and applies the backend's rules, so approving, denying and withdrawing can all be tried; its requests start over when the page reloads. A **Home card** page shows the home-page card, whose count follows your votes, and people's names link to a stand-in for the catalog page.
 
 ## Documentation
 

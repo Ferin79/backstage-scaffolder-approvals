@@ -14,124 +14,81 @@
  * limitations under the License.
  */
 
+import { Content, Header, Page } from '@backstage/core-components';
+import {
+  attachComponentData,
+  identityApiRef,
+} from '@backstage/core-plugin-api';
 import { createDevApp } from '@backstage/dev-utils';
-import type {
-  ApprovalRequest,
-  ApprovalRequestWithDecisions,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+import { entityRouteRef } from '@backstage/plugin-catalog-react';
+import { Text } from '@backstage/ui';
+import { useParams } from 'react-router-dom';
 import {
   ApprovalsIndexPage,
   approvalsApiRef,
+  PendingApprovalsCard,
   scaffolderApprovalsPlugin,
 } from '../src';
-import type { ApprovalsApi } from '../src';
+import { createMockApprovalsApi } from './mockApprovalsApi';
 
 /**
- * Enough requests to see every status pill, a quorum part-way met, and a
- * redacted request — the three things that are awkward to eyeball otherwise.
+ * Where the catalog's entity page would be.
+ *
+ * People, groups and templates link to their catalog pages (B16), and those
+ * links need the catalog's entity route to exist. The harness has no catalog,
+ * so this stands in for it, and says which page a real app would show.
  */
-const REQUESTS: ApprovalRequestWithDecisions[] = [
-  {
-    id: '1',
-    templateRef: 'template:default/request-github-admin',
-    values: { repository: 'backstage', justification: 'on-call rotation' },
-    valuesHash: 'a'.repeat(64),
-    requesterRef: 'user:default/requester',
-    status: 'pending',
-    summary: 'Admin on backstage',
-    policySnapshot: {
-      approvers: ['group:default/devx-team'],
-      quorum: 2,
-      selfApprove: false,
-    },
-    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-    updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
-    decisions: [
-      {
-        id: 'd1',
-        requestId: '1',
-        approverRef: 'user:default/alice',
-        decision: 'approve',
-        comment: 'Checked the rotation, looks right.',
-        createdAt: new Date(Date.now() - 1_800_000).toISOString(),
-      },
-    ],
-  },
-  {
-    id: '2',
-    templateRef: 'template:default/request-prod-access',
-    values: { environment: 'production' },
-    valuesHash: 'b'.repeat(64),
-    requesterRef: 'user:default/someone-else',
-    status: 'running',
-    summary: 'Production access for a deploy',
-    policySnapshot: {
-      approvers: ['group:default/devx-team'],
-      quorum: 1,
-      selfApprove: false,
-    },
-    taskId: 'task-42',
-    createdAt: new Date(Date.now() - 86_400_000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    decisions: [],
-  },
-  {
-    id: '3',
-    templateRef: 'template:default/request-github-admin',
-    // Redacted: the retention sweep has been through.
-    values: null,
-    valuesHash: 'c'.repeat(64),
-    requesterRef: 'user:default/requester',
-    status: 'completed',
-    summary: null,
-    policySnapshot: {
-      approvers: ['group:default/devx-team'],
-      quorum: 1,
-      selfApprove: false,
-    },
-    createdAt: new Date(Date.now() - 200 * 86_400_000).toISOString(),
-    updatedAt: new Date(Date.now() - 200 * 86_400_000).toISOString(),
-    redactedAt: new Date(Date.now() - 20 * 86_400_000).toISOString(),
-    decisions: [],
-  },
-];
+function EntityPageStandIn() {
+  const { kind, namespace, name } = useParams();
+  return (
+    <Page themeId="tool">
+      <Header title={`${kind}:${namespace}/${name}`} />
+      <Content>
+        <Text>
+          In an app, this is the catalog's page for this entity. The harness has
+          no catalog.
+        </Text>
+      </Content>
+    </Page>
+  );
+}
+attachComponentData(EntityPageStandIn, 'core.mountPoint', entityRouteRef);
 
-const mockApi: ApprovalsApi = {
-  async listRequests(options = {}) {
-    const statuses = [options.status ?? []].flat();
-    const items: ApprovalRequest[] = REQUESTS.filter(
-      request => statuses.length === 0 || statuses.includes(request.status),
-    );
-    return { items, totalItems: items.length };
-  },
-  async getRequest(id) {
-    const found = REQUESTS.find(request => request.id === id);
-    if (!found) {
-      throw new Error(`No such approval request: ${id}`);
-    }
-    return found;
-  },
-  async submitRequest() {
-    return { id: '1', collapsed: false };
-  },
-  async decide(id) {
-    return await this.getRequest(id);
-  },
-  async cancel(id) {
-    return await this.getRequest(id);
-  },
-};
+/** The home-page card, on a page of its own: its count follows your votes. */
+function HomeCardPage() {
+  return (
+    <Page themeId="home">
+      <Header title="Home card" />
+      <Content>
+        <div style={{ maxWidth: 560 }}>
+          <PendingApprovalsCard />
+        </div>
+      </Content>
+    </Page>
+  );
+}
 
 createDevApp()
   .registerPlugin(scaffolderApprovalsPlugin)
   .registerApi({
     api: approvalsApiRef,
-    deps: {},
-    factory: () => mockApi,
+    // The mock names whoever the harness signed in as as an approver, so
+    // approving, denying and withdrawing can all be tried here (B21).
+    deps: { identityApi: identityApiRef },
+    factory: ({ identityApi }) => createMockApprovalsApi(identityApi),
   })
   .addPage({
     element: <ApprovalsIndexPage />,
     title: 'Approvals',
     path: '/scaffolder-approvals',
+  })
+  .addPage({
+    element: <HomeCardPage />,
+    title: 'Home card',
+    path: '/home-card',
+  })
+  .addPage({
+    element: <EntityPageStandIn />,
+    path: '/catalog/:namespace/:kind/:name',
   })
   .render();

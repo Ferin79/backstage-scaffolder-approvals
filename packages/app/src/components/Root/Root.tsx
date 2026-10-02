@@ -30,6 +30,7 @@ import SearchIcon from '@material-ui/icons/Search';
 import { MyGroupsSidebarItem } from '@backstage/plugin-org';
 import GroupIcon from '@material-ui/icons/People';
 import { NotificationsSidebarItem } from '@backstage/plugin-notifications';
+import { NotificationsItem } from './NotificationsItem';
 
 const useSidebarLogoStyles = makeStyles({
   root: {
@@ -92,7 +93,7 @@ export const Root = ({ children }: PropsWithChildren<{}>) => (
       </SidebarGroup>
       <SidebarSpace />
       <SidebarDivider />
-      <NotificationsSidebarItem />
+      <NotificationsSidebarItem renderItem={NotificationsItem} />
       <SidebarDivider />
       <SidebarGroup
         label="Settings"

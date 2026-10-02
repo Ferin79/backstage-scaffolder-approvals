@@ -26,7 +26,7 @@ yarn install
 yarn start
 ```
 
-Open <http://localhost:3000> and press **Enter** to sign in as a guest. Data is kept in `packages/backend/.local-db/`, so it survives a restart; delete that folder to start clean.
+Open <http://localhost:3000> and press **Enter** on the Guest card. The browser remembers that choice, so later visits sign you in by themselves; clear the site's storage to see the card again. [Trying an approval end to end](#trying-an-approval-end-to-end) shows how to sign in as one of the example's people. Data is kept in `packages/backend/.local-db/`, so it survives a restart; delete that folder to start clean.
 
 ## Trying an approval end to end
 
