@@ -5,7 +5,7 @@
 
 |                    |                                                                    |
 | ------------------ | ------------------------------------------------------------------ |
-| **Target package** | `@backstage-community/plugin-scaffolder-approvals`                 |
+| **Target package** | `@ferin79/backstage-plugin-scaffolder-approvals`                   |
 | **Backstage**      | 1.54.5+                                                            |
 | **Status**         | Design settled — 24 decisions recorded in §13. Ready to implement. |
 | **Date**           | 11 Sep 2026                                                        |
@@ -423,7 +423,7 @@ import {
 } from '@backstage/backend-plugin-api';
 
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 
@@ -735,7 +735,7 @@ All 24 decisions, settled across four rounds of design review.
 | R0b    | Distribution             | **Upstream to `backstage/community-plugins`.**                                    |
 | R0c    | Policy source            | **Template YAML**, not a new catalog Kind.                                        |
 | R0d    | Available infrastructure | Permission framework + RBAC, Notifications, Signals, Events backend all present.  |
-| Q1     | Workspace name           | **`scaffolder-approvals`** → `@backstage-community/plugin-scaffolder-approvals`.  |
+| Q1     | Workspace name           | **`scaffolder-approvals`** → `@ferin79/backstage-plugin-scaffolder-approvals`.    |
 | ~~Q2~~ | ~~Config gate matching~~ | ~~Exact `templateRef` only~~ — **superseded by Q8**; there is no config matching. |
 
 ### Backend behaviour

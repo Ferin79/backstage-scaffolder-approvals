@@ -23,11 +23,11 @@ import {
   type GatePolicy,
   normaliseEntityRef,
   TERMINAL_APPROVAL_REQUEST_STATUSES,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   assertSha256Hex,
   computeValuesHash,
-} from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type { JsonObject } from '@backstage/types';
 import type { Knex } from 'knex';
 import { v4 as uuid } from 'uuid';

@@ -1,0 +1,125 @@
+# Stages every publishable package to npm when a version tag (v1.2.3) is pushed.
+#
+# The NODE_AUTH_TOKEN secret is a stage-only npm token: it cannot publish
+# directly. Each staged version must then be approved by a maintainer with 2FA,
+# on npmjs.com or with `npm stage approve <stage-id>`, before it goes live.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, test and stage to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    # One shared Postgres for the backend tests; see ci.yml.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432/tcp']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # No dependency cache here, so a poisoned cache cannot reach what we publish.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # `npm stage` needs npm 11.15 or later.
+      - name: Install npm with staged publishing
+        run: npm install -g npm@11
+
+      - name: Check the tag matches every package version
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          status=0
+          for dir in $(yarn workspaces list --no-private --json | jq -r .location); do
+            actual=$(jq -r .version "$dir/package.json")
+            if [ "$actual" != "$expected" ]; then
+              echo "::error file=$dir/package.json::version is $actual, but the tag is $GITHUB_REF_NAME"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Type-check
+        run: yarn tsc
+
+      - name: Build
+        run: yarn backstage-cli repo build
+
+      - name: Test
+        run: yarn test
+        env:
+          BACKSTAGE_TEST_DISABLE_DOCKER: '1'
+          BACKSTAGE_TEST_DATABASE_POSTGRES18_CONNECTION_STRING: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}
+
+      # `yarn pack` runs each package's prepack, which points main/types at
+      # dist, and rewrites workspace:^ dependencies to real versions.
+      # `npm stage` does not understand workspaces, so each package is packed
+      # first and staged from its tarball.
+      - name: Pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          for dir in $(yarn workspaces list --no-private --json | jq -r .location); do
+            cp LICENSE "$dir/"
+            (cd "$dir" && yarn pack --out "$RUNNER_TEMP/packages/$(basename "$dir").tgz")
+          done
+          ls -l "$RUNNER_TEMP/packages"
+
+      - name: Stage to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tag=latest
+          case "$version" in *-*) tag=next ;; esac
+
+          failed=0
+          for dir in $(yarn workspaces list --no-private --json | jq -r .location); do
+            name=$(jq -r .name "$dir/package.json")
+            if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
+              echo "$name@$version is already published, skipping"
+              continue
+            fi
+            echo "::group::Staging $name@$version"
+            if ! npm stage publish "$RUNNER_TEMP/packages/$(basename "$dir").tgz" --access public --tag "$tag" --provenance; then
+              echo "::error::Failed to stage $name@$version"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+
+          {
+            echo "## Staged $GITHUB_REF_NAME"
+            echo
+            echo "Approve each staged version with 2FA before it is published:"
+            echo
+            echo '- on <https://www.npmjs.com>, under each package'"'"'s staged versions, or'
+            echo '- with `npm stage list <package>` and `npm stage approve <stage-id>`.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit $failed

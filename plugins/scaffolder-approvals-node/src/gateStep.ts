@@ -23,4 +23,4 @@ export {
   GateStepError,
   isGated,
   type GateStepLookup,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';

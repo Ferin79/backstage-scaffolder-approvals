@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ApprovalRequestWithDecisions } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { ApprovalRequestWithDecisions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { Button, Flex, Text } from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
 

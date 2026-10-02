@@ -253,20 +253,29 @@ Nothing forces a template to stay gated. Anyone who can change the template's YA
 
 ## Installation
 
+The packages are published to npm under `@ferin79`. `-common` and `-node` come in as dependencies of the others.
+
 ### Backend
+
+```sh
+yarn --cwd packages/backend add \
+  @ferin79/backstage-plugin-scaffolder-approvals-backend \
+  @ferin79/backstage-plugin-scaffolder-backend-module-approvals \
+  @ferin79/backstage-plugin-catalog-backend-module-approvals
+```
 
 ```ts
 // packages/backend/src/index.ts
-backend.add(import('@backstage-community/plugin-scaffolder-approvals-backend'));
+backend.add(import('@ferin79/backstage-plugin-scaffolder-approvals-backend'));
 
 // In whichever backend runs the scaffolder:
 backend.add(
-  import('@backstage-community/plugin-scaffolder-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-scaffolder-backend-module-approvals'),
 );
 
 // In whichever backend runs the catalog:
 backend.add(
-  import('@backstage-community/plugin-catalog-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-catalog-backend-module-approvals'),
 );
 ```
 
@@ -276,16 +285,20 @@ Notifications and signals are optional. With the notifications plugin installed,
 
 ### Frontend
 
+```sh
+yarn --cwd packages/app add @ferin79/backstage-plugin-scaffolder-approvals
+```
+
 For the new frontend system:
 
 ```ts
-import approvalsPlugin from '@backstage-community/plugin-scaffolder-approvals/alpha';
+import approvalsPlugin from '@ferin79/backstage-plugin-scaffolder-approvals/alpha';
 ```
 
 For the legacy frontend system:
 
 ```tsx
-import { ApprovalsIndexPage } from '@backstage-community/plugin-scaffolder-approvals';
+import { ApprovalsIndexPage } from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 <Route path="/scaffolder-approvals" element={<ApprovalsIndexPage />} />;
 ```
@@ -297,7 +310,7 @@ The new frontend system builds the sidebar entry from the page itself, so there 
 How many requests are waiting on you, somewhere people already look. Nothing notifies an approver a second time, so a request that arrives while somebody is away otherwise waits until it expires.
 
 ```tsx
-import { PendingApprovalsHomePageCard } from '@backstage-community/plugin-scaffolder-approvals';
+import { PendingApprovalsHomePageCard } from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 <PendingApprovalsHomePageCard />;
 ```
@@ -309,7 +322,7 @@ On the new frontend system the same card is a home-page widget and needs no wiri
 Without this step a requester who opens a gated template in the scaffolder and presses **Create** gets a failed task, and no way to ask for approval from the UI: the approvals page lists requests but cannot create one. Pass `GatedReviewStep` as the wizard's review step and the wizard ends in a request instead:
 
 ```tsx
-import { GatedReviewStep } from '@backstage-community/plugin-scaffolder-approvals';
+import { GatedReviewStep } from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 <Route
   path="/create"
@@ -344,7 +357,7 @@ It is a review step rather than a decorator on `scaffolderApiRef` because of wha
 Without this, a requester finds out that a template needs approval on the wizard's last step. `GatedTemplateCard` is the scaffolder's own template card with one link per approver added, "Approver: DevX team", each to that approver's catalog page. Every other template's card is unchanged.
 
 ```tsx
-import { GatedTemplateCard } from '@backstage-community/plugin-scaffolder-approvals';
+import { GatedTemplateCard } from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 <ScaffolderPage
   components={{

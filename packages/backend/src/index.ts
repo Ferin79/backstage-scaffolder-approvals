@@ -22,7 +22,7 @@ backend.add(
 // The `approval:gate` action. It has to live in whichever backend runs the
 // scaffolder, because it is a step of the template being run.
 backend.add(
-  import('@backstage-community/plugin-scaffolder-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-scaffolder-backend-module-approvals'),
 );
 
 // techdocs plugin
@@ -42,7 +42,7 @@ backend.add(
 // Derives the `scaffolder-approvals.backstage.io/gated` annotation from a
 // template's `approval:gate` step, and warns about gates that cannot hold.
 backend.add(
-  import('@backstage-community/plugin-catalog-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-catalog-backend-module-approvals'),
 );
 
 // See https://backstage.io/docs/features/software-catalog/configuration#subscribing-to-catalog-errors
@@ -82,7 +82,7 @@ backend.add(import('@backstage/plugin-signals-backend'));
 backend.add(import('@backstage/plugin-events-backend'));
 
 // scaffolder approvals: requests, decisions, grants, sweeps and the API
-backend.add(import('@backstage-community/plugin-scaffolder-approvals-backend'));
+backend.add(import('@ferin79/backstage-plugin-scaffolder-approvals-backend'));
 
 // mcp actions plugin
 backend.add(import('@backstage/plugin-mcp-actions-backend'));

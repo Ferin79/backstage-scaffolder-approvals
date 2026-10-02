@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { ApprovalRequest } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { mockServices } from '@backstage/backend-test-utils';
 import type {
   EventParams,

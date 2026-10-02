@@ -19,7 +19,7 @@ import {
   type ApprovalRequest,
   APPROVALS_SIGNAL_CHANNEL,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { LoggerService } from '@backstage/backend-plugin-api';
 import { DEFAULT_NAMESPACE, parseEntityRef } from '@backstage/catalog-model';
 import type { EventsService } from '@backstage/plugin-events-node';

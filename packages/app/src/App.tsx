@@ -29,7 +29,7 @@ import { ReviewStep } from './components/scaffolder/ReviewStep';
 import {
   ApprovalsIndexPage,
   GatedTemplateCard,
-} from '@backstage-community/plugin-scaffolder-approvals';
+} from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 import {
   AlertDisplay,

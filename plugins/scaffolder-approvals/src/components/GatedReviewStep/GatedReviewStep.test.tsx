@@ -17,7 +17,7 @@
 import {
   GATE_ACTION_ID,
   GATED_ANNOTATION,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { alertApiRef } from '@backstage/core-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';

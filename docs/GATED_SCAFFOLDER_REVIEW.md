@@ -980,7 +980,7 @@ Every file below was run for this review and removed from the tree afterwards. E
  * (mock auth), the catalog (in-memory) and the scheduler (manually
  * triggered) are stand-ins. Every call below is an HTTP request.
  */
-import { scaffolderApprovalsPlugin } from '@backstage-community/plugin-scaffolder-approvals-backend';
+import { scaffolderApprovalsPlugin } from '@ferin79/backstage-plugin-scaffolder-approvals-backend';
 import scaffolderPlugin from '@backstage/plugin-scaffolder-backend';
 import {
   coreServices,
@@ -1722,12 +1722,12 @@ ${log}`);
  *
  * Run with REVIEW_SHOW=1 to see the raw assertion failures instead.
  */
-import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   hashGrantToken,
   isNotRequester,
   parseGrant,
-} from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import {
   mockCredentials,
@@ -1754,7 +1754,7 @@ const SHOW = Boolean(process.env.REVIEW_SHOW);
 const spec = SHOW ? it : it.failing;
 
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 
@@ -2302,7 +2302,7 @@ describe('REVIEW notifier and rules spec tests', () => {
  * usable gate. `it.failing` passes while the defect exists; drop `.failing`
  * once it is fixed. Run with REVIEW_SHOW=1 to see the raw failures.
  */
-import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { Entity } from '@backstage/catalog-model';
 import { findGateStep } from '../gateStep';
 
@@ -2392,7 +2392,7 @@ describe('REVIEW findGateStep spec tests (S1)', () => {
  * only place a broken gate can be caught before someone runs it.
  * `it.failing` passes while the defect exists. REVIEW_SHOW=1 shows failures.
  */
-import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { mockServices } from '@backstage/backend-test-utils';
 import type { Entity } from '@backstage/catalog-model';
 import { ApprovalsGateProcessor } from '../ApprovalsGateProcessor';

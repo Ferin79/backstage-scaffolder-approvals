@@ -18,7 +18,7 @@ import {
   type ApprovalRequest,
   type ApprovalRequestRole,
   type ApprovalRequestStatus,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { useRouteRef } from '@backstage/core-plugin-api';
 import { useEntityPresentation } from '@backstage/plugin-catalog-react';
 import {

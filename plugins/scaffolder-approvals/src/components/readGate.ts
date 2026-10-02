@@ -18,7 +18,7 @@ import {
   checkGatedTemplate,
   GATED_ANNOTATION,
   type GatedTemplateCheck,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 
 /** What `readGate` says about a template the wizard treats as gated. */

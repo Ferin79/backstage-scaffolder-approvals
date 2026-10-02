@@ -21,7 +21,7 @@ import {
   type ApprovalRequestStatus,
   type GatePolicy,
   isApprovalRequestStatus,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { JsonObject } from '@backstage/types';
 import type {
   ApprovalDecisionRow,

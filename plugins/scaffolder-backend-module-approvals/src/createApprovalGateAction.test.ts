@@ -17,8 +17,8 @@
 import {
   APPROVAL_GRANT_SECRET,
   GATE_ACTION_ID,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
-import { computeValuesHash } from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import { computeValuesHash } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import { mockServices } from '@backstage/backend-test-utils';
 import { createMockActionContext } from '@backstage/plugin-scaffolder-node-test-utils';
 import { createApprovalGateAction } from './createApprovalGateAction';

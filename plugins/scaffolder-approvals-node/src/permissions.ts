@@ -20,7 +20,7 @@ import {
   normaliseEntityRef,
   RESOURCE_TYPE_APPROVAL_REQUEST,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   createPermissionResourceRef,
   createPermissionRule,

@@ -18,7 +18,7 @@ import {
   type ApprovalRequest,
   normaliseEntityRef,
   RESOURCE_TYPE_APPROVAL_REQUEST,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   approvalRequestResourceRef,
   hasTemplateRef,

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ApprovalRequestWithDecisions } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { ApprovalRequestWithDecisions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
 import { entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';

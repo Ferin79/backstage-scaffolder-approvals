@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ApprovalRequestStatus } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { ApprovalRequestStatus } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { Text } from '@backstage/ui';
 import styles from './StatusPill.module.css';
 

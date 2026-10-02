@@ -14,7 +14,6 @@
     "lint": "backstage-cli package lint"
   },
   "dependencies": {
-    "@backstage-community/plugin-scaffolder-approvals": "workspace:^",
     "@backstage/app-defaults": "^1.7.12",
     "@backstage/catalog-model": "^1.10.1",
     "@backstage/cli": "^0.36.6",
@@ -45,6 +44,7 @@
     "@backstage/plugin-user-settings": "^0.9.7",
     "@backstage/theme": "^0.7.3",
     "@backstage/ui": "^0.18.0",
+    "@ferin79/backstage-plugin-scaffolder-approvals": "workspace:^",
     "@material-ui/core": "^4.12.2",
     "@material-ui/icons": "^4.9.1",
     "@remixicon/react": ">=4.6.0 <4.9.0",

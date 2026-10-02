@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { LoggerService } from '@backstage/backend-plugin-api';
 import type { EventsService } from '@backstage/plugin-events-node';
 import type { ScaffolderTaskStatus } from '@backstage/plugin-scaffolder-common';

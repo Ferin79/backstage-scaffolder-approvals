@@ -23,7 +23,7 @@ import {
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
   type SubmitApprovalRequestOptions,
   type SubmitApprovalRequestResponse,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { DiscoveryApi, FetchApi } from '@backstage/core-plugin-api';
 import { ResponseError } from '@backstage/errors';
 import type { ApprovalsApi } from './ApprovalsApi';

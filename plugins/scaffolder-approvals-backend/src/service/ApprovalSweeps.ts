@@ -17,7 +17,7 @@
 import type {
   ApprovalRequest,
   ApprovalRequestStatus,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { AuthService, LoggerService } from '@backstage/backend-plugin-api';
 import type { ScaffolderService } from '@backstage/plugin-scaffolder-node';
 import type { ScaffolderTaskStatus } from '@backstage/plugin-scaffolder-common';

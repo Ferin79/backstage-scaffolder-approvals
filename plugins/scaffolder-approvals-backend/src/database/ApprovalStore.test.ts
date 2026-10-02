@@ -19,12 +19,12 @@ import { TestDatabases } from '@backstage/backend-test-utils';
 import {
   checkDecisionEligibility,
   type GatePolicy,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   computeValuesHash,
   generateGrantToken,
   hashGrantToken,
-} from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type { JsonObject } from '@backstage/types';
 import type { Knex } from 'knex';
 import { ApprovalStore, type NewApprovalRequest } from './ApprovalStore';
@@ -32,7 +32,7 @@ import { ApprovalStore, type NewApprovalRequest } from './ApprovalStore';
 jest.setTimeout(60_000);
 
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 

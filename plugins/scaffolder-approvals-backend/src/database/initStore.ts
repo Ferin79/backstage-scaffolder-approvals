@@ -26,7 +26,7 @@ import { ApprovalStore } from './ApprovalStore';
  * migrations sit at a different depth.
  */
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 

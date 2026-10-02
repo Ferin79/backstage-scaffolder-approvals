@@ -17,7 +17,7 @@
 import type {
   ApprovalRequest,
   ApprovalRequestStatus,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 
 /**
  * The status to show for a request, which is not always the one stored.

@@ -21,7 +21,7 @@ import {
   computeQuorumProgress,
   type DecisionIneligibility,
   type GatePolicy,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { IdentityApi } from '@backstage/core-plugin-api';
 import type { ApprovalsApi } from '../src';
 

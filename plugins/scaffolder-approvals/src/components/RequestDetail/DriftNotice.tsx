@@ -17,7 +17,7 @@
 import type {
   TemplateDrift,
   TemplateDriftReason,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { Box, Text } from '@backstage/ui';
 import styles from './DriftNotice.module.css';
 

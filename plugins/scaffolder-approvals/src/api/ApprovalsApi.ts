@@ -22,7 +22,7 @@ import type {
   ListApprovalRequestsResponse,
   SubmitApprovalRequestOptions,
   SubmitApprovalRequestResponse,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { createApiRef } from '@backstage/core-plugin-api';
 
 /**

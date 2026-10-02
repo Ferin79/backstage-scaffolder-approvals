@@ -1,4 +1,4 @@
-# @backstage-community/plugin-scaffolder-approvals
+# @ferin79/backstage-plugin-scaffolder-approvals
 
 The approvals inbox, your own requests, and one request in detail.
 
@@ -12,7 +12,7 @@ The plugin dual-ships, so install it whichever way your app is wired.
 
 ```ts
 // packages/app/src/App.tsx
-import approvalsPlugin from '@backstage-community/plugin-scaffolder-approvals/alpha';
+import approvalsPlugin from '@ferin79/backstage-plugin-scaffolder-approvals/alpha';
 
 export const app = createApp({ features: [approvalsPlugin] });
 ```
@@ -21,7 +21,7 @@ export const app = createApp({ features: [approvalsPlugin] });
 
 ```tsx
 // packages/app/src/App.tsx
-import { ApprovalsIndexPage } from '@backstage-community/plugin-scaffolder-approvals';
+import { ApprovalsIndexPage } from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 <Route path="/scaffolder-approvals" element={<ApprovalsIndexPage />} />;
 ```

@@ -1,4 +1,4 @@
-import { GatedReviewStep } from '@backstage-community/plugin-scaffolder-approvals';
+import { GatedReviewStep } from '@ferin79/backstage-plugin-scaffolder-approvals';
 import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import {
   ReviewState,

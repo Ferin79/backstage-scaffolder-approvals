@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { GatePolicy } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { GatePolicy } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { EntityRefLink } from '@backstage/plugin-catalog-react';
 import { Text } from '@backstage/ui';
 import { Fragment } from 'react';

@@ -1,4 +1,4 @@
-# @backstage-community/plugin-catalog-backend-module-approvals
+# @ferin79/backstage-plugin-catalog-backend-module-approvals
 
 Derives the `scaffolder-approvals.backstage.io/gated` annotation on Template entities.
 
@@ -9,7 +9,7 @@ A template is marked as gated because it carries an `approval:gate` step — not
 ```ts
 // packages/backend/src/index.ts
 backend.add(
-  import('@backstage-community/plugin-catalog-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-catalog-backend-module-approvals'),
 );
 ```
 
