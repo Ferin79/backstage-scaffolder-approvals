@@ -24,6 +24,28 @@ jobs:
     permissions:
       contents: read
       id-token: write # npm provenance
+    # One shared database of each kind for the backend tests; see ci.yml.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432/tcp']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports: ['3306/tcp']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v7
 
@@ -61,6 +83,10 @@ jobs:
 
       - name: Test
         run: yarn test
+        env:
+          BACKSTAGE_TEST_DISABLE_DOCKER: '1'
+          BACKSTAGE_TEST_DATABASE_POSTGRES18_CONNECTION_STRING: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}
+          BACKSTAGE_TEST_DATABASE_MYSQL8_CONNECTION_STRING: mysql://root:root@127.0.0.1:${{ job.services.mysql.ports['3306'] }}/ignored
 
       # `yarn pack` runs each package's prepack, which points main/types at
       # dist, and rewrites workspace:^ dependencies to real versions.
