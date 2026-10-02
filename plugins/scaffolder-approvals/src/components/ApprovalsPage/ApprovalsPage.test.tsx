@@ -15,8 +15,9 @@
  */
 
 import type { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { signalApiRef } from '@backstage/plugin-signals-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsPage } from './ApprovalsPage';
@@ -131,5 +132,56 @@ describe('ApprovalsPage', () => {
 
     expect(await screen.findByText('request-github-admin')).toBeInTheDocument();
     expect(screen.getByText('Completed')).toBeInTheDocument();
+  });
+
+  it('shows a pending request past its deadline as expired', async () => {
+    // B9: the sweep that moves it to `expired` runs every five minutes, and
+    // until then it read as waiting for a decision nobody can make.
+    await render({
+      listRequests: jest.fn().mockResolvedValue({
+        items: [{ ...PENDING, expiresAt: '2020-01-01T00:00:00.000Z' }],
+        totalItems: 1,
+      }),
+    });
+
+    expect(await screen.findByText('Expired')).toBeInTheDocument();
+    expect(screen.queryByText('Awaiting approval')).not.toBeInTheDocument();
+  });
+
+  it('refetches the list when the backend signals a change', async () => {
+    // B10: a vote takes a row out of an inbox and a submission adds one; the
+    // list used to show neither until the page was reloaded.
+    let deliver: (message: object) => void = () => {};
+    const signalApi = {
+      subscribe(_channel: string, onMessage: (message: any) => void) {
+        deliver = onMessage;
+        return { unsubscribe() {} };
+      },
+    };
+    const listRequests = jest
+      .fn()
+      .mockResolvedValueOnce({ items: [PENDING], totalItems: 1 })
+      .mockResolvedValue({ items: [], totalItems: 0 });
+
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [approvalsApiRef, { listRequests } as unknown as ApprovalsApi],
+          [signalApiRef, signalApi],
+        ]}
+      >
+        <ApprovalsPage />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+    expect(await screen.findByText('Admin on backstage')).toBeInTheDocument();
+
+    await act(async () =>
+      deliver({ action: 'decided', requestId: PENDING.id, status: 'approved' }),
+    );
+
+    expect(
+      await screen.findByText('Nothing is waiting on you'),
+    ).toBeInTheDocument();
   });
 });

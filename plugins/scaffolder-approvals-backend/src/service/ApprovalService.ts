@@ -20,13 +20,12 @@ import {
   type ApprovalRequest,
   type ApprovalRequestWithDecisions,
   checkDecisionEligibility,
+  checkGatedTemplate,
   type ConsumeGrantResponse,
   computeQuorumProgress,
   type DecideApprovalRequestOptions,
   type DecisionIneligibility,
-  findSecretParameters,
   type GatePolicy,
-  readGatePolicy,
   normaliseEntityRef,
   renderGateSummary,
   type SubmitApprovalRequestResponse,
@@ -36,10 +35,8 @@ import {
   compareTemplate,
   computeTemplateStepsHash,
   computeValuesHash,
-  findGateStep,
   formatGrant,
   generateGrantToken,
-  GateStepError,
   hashGrantToken,
 } from '@backstage-community/plugin-scaffolder-approvals-node';
 import type {
@@ -89,6 +86,15 @@ export interface ApprovalObserver {
    * that only feeds somebody's inbox has nothing to do with it.
    */
   onLaunched?(request: ApprovalRequest): Promise<void>;
+  /**
+   * The requester withdrew the request before it was decided.
+   *
+   * Optional, like `onLaunched`, and for the same reason: Q20 settles on four
+   * notifications and this is not one of them. It exists because withdrawing
+   * was the one change that told nothing at all — no event for a subscriber,
+   * and no signal, so a page open on the request never updated (B10).
+   */
+  onWithdrawn?(request: ApprovalRequest): Promise<void>;
 }
 
 /** Options for {@link ApprovalService.submit}. */
@@ -201,56 +207,27 @@ export class ApprovalService {
       throw new InputError(`${templateRef} is not a Template`);
     }
 
-    let gate;
-    try {
-      gate = findGateStep(template);
-    } catch (error) {
-      // A malformed gate is a template bug, not a caller mistake, but the
-      // caller is who is standing here — so say what is wrong with it.
-      if (error instanceof GateStepError) {
-        throw new InputError(
-          `${templateRef} has an unusable gate: ${error.message}`,
-        );
-      }
-      throw error;
-    }
-
-    if (!gate.step) {
+    // The gate's shape, secret-typed parameters (S7) and the policy, through
+    // the same function the wizard's review step uses before it offers
+    // "Request approval" — so the two cannot disagree about which templates
+    // can be asked for, or give different reasons (B8 in the browser review).
+    // A secret-typed parameter is refused rather than warned about: it never
+    // reaches the request at all, and if it did it would be stored in
+    // `values`, which every signed-in user can read (Q12).
+    const check = checkGatedTemplate(template, templateRef);
+    if (!check.gated) {
       throw new InputError(
         `${templateRef} is not gated; run it through the scaffolder directly`,
       );
     }
-
-    // S7. Refused rather than warned about: a secret-typed parameter never
-    // reaches the request at all — the scaffolder puts it in the task's
-    // `secrets` — so a template declaring one would be approved and then run
-    // without it. And if such a value did arrive here it would be stored in
-    // `values`, which every signed-in user can read (Q12).
-    const secretParameters = findSecretParameters(template.spec?.parameters);
-    if (secretParameters.length) {
-      throw new InputError(
-        `${templateRef} cannot be gated: its parameter(s) ${secretParameters.join(
-          ', ',
-        )} are secret-typed, and a secret cannot survive the wait for an ` +
-          'approval. Pass the secret to the step that needs it from the ' +
-          "deployment's own integration credentials instead.",
-      );
+    if (!check.usable) {
+      throw new InputError(check.problem);
     }
+    const policy: GatePolicy = check.policy;
 
     // Validated before anything is stored (Q3), so an approval is never spent
     // on a request that cannot run.
     validateValues(template, values);
-
-    let policy: GatePolicy;
-    try {
-      policy = readGatePolicy(gate.step.input);
-    } catch (error) {
-      throw new InputError(
-        `${templateRef} has an unusable gate policy: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-    }
 
     // The gate step comes from the catalog, where the scaffolder's templating
     // has not run — and for a gated template it would not run until after the
@@ -406,6 +383,13 @@ export class ApprovalService {
     );
 
     if (!progress.satisfied) {
+      // Still pending, but somebody voted. Announced like any other decision,
+      // with the status it really has, so an open page moves from "0 of 2" to
+      // "1 of 2" and a subscriber sees every vote (B10, B12 in the browser
+      // review). The notifier sends no notification for it: telling the
+      // requester "approved" while one approval is still missing would be
+      // worse than telling them nothing.
+      await this.notifyDecided(requestId, recorded.decision);
       return await this.requireRequestWithDecisions(requestId);
     }
 
@@ -475,7 +459,9 @@ export class ApprovalService {
       );
     }
 
-    return await this.requireRequest(options.requestId);
+    const withdrawn = await this.requireRequest(options.requestId);
+    await this.notify(() => this.observer?.onWithdrawn?.(withdrawn));
+    return withdrawn;
   }
 
   /**

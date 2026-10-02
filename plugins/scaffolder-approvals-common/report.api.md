@@ -4,9 +4,11 @@
 
 ```ts
 import { BasicPermission } from '@backstage/plugin-permission-common';
+import type { Entity } from '@backstage/catalog-model';
 import type { HumanDuration } from '@backstage/types';
 import type { JsonObject } from '@backstage/types';
 import { ResourcePermission } from '@backstage/plugin-permission-common';
+import type { TemplateEntityStepV1beta3 } from '@backstage/plugin-scaffolder-common';
 
 // @public
 export const APPROVAL_GRANT_SECRET = 'APPROVAL_GRANT';
@@ -97,6 +99,9 @@ export interface ApprovalRequestWithDecisions extends ApprovalRequest {
 }
 
 // @public
+export const APPROVALS_SIGNAL_CHANNEL = 'scaffolder-approvals';
+
+// @public
 export function canonicalJson(value: unknown): string;
 
 // @public
@@ -116,6 +121,12 @@ export function checkDecisionEligibility(
   decisions?: readonly ApprovalDecision[],
   now?: Date,
 ): DecisionEligibility;
+
+// @public
+export function checkGatedTemplate(
+  template: Entity,
+  templateRef: string,
+): GatedTemplateCheck;
 
 // @public
 export function computeQuorumProgress(
@@ -173,6 +184,9 @@ export const DEFAULT_QUORUM = 1;
 export const DEFAULT_SELF_APPROVE = false;
 
 // @public
+export function findGateStep(entity: Entity): GateStepLookup;
+
+// @public
 export function findSecretParameters(parameters: unknown): string[];
 
 // @public
@@ -180,6 +194,26 @@ export const GATE_ACTION_ID = 'approval:gate';
 
 // @public
 export const GATED_ANNOTATION = 'scaffolder-approvals.backstage.io/gated';
+
+// @public
+export type GatedTemplateCheck =
+  /** No gate step at all: an ordinary template, run as usual. */
+  | {
+      gated: false;
+    }
+  /** Gated, but in a way the approvals backend refuses to accept. */
+  | {
+      gated: true;
+      usable: false;
+      problem: string;
+    }
+  /** Gated, and fit to be requested. */
+  | {
+      gated: true;
+      usable: true;
+      step: TemplateEntityStepV1beta3;
+      policy: GatePolicy;
+    };
 
 // @public
 export interface GatePolicy {
@@ -196,6 +230,18 @@ export class GatePolicyError extends Error {
 }
 
 // @public
+export class GateStepError extends Error {
+  constructor(message: string);
+}
+
+// @public
+export interface GateStepLookup {
+  index?: number;
+  // (undocumented)
+  step?: TemplateEntityStepV1beta3;
+}
+
+// @public
 export function isApprovalRequestStatus(
   value: unknown,
 ): value is ApprovalRequestStatus;
@@ -205,6 +251,9 @@ export function isApprover(
   policy: Pick<GatePolicy, 'approvers'>,
   caller: ApprovalCaller,
 ): boolean;
+
+// @public
+export function isGated(entity: Entity): boolean;
 
 // @public
 export function isTerminalStatus(status: ApprovalRequestStatus): boolean;

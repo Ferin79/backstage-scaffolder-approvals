@@ -162,12 +162,17 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('onDecided', () => {
+    // The service hands over the request as it is after the decision (C3), so
+    // a denial arrives `rejected` and a final approval `approved`.
     it('tells the requester, and carries the comment', async () => {
-      await notifier().onDecided(REQUEST, {
-        ...APPROVAL,
-        decision: 'deny',
-        comment: 'not while the incident is open',
-      });
+      await notifier().onDecided(
+        { ...REQUEST, status: 'rejected' as const },
+        {
+          ...APPROVAL,
+          decision: 'deny',
+          comment: 'not while the incident is open',
+        },
+      );
 
       const [{ recipients, payload }] = send.mock.calls[0];
       expect(recipients.entityRef).toEqual(['user:default/requester']);
@@ -178,11 +183,42 @@ describe('ApprovalNotifier', () => {
     });
 
     it('reads as an approval when it was one', async () => {
-      await notifier().onDecided(REQUEST, APPROVAL);
+      await notifier().onDecided(
+        { ...REQUEST, status: 'approved' as const },
+        APPROVAL,
+      );
 
       const [{ payload }] = send.mock.calls[0];
       expect(payload.title).toBe('Request approved');
       expect(payload.severity).toBe('normal');
+    });
+
+    it('announces a vote that leaves it pending, without notifying anyone', async () => {
+      // B10/B12: a partial approval published nothing, so a page open on the
+      // request stayed at "0 of 2". It is an event and a signal now — and not
+      // a notification, because "Request approved" with an approval still
+      // missing would be untrue.
+      await notifier().onDecided(REQUEST, APPROVAL);
+
+      expect(send).not.toHaveBeenCalled();
+      expect(publishSignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: {
+            action: 'decided',
+            requestId: REQUEST.id,
+            status: 'pending',
+          },
+        }),
+      );
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventPayload: expect.objectContaining({
+            action: 'decided',
+            status: 'pending',
+            decision: 'approve',
+          }),
+        }),
+      );
     });
   });
 
@@ -296,6 +332,36 @@ describe('ApprovalNotifier', () => {
           eventPayload: expect.objectContaining({
             action: 'completed',
             status: 'completed',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('withdrawn', () => {
+    it('publishes an event and a signal but never a notification', async () => {
+      // B10: a page open on a withdrawn request never updated, because nothing
+      // was published. Q20 still settles on four notifications.
+      await notifier().onWithdrawn({
+        ...REQUEST,
+        status: 'cancelled' as const,
+      });
+
+      expect(send).not.toHaveBeenCalled();
+      expect(publishSignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: {
+            action: 'withdrawn',
+            requestId: REQUEST.id,
+            status: 'cancelled',
+          },
+        }),
+      );
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventPayload: expect.objectContaining({
+            action: 'withdrawn',
+            status: 'cancelled',
           }),
         }),
       );

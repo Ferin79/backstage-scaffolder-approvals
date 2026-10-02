@@ -17,9 +17,11 @@
 import { InfoCard, Progress } from '@backstage/core-components';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
 import { Flex, Link, Text } from '@backstage/ui';
+import { useState } from 'react';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { useOnApprovalsChange } from '../useOnApprovalsChange';
 
 /**
  * How many requests are waiting on you, on the home page.
@@ -61,6 +63,11 @@ export function PendingApprovalsContent() {
   const api = useApi(approvalsApiRef);
   const rootPath = useRouteRef(rootRouteRef);
 
+  // Bumped by a signal, so a request arriving — or somebody else deciding the
+  // one that was waiting — changes the number without a page reload.
+  const [version, setVersion] = useState(0);
+  useOnApprovalsChange(() => setVersion(value => value + 1));
+
   const state = useAsync(
     () =>
       api.listRequests({
@@ -69,12 +76,14 @@ export function PendingApprovalsContent() {
         status: ['pending'],
         limit: 1,
       }),
-    [api],
+    [api, version],
   );
 
   return (
     <>
-      {state.loading && <Progress />}
+      {/* The first load only; a refresh keeps the old number until the new one
+          arrives rather than flashing a spinner on the home page. */}
+      {state.loading && !state.value && <Progress />}
 
       {/* A home card that cannot reach its backend says so and stays out of
           the way. Throwing here would take the whole home page with it. */}

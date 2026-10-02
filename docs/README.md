@@ -176,7 +176,7 @@ What happens next:
 3. When two have approved, the template starts. A single denial rejects the request outright, whatever the approval count.
 4. The request moves to `running`, then `completed` or `failed`. Nobody deciding within 72 hours moves it to `expired`.
 
-The request page is the canonical view throughout, and links to the task log once there is a task. It does not update on its own yet: the backend broadcasts a signal on every change, but the page does not subscribe to it, so somebody else's decision appears on reload.
+The request page is the canonical view throughout, and links to the task log once there is a task. With the signals plugin installed it updates itself: somebody else's vote, the template starting and its task finishing all appear without a reload, and so do the inbox and the home-page card.
 
 ## Things to know before you rely on it
 
@@ -272,7 +272,7 @@ backend.add(
 
 Your catalog also needs **`@backstage/plugin-catalog-backend-module-scaffolder-entity-model`**, if it does not have it already. Without it the catalog does not recognise the `Template` kind and drops those entities **silently** — no error, just no template.
 
-Notifications and signals are optional. With the notifications plugin installed, approvers and requesters are notified. Signals are published but nothing subscribes to them yet, so an open request page still needs a reload to show somebody else's decision. The backend starts and works with neither.
+Notifications and signals are optional. With the notifications plugin installed, approvers and requesters are notified. With the signals plugin installed, an open request page, inbox or home-page card refreshes itself when anything changes; without it, they show what they loaded until reloaded. The backend starts and works with neither.
 
 ### Frontend
 
@@ -364,17 +364,20 @@ If the events backend is installed, every state change is published on the `scaf
 | `action`    | When                                    | Notification | Also carries              |
 | ----------- | --------------------------------------- | ------------ | ------------------------- |
 | `requested` | A request is submitted                  | Approvers    | —                         |
-| `decided`   | An approver approves or denies          | Requester    | `decision`, `approverRef` |
+| `decided`   | An approver approves or denies          | Requester¹   | `decision`, `approverRef` |
 | `launched`  | The template starts                     | None         | `taskId`                  |
 | `completed` | The task finished successfully          | None         | `taskId`                  |
 | `failed`    | The task failed, or the approval lapsed | Both         | `reason`                  |
 | `expired`   | Nobody decided in time                  | Both         | —                         |
+| `withdrawn` | The requester withdrew it               | None         | —                         |
 
-`launched` and `completed` carry no notification on purpose: four notifications is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
+¹ Only when the vote settles the request — a denial, or the approval that meets the quorum. A vote that leaves it pending is still published, with `status: pending`, so a subscriber sees every vote; it notifies nobody, because "Request approved" with an approval still missing would be untrue.
+
+`launched`, `completed` and `withdrawn` carry no notification on purpose: four notifications is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
 
 `status` is the status the request has **after** the change, so a `decided` event on an approved request says `approved`, not `pending`.
 
-If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`. Nothing in this plugin subscribes to them yet — the page does not refresh itself — so today they are there for anything else that wants them. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
+If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`. The request page, the inbox and the home-page card subscribe to them and refetch, so they never trust a signal's own status; anything else can subscribe too. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
 
 ## Packages
 
@@ -390,7 +393,6 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 ## Not yet
 
 - **An entity card on Templates.** Additive later; the approvals page and the home-page card are the UI today.
-- **A request page that updates itself.** The backend broadcasts a signal on every change and nothing subscribes to it yet, so somebody else's decision appears on reload.
 - **Pausing a template partway through.** The gate has to be the first step. Parking a task mid-run needs a suspend/resume primitive in core ([BEP-0016](https://github.com/backstage/backstage/pull/34966)).
 - **Restricting who can read requests.** Any signed-in user can read every request, matching the scaffolder's own task list. The permission rules needed to narrow it already exist.
 

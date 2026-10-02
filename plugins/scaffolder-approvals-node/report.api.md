@@ -5,11 +5,14 @@
 ```ts
 import { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { Entity } from '@backstage/catalog-model';
+import { findGateStep } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GateStepError } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GateStepLookup } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { isGated } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { JsonObject } from '@backstage/types';
 import { PermissionResourceRef } from '@backstage/plugin-permission-node';
 import { PermissionRule } from '@backstage/plugin-permission-node';
 import { TemplateDrift } from '@backstage-community/plugin-scaffolder-approvals-common';
-import type { TemplateEntityStepV1beta3 } from '@backstage/plugin-scaffolder-common';
 
 // @public
 export type ApprovalRequestFilter =
@@ -62,23 +65,14 @@ export function computeTemplateStepsHash(entity: Entity): string;
 // @public
 export function computeValuesHash(values: JsonObject): string;
 
-// @public
-export function findGateStep(entity: Entity): GateStepLookup;
+export { findGateStep };
 
 // @public
 export function formatGrant(requestId: string, token: string): string;
 
-// @public
-export class GateStepError extends Error {
-  constructor(message: string);
-}
+export { GateStepError };
 
-// @public
-export interface GateStepLookup {
-  index?: number;
-  // (undocumented)
-  step?: TemplateEntityStepV1beta3;
-}
+export { GateStepLookup };
 
 // @public
 export function generateGrantToken(): string;
@@ -111,8 +105,7 @@ export const isDesignatedApprover: PermissionRule<
   }
 >;
 
-// @public
-export function isGated(entity: Entity): boolean;
+export { isGated };
 
 // @public
 export const isNotRequester: PermissionRule<

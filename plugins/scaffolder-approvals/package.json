@@ -61,6 +61,7 @@
     "@backstage/plugin-permission-react": "^0.5.5",
     "@backstage/plugin-scaffolder-common": "^2.3.0",
     "@backstage/plugin-scaffolder-react": "^2.1.0",
+    "@backstage/plugin-signals-react": "^0.0.26",
     "@backstage/ui": "^0.18.0",
     "@types/react": "^17.0.0 || ^18.0.0",
     "react-use": "^17.2.4"

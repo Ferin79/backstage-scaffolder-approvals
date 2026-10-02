@@ -17,6 +17,7 @@
 import {
   type ApprovalDecision,
   type ApprovalRequest,
+  APPROVALS_SIGNAL_CHANNEL,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { LoggerService } from '@backstage/backend-plugin-api';
@@ -27,9 +28,6 @@ import type { ApprovalObserver } from './ApprovalService';
 
 /** The topic this plugin publishes its own lifecycle events on. */
 export const APPROVALS_EVENT_TOPIC = SCAFFOLDER_APPROVALS_PLUGIN_ID;
-
-/** The signals channel an open request page subscribes to. */
-export const APPROVALS_SIGNAL_CHANNEL = SCAFFOLDER_APPROVALS_PLUGIN_ID;
 
 /**
  * What happened, as the event payload names it.
@@ -46,7 +44,8 @@ export type ApprovalEventAction =
   | 'launched'
   | 'completed'
   | 'failed'
-  | 'expired';
+  | 'expired'
+  | 'withdrawn';
 
 export interface ApprovalNotifierOptions {
   logger: LoggerService;
@@ -119,7 +118,11 @@ export class ApprovalNotifier implements ApprovalObserver {
   ): Promise<void> {
     const approved = decision.decision === 'approve';
     await this.fanOut('decided', request, {
-      recipients: [request.requesterRef],
+      // A vote that leaves the request pending is an event and a signal, never
+      // a notification: "Request approved" while another approval is still
+      // needed would tell the requester something untrue. Q20's four are
+      // about outcomes, and a partial vote is not one.
+      recipients: request.status === 'pending' ? [] : [request.requesterRef],
       title: approved ? 'Request approved' : 'Request denied',
       description: `${decision.approverRef} ${
         approved ? 'approved' : 'denied'
@@ -137,6 +140,15 @@ export class ApprovalNotifier implements ApprovalObserver {
       recipients: [],
       extra: request.taskId ? { taskId: request.taskId } : undefined,
     });
+  }
+
+  /**
+   * The requester withdrew it. Event and signal only, as for `launched`: Q20
+   * settles on four notifications, and this was the one change that published
+   * nothing, so a page open on it never noticed (B10).
+   */
+  async onWithdrawn(request: ApprovalRequest): Promise<void> {
+    await this.fanOut('withdrawn', request, { recipients: [] });
   }
 
   /** The task finished successfully. Event and signal only, as for `launched`. */

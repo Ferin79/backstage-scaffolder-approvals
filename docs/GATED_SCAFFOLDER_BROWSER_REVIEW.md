@@ -10,10 +10,10 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 | **People**      | `requester`, `alice` and `bob` (all in `devx-team`), and `outsider` (in no group). Switched with `APP_CONFIG_auth_providers_guest_userEntityRef`, as the [repository README](../README.md#trying-an-approval-end-to-end) describes                                 |
 | **Data**        | A fresh database outside the repository, so `packages/backend/.local-db/` was not touched. Templates: the example, the four probes in `examples/scaffolder-approvals/probes.local.yaml`, and one review-only probe for template drift ([§3](#3-how-it-was-tested)) |
 | **Also run**    | `yarn tsc`, `yarn test` across the repository, `scripts/verify-gate.sh`, and the plugin's own dev harness                                                                                                                                                          |
-| **Screenshots** | 50, in [`browser-review/`](browser-review/), and 51 more from the re-test, in [`browser-review/retest/`](browser-review/retest/)                                                                                                                                   |
-| **Fixed since** | B1, B2 and B3, then every journey walked again in the browser ([§10](#10-fixes-and-re-test))                                                                                                                                                                       |
+| **Screenshots** | 50, in [`browser-review/`](browser-review/); 51 from the B1–B3 re-test, in [`browser-review/retest/`](browser-review/retest/); and 21 from the B4–B10 re-test, in [`browser-review/b4-b10/`](browser-review/b4-b10/)                                               |
+| **Fixed since** | B1–B3 ([§10](#10-fixes-and-re-test)), then B4–B10, which also settled B12 ([§11](#11-fixes-and-re-test-b4b10))                                                                                                                                                     |
 
-> **Update, 2 Oct 2026.** The three "fix now" findings, [B1](#b1), [B2](#b2) and [B3](#b3), are fixed. Each fix has tests that fail without it. The whole journey was then walked again in the browser on a fresh database, as all four people, and on an upgraded one. [§10](#10-fixes-and-re-test) has what changed and the evidence. Findings B4–B23 are unchanged.
+> **Update, 2 Oct 2026.** Ten findings are now fixed: [B1](#b1)–[B3](#b3) first ([§10](#10-fixes-and-re-test)), then [B4](#b4)–[B10](#b10) ([§11](#11-fixes-and-re-test-b4b10)). Fixing B10 also settled [B12](#b12). Each fix has tests that fail without it, and each was verified in the browser. B11 and B13–B23 are still open.
 
 ## Contents
 
@@ -27,7 +27,8 @@ Until now, nobody had looked at these plugins in a browser. Phase 8 and Phase 9 
 8. [Automated checks](#8-automated-checks)
 9. [Not covered](#9-not-covered)
 10. [Fixes and re-test](#10-fixes-and-re-test): B1–B3 fixed, every journey walked again
-11. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
+11. [Fixes and re-test: B4–B10](#11-fixes-and-re-test-b4b10)
+12. [Appendix: console noise that is not the plugin's](#appendix-console-noise-that-is-not-the-plugins)
 
 ---
 
@@ -54,31 +55,32 @@ One finding from the code review is also still open: [T6](GATED_SCAFFOLDER_REVIE
 
 ### Scorecard
 
-| Area                                         | Result                            | Screens                   |
-| -------------------------------------------- | --------------------------------- | ------------------------- |
-| Backstage starts                             | ✅                                | —                         |
-| Sidebar item and home-page card              | ✅ B2 fixed                       | 01, 15, 41; R19, R25, R50 |
-| Approvals page: both tabs, paging, row links | ✅ B2 fixed                       | 02, 12, 16, 38; R26, R49  |
-| Submitting from the wizard                   | ⚠️ B7                             | 04, 05, 06                |
-| Non-gated templates unaffected               | ✅                                | 14                        |
-| Duplicate collapse                           | ✅                                | 07                        |
-| Value validation at submit                   | ✅ B1 fixed                       | —                         |
-| Refused template shapes                      | ✅ B1 fixed                       | 08, 10; R10, R11          |
-| Self-approval, non-approver, second vote     | ✅                                | 06, 20, 36                |
-| Approve and deny dialogs                     | ✅                                | 19, 33                    |
-| Quorum, launch, completion, task link        | ✅                                | 20, 31, 32                |
-| Deny                                         | ✅                                | 34                        |
-| Withdraw                                     | ⚠️ B11                            | 11                        |
-| Failed run and Resubmit                      | ✅                                | 23, 24, 39, 40            |
-| Expiry                                       | ⚠️ B4                             | 21                        |
-| Template drift warning                       | ✅                                | 25, 35                    |
-| Notifications                                | ✅                                | 17, 37                    |
-| Derived `gated` annotation                   | ✅                                | 26                        |
-| Direct scaffolder run blocked                | ✅ B3 fixed                       | 13; R17                   |
-| Error and not-found pages                    | ⚠️ B6 (message readable since B1) | 43, 44; R32, R33          |
-| Dark theme                                   | ✅                                | 27–30                     |
-| Mobile width                                 | ⚠️ B14                            | 45, 46                    |
-| Plugin dev harness                           | ⚠️ B21                            | 47, 48                    |
+| Area                                         | Result                    | Screens                    |
+| -------------------------------------------- | ------------------------- | -------------------------- |
+| Backstage starts                             | ✅                        | —                          |
+| Sidebar item and home-page card              | ✅ B2 fixed               | 01, 15, 41; R19, R25, R50  |
+| Approvals page: both tabs, paging, row links | ✅ B2 fixed               | 02, 12, 16, 38; R26, R49   |
+| Submitting from the wizard                   | ✅ B7 fixed               | 04, 05, 06; B01, B02       |
+| Non-gated templates unaffected               | ✅                        | 14                         |
+| Duplicate collapse                           | ✅                        | 07                         |
+| Value validation at submit                   | ✅ B1 fixed               | —                          |
+| Refused template shapes                      | ✅ B1, B8 fixed           | 08, 10; R10, R11; B03, B04 |
+| Self-approval, non-approver, second vote     | ✅                        | 06, 20, 36                 |
+| Approve and deny dialogs                     | ✅                        | 19, 33                     |
+| Quorum, launch, completion, task link        | ✅                        | 20, 31, 32                 |
+| Deny                                         | ✅                        | 34                         |
+| Withdraw                                     | ⚠️ B11 (partly addressed) | 11; B05                    |
+| Failed run and Resubmit                      | ✅                        | 23, 24, 39, 40             |
+| Expiry                                       | ✅ B4, B9 fixed           | 21; B10, B12, B13          |
+| Template drift warning                       | ✅                        | 25, 35                     |
+| Notifications                                | ✅                        | 17, 37                     |
+| Live updates: page, inbox, home card         | ✅ B10 fixed              | B07, B14, B16, B17b, B19   |
+| Derived `gated` annotation                   | ✅                        | 26                         |
+| Direct scaffolder run blocked                | ✅ B3 fixed               | 13; R17                    |
+| Error and not-found pages                    | ✅ B6 fixed               | 43, 44; B08, B09           |
+| Dark theme                                   | ✅                        | 27–30                      |
+| Mobile width                                 | ⚠️ B14                    | 45, 46                     |
+| Plugin dev harness                           | ⚠️ B21                    | 47, 48                     |
 
 ---
 
@@ -435,6 +437,8 @@ At 390 px wide neither page scrolls sideways, and the request page reads well ([
 
 ### <a id="b4"></a>B4 — Settled requests use the wrong words
 
+> **✅ Fixed.** A settled request now says what happened to it, by status — "Withdrawn by the requester before it was decided.", "Timed out before it was approved.", "Approved, and the template has run." — and shows no approvals count and no "Expires". An expired one names when it timed out. See [§11](#11-fixes-and-re-test-b4b10).
+
 - **"This request has already been decided."** appears on an **expired** request ([21](browser-review/21-expired-request.png)) and a **withdrawn** one ([11](browser-review/11-withdrawn.png)), where nobody decided anything. [`checkDecisionEligibility`](../plugins/scaffolder-approvals-common/src/eligibility.ts#L126-L128) returns `not-pending` for every non-pending status before it reaches the `expired` branch on line 136. The UI already has the right sentence for expiry ("This request timed out before anyone decided."), and it is never shown once the sweep has run.
 - **"0 of 2 approvals needed."** stays on withdrawn and expired requests, and "2 of 2 approvals needed." on completed ones ([`RequestDetail.tsx:264`](../plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L264)). Once a request is settled, nothing is needed.
 - **"Expires 10/4/2026"** is shown on completed, denied and withdrawn requests ([`RequestDetail.tsx:224`](../plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L224)), which reads as if they could still expire.
@@ -443,9 +447,13 @@ Fix: base the sentence and the progress line on `request.status`, and show **Exp
 
 ### <a id="b5"></a>B5 — The request page never says who can approve
 
+> **✅ Fixed.** The Decisions card opens with the rule: "Needs 2 approvals from group:default/devx-team. The requester cannot approve their own request." See [§11](#11-fixes-and-re-test-b4b10).
+
 A requester sees "0 of 2 approvals needed" but not _whose_ approvals ([06](browser-review/06-request-detail-requester-pending.png)). They therefore cannot tell whom to chase, or notice that the gate names a group with nobody in it. The approvers, the quorum and the self-approval rule are all in `request.policySnapshot`. The review step shows them before submission, so the request page could show the same list afterwards.
 
 ### <a id="b6"></a>B6 — A missing or malformed request is a bare error bar
+
+> **✅ Fixed.** An unknown or malformed request renders inside the page, says "No such approval request" or "This is not a link to an approval request", and offers a **Back to approvals** link. See [§11](#11-fixes-and-re-test-b4b10).
 
 An unknown id ([44](browser-review/44-unknown-request-id.png)) or a malformed one ([43](browser-review/43-malformed-request-id.png)) renders a single red bar at the top of an otherwise empty screen, with no page header and no way back. [`RequestDetail.tsx:182-184`](../plugins/scaffolder-approvals/src/components/RequestDetail/RequestDetail.tsx#L182-L184) returns the error panel instead of rendering it inside the page.
 
@@ -453,15 +461,21 @@ Someone following an old notification link lands here. Render the panel inside t
 
 ### <a id="b7"></a>B7 — The gated review step hides what is being submitted
 
+> **✅ Fixed.** The gated review step shows the scaffolder's own review table of the values above the approval section. See [§11](#11-fixes-and-re-test-b4b10).
+
 For an ordinary template the last wizard step is a table of the values about to be used ([14](browser-review/14-ungated-template-normal-review.png)). For a gated one it is replaced entirely, and the requester submits without seeing their values ([05](browser-review/05-gated-review-step.png)). Those values are what the approvers will judge, and what the grant will be bound to.
 
 `GatedReviewStep` already receives `formData`. Render the same `ReviewState` table that [`packages/app/src/components/scaffolder/ReviewStep.tsx`](../packages/app/src/components/scaffolder/ReviewStep.tsx) uses, above "This template needs approval".
 
 ### <a id="b8"></a>B8 — The wizard offers "Request approval" for templates the backend will refuse
 
+> **✅ Fixed.** The review step runs the same template checks as the backend, through one shared function, and shows "This template cannot be requested yet" with the reason instead of the button. See [§11](#11-fixes-and-re-test-b4b10).
+
 `probe-if-gate` and `probe-secret` both reach a review step that says "This template needs approval" and offers the button, and only then fail. The catalog has warned about both since ingestion. `GatedReviewStep` already reads the gate policy, so it could run the same shape checks (the ones the backend runs through `findGateStep`, plus the secret-field check) and say "_This template cannot be requested: …_" up front. At minimum, once [B1](#b1) is fixed the user will at least be told why.
 
 ### <a id="b9"></a>B9 — A request past its deadline is still "Awaiting approval" until the sweep
+
+> **✅ Fixed.** A pending request past its deadline shows as **Expired** in the list and on its page straight away, with nothing to decide or withdraw. See [§11](#11-fixes-and-re-test-b4b10).
 
 `probe-quick` expired at 20:07:39. At 20:08:30 the list still showed it as **Awaiting approval** ([12](browser-review/12-your-requests-tab.png)), and it stayed that way until the sweep ran at 20:09:39. The sweep runs every five minutes, so this can last up to five minutes.
 
@@ -469,9 +483,13 @@ The decide path already refuses such a request (fixed in the code review's [C4](
 
 ### <a id="b10"></a>B10 — Pages do not update themselves
 
+> **✅ Fixed.** The request page, the inbox and the home-page card subscribe to the backend's signals and refetch. Two backend gaps had to close for that: withdrawing published nothing, and nor did a vote that left a request pending. See [§11](#11-fixes-and-re-test-b4b10).
+
 After alice approved `probe-fails`, the page said **Running**. The task failed a second later, and the page still said **Running** eight seconds after that, until it was reloaded ([22](browser-review/22-probe-fails-right-after-approval.png) → [23](browser-review/23-probe-fails-failed-with-task-link.png)). This is documented under "Not yet". The backend already broadcasts `{ action, requestId, status }` on the `scaffolder-approvals` channel, so the remaining work is a `useSignal` subscription that bumps the page's existing `reload` state.
 
 ### <a id="b11"></a>B11 — Withdrawing is silent and unconfirmed
+
+> **◨ Partly addressed by B10.** Withdrawing now publishes an event and a signal, so an open page or inbox updates. The confirmation step and the stale "Approval requested" notification are still open.
 
 - **No confirmation.** Approve and Deny both ask "are you sure?". Withdraw, which is just as final, does not.
 - **Approvers are not told.** Their "Approval requested" notification for the withdrawn request stays unread in their inbox ([17](browser-review/17-notifications-alice.png), fourth row). Clicking it leads to a request they can no longer act on.
@@ -479,6 +497,8 @@ After alice approved `probe-fails`, the page said **Running**. The task failed a
 There is no withdrawal notification by design (Q20 settles on four). Marking the matching "requested" notification as done, or reusing its scope so that it is replaced, would keep approvers' inboxes honest without adding a fifth.
 
 ### <a id="b12"></a>B12 — The README's event table promises an event that partial approvals do not raise
+
+> **✅ Fixed, as part of B10.** Every vote now publishes `decided`, with the status the request really has. A vote that leaves it pending notifies nobody, and the README table says so. See [§11](#11-fixes-and-re-test-b4b10).
 
 [docs/README.md](README.md#events-and-signals) says `decided` is published when "an approver approves or denies". In fact a vote that does not change the request's status raises no event, no signal and no notification ([`ApprovalService.ts:412-422`](../plugins/scaffolder-approvals-backend/src/service/ApprovalService.ts#L412-L422)). outsider had no notifications at all after the requester approved their request as 1 of 2 ([49](browser-review/49-no-notification-for-partial-approval.png), [50](browser-review/50-partial-approval-still-pending.png)).
 
@@ -529,7 +549,7 @@ Every suite in all six plugin packages passes except that one file, including `g
 - **The retention sweep.** Its default window is 180 days.
 - **Launch retry** ([C1](GATED_SCAFFOLDER_REVIEW.md#c1)) and **a grant lapsing before launch.** Both need the scaffolder to be unavailable at the moment of approval.
 - **A real permission policy.** The app runs `permission.enabled: true` with the allow-all policy module, so neither a restrictive `scaffolderApprovals.request.decide` policy nor the `scaffolder.action.execute` defence in depth from the README was exercised.
-- **Live updates through signals**, which are not built ([B10](#b10)).
+- **Live updates with more than one real person at once.** [B10](#b10) is built and was verified across browser tabs, but every tab was the same guest user. Signals are a broadcast, so two people should behave no differently.
 - **Email or other notification channels.** Only the in-app notifications inbox was checked.
 - **More than one backend replica.**
 - **A screen-reader pass.** The accessibility notes here come from the accessibility tree and console warnings, not from assistive technology.
@@ -666,6 +686,96 @@ The first run of the four changed packages in parallel failed two `PendingApprov
 | docs                                  | `docs/README.md` (two sentences about the gate message), and this report                                                                                                                                                         |
 
 Nothing is committed.
+
+---
+
+## 11. Fixes and re-test: B4–B10
+
+B4–B10 were fixed on 2 Oct 2026, each with tests that fail when it is removed, and each verified in the browser on a fresh database as requester, alice and bob. Screenshots are numbered `B01`–`B20`, in [`browser-review/b4-b10/`](browser-review/b4-b10/).
+
+Fixing B10 surfaced two backend gaps that had to close before pages could follow every change, and closing the second one also settled [B12](#b12).
+
+### 11.1 What changed
+
+| Finding                                         | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [B4](#b4) wrong words on settled requests       | The request page says what happened, by status: "Withdrawn by the requester before it was decided.", "Timed out before it was approved.", "Approved, and the template has run.", "Approved, but the template did not complete.", "Denied. A single denial rejects a request outright." The approvals count and the decide reasons appear only while a request is pending. **Expires** is shown only then too, and an expired request shows **Timed out**. Working from the status also fixes the code review's [C26](GATED_SCAFFOLDER_REVIEW.md#c26): a denial that lost the race to an approval no longer makes a running request read "Denied". |
+| [B5](#b5) approvers not named                   | The Decisions card opens with the frozen policy: "Needs 2 approvals from group:default/devx-team. The requester cannot approve their own request." Several approvers read "from a, b or c".                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| [B6](#b6) bare error bar                        | Load failures render inside the page under an "Approval request" header. A 404 says "No such approval request", a 400 says "This is not a link to an approval request", and anything else keeps the error panel. Each offers a **Back to approvals** link, a real link rather than a button.                                                                                                                                                                                                                                                                                                                                                      |
+| [B7](#b7) values hidden at review               | `GatedReviewStep` renders the scaffolder's own `ReviewState` table above the approval section, the same table the ordinary review step shows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| [B8](#b8) refused templates offered             | The template checks the backend runs at submit (gate shape, secret-typed parameters, gate policy) are one function, `checkGatedTemplate`, in `-common`. Backend submit and the review step both call it, so they cannot disagree, and the wizard shows the backend's own sentence. That meant moving `findGateStep`, `isGated` and `GateStepError` from `-node` to `-common`. They were always isomorphic, and `-node` re-exports them, so no import anywhere changed.                                                                                                                                                                            |
+| [B9](#b9) "Awaiting approval" past the deadline | `effectiveStatus` shows a pending request past its deadline as **Expired** in the list and on its page. Its requester is not offered Withdraw. The backend already refused to decide it.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| [B10](#b10) no live updates                     | The request page, the inbox and the home-page card subscribe to the `scaffolder-approvals` signal channel, now a shared constant in `-common`, through one hook, `useOnApprovalsChange`. They refetch rather than trusting the signal. Reloads keep the old content on screen instead of flashing a spinner. Signals stay optional: without the plugin, the hook does nothing.                                                                                                                                                                                                                                                                    |
+
+**The two backend gaps B10 found.** Both surfaced only when a test in the browser failed to update.
+
+- **Withdrawing published nothing.** `cancel` never called the observer, so there was no event and no signal, and an open page never noticed. The observer gained an optional `onWithdrawn`, and the notifier publishes a `withdrawn` event and signal with no notification, consistent with Q20.
+- **A vote that left a request pending published nothing either.** A requester watching "0 of 2" never saw "1 of 2", and an approver's inbox in another tab kept a request they had just voted on. Every vote now publishes `decided`, with the status the request really has. A vote that leaves the request pending notifies nobody: "Request approved" with an approval still missing would be untrue. This was [B12](#b12), and the README's event table now documents it.
+
+**One more change, found by the full test run.** The home card's extensions lazy-loaded the whole components barrel. Once B7 put the scaffolder's review table into that barrel, the home page's lazy chunk included scaffolder form code it never uses. Under load, the two card tests timed out. Both card extensions, legacy and new-frontend, now import only the card's own module.
+
+### 11.2 Tests
+
+New or changed tests:
+
+- **`-common`:** `checkGatedTemplate` (9 cases, including that a template wrong in two ways reports what the backend reports). The moved `gateStep` tests run there now.
+- **Backend:** a vote that leaves a request pending is announced with `status: pending`; withdrawal is announced; the notifier sends no notification for either.
+- **Frontend:**
+  - every settled status's wording;
+  - the policy sentence;
+  - the past-deadline request in the list and on the page, including no Withdraw for its requester;
+  - the three load-failure pages;
+  - live refresh of the request page, the list and the card, through a fake signals API;
+  - the values table and both refusals in the review step;
+  - `effectiveStatus` itself.
+
+Four mutants, one per frontend fix, were all caught: no effective expiry (B9) fails 5 tests, signals ignored (B10) 3, the old wording back (B4) 7, and always offering "Request approval" (B8) 2.
+
+### 11.3 In the browser
+
+| Finding  | What was done                                                                                                                                | What was seen                                                                                                                                       | Screens                                                                                                                                                                                                                                                    |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B7       | Filled in the gated wizard and pressed Review                                                                                                | The review table with the repository and the reason, then the approval section                                                                      | [B01](browser-review/b4-b10/B01-B7-review-step-shows-values.png)                                                                                                                                                                                           |
+| B5       | Opened the new request                                                                                                                       | "Needs 2 approvals from group:default/devx-team. The requester cannot approve their own request."                                                   | [B02](browser-review/b4-b10/B02-B5-request-page-names-approvers.png)                                                                                                                                                                                       |
+| B8       | Reviewed `probe-if-gate` and `probe-secret`                                                                                                  | "This template cannot be requested yet", the backend's reason, and only a Back button                                                               | [B03](browser-review/b4-b10/B03-B8-if-gate-cannot-be-requested.png), [B04](browser-review/b4-b10/B04-B8-secret-cannot-be-requested.png)                                                                                                                    |
+| B4       | Withdrew a request                                                                                                                           | "Withdrawn by the requester before it was decided.", no Expires, no "already decided"                                                               | [B05](browser-review/b4-b10/B05-B4-withdrawn-wording.png)                                                                                                                                                                                                  |
+| B10      | Tab A open on a request; tab B withdrew it through the API                                                                                   | Tab A read **Withdrawn** 53 ms later, without a reload                                                                                              | [B06](browser-review/b4-b10/B06-B10-tab-a-before.png) → [B07](browser-review/b4-b10/B07-B10-tab-a-after-no-reload.png)                                                                                                                                     |
+| B6       | Opened a malformed and an unknown request link, then pressed **Back to approvals**                                                           | Each inside the page, with its own explanation; the link went to the inbox                                                                          | [B08](browser-review/b4-b10/B08-B6-malformed-link.png), [B09](browser-review/b4-b10/B09-B6-unknown-request.png)                                                                                                                                            |
+| B4       | Opened a swept expired request                                                                                                               | **Timed out** with its time, and "Timed out before it was approved."                                                                                | [B10](browser-review/b4-b10/B10-B4-expired-wording.png)                                                                                                                                                                                                    |
+| B9       | Submitted a 1-minute probe just after a sweep; checked at 12:08:40 and again at 12:09:30, past its deadline, with the next sweep at 12:13:11 | "Awaiting approval", then **Expired** in the list and on the page, while the backend still stored `pending`. No Withdraw                            | [B11](browser-review/b4-b10/B11-B9-before-deadline.png), [B12](browser-review/b4-b10/B12-B9-list-shows-expired-before-sweep.png), [B13](browser-review/b4-b10/B13-B9-page-shows-expired-before-sweep.png)                                                  |
+| B10      | As alice, approved `probe-fails`, whose run fails                                                                                            | The open page went from **Awaiting approval** to **Failed** about 1 s later with no reload, and read "Approved, but the template did not complete." | [B14](browser-review/b4-b10/B14-B10-failed-without-reload.png)                                                                                                                                                                                             |
+| B10, B12 | Alice's inbox and home card open; a partial approval (1 of 2) in another tab                                                                 | The inbox emptied 92 ms later and the card went from 1 to 0, with no reload. The requester got no notification for the partial vote                 | [B15](browser-review/b4-b10/B15-B10-inbox-before.png) → [B16](browser-review/b4-b10/B16-B10-inbox-after-no-reload.png), [B17a](browser-review/b4-b10/B17a-B10-home-card-before.png) → [B17b](browser-review/b4-b10/B17b-B10-home-card-after-no-reload.png) |
+| B10, B4  | Bob's page open on a request at 1 of 2; bob's approval in another tab                                                                        | **Awaiting approval** → **Completed** in about 0.5 s with no reload; "Approved, and the template has run.", a task link, no Expires                 | [B18](browser-review/b4-b10/B18-B10-request-before.png) → [B19](browser-review/b4-b10/B19-B10-B4-completed-without-reload.png)                                                                                                                             |
+| B4       | Bob denied a request that alice had approved                                                                                                 | "Denied. A single denial rejects a request outright.", no Expires                                                                                   | [B20](browser-review/b4-b10/B20-B4-denied-wording.png)                                                                                                                                                                                                     |
+
+![The open page reached Completed by itself](browser-review/b4-b10/B19-B10-B4-completed-without-reload.png)
+
+_B19 — bob's approval landed in another tab; this page followed it to Completed on its own, and says what happened._
+
+The notifications table confirms the partial-vote rule. The requester's only "Request approved" for `payments-api` arrived at 12:19:28, when bob's vote met the quorum. Nothing arrived at 12:18:35, when alice's single vote on `prod-infra` was published as `decided` with `status: pending`.
+
+`verify-gate.sh` still prints "The gate holds."
+
+### 11.4 Checks
+
+| Check                        | Result                                                                                                                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `yarn tsc`                   | ✅ Clean                                                                                                                                                                                                     |
+| `backstage-cli package lint` | ✅ All changed packages                                                                                                                                                                                      |
+| `yarn build:api-reports`     | ✅ `-common` gains `checkGatedTemplate`, `GatedTemplateCheck`, `APPROVALS_SIGNAL_CHANNEL` and the moved gate checks; `-node` re-exports those; the backend's `ApprovalObserver` gains optional `onWithdrawn` |
+| `yarn test` (whole repo)     | ✅ **504 / 504**, 34 suites. That includes the two card tests, once the card stopped loading the whole components barrel, and the three intermittent T6 tests, which passed this time                        |
+| `scripts/verify-gate.sh`     | ✅ "The gate holds."                                                                                                                                                                                         |
+
+Dependencies: `-common` now declares `@backstage/plugin-scaffolder-common`, for the gate checks' types, and the frontend declares `@backstage/plugin-signals-react`. Both were already in the lockfile, which gained only the two workspace entries.
+
+Behaviour changes to know about:
+
+- **Submit's check order:** the backend now checks a template's gate policy before validating the submitted values. A template with an unusable policy is reported as such even when the values are also wrong. Both are refusals, and the template's problem is the more useful one to hear.
+- **Every vote now produces a `decided` event and signal**, including one that leaves the request pending. A subscriber that assumed `decided` meant "settled" should check `status`. The README table says so.
+
+### 11.5 Still open
+
+[B11](#b11): partly. Withdrawal now updates open pages, but still has no confirmation, and approvers' "Approval requested" notification stays unread. [B13](#b13): the three intermittent migration tests, which failed again in one full-package run during this work and passed on their own. And B14–B23.
 
 ---
 

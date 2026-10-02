@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
+import { signalApiRef } from '@backstage/plugin-signals-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { PendingApprovalsHomePageCard } from '../../plugin';
@@ -95,9 +96,14 @@ describe('PendingApprovalsCard', () => {
       { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
     );
 
-    expect(await screen.findByText('2')).toBeInTheDocument();
+    // The card extension is lazy-loaded, which is slow on a busy machine: this
+    // and the test below failed twice under load in the browser review and
+    // passed every time alone. Generous waits rather than flaky ones.
+    expect(
+      await screen.findByText('2', undefined, { timeout: 10_000 }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Approvals')).toHaveLength(1);
-  });
+  }, 20_000);
 
   it('stays out of the way when the backend cannot be reached', async () => {
     // A home card that throws takes the whole home page with it.
@@ -106,7 +112,45 @@ describe('PendingApprovalsCard', () => {
     });
 
     expect(
-      await screen.findByText(/Could not load your approvals/),
+      await screen.findByText(/Could not load your approvals/, undefined, {
+        timeout: 10_000,
+      }),
     ).toBeInTheDocument();
+  }, 20_000);
+
+  it('recounts when the backend signals a change', async () => {
+    // B10: a request arriving, or somebody else deciding the one that was
+    // waiting, changed the number only on a page reload.
+    let deliver: (message: object) => void = () => {};
+    const signalApi = {
+      subscribe(_channel: string, onMessage: (message: any) => void) {
+        deliver = onMessage;
+        return { unsubscribe() {} };
+      },
+    };
+    const listRequests = jest
+      .fn()
+      .mockResolvedValueOnce({ items: [], totalItems: 2 })
+      .mockResolvedValue({ items: [], totalItems: 1 });
+
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [approvalsApiRef, { listRequests } as unknown as ApprovalsApi],
+          [signalApiRef, signalApi],
+        ]}
+      >
+        <PendingApprovalsCard />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+    expect(await screen.findByText('2')).toBeInTheDocument();
+
+    await act(async () =>
+      deliver({ action: 'decided', requestId: 'r1', status: 'approved' }),
+    );
+
+    expect(await screen.findByText('1')).toBeInTheDocument();
+    expect(listRequests).toHaveBeenCalledTimes(2);
   });
 });

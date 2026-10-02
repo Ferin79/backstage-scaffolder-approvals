@@ -33,6 +33,8 @@ import { useMemo } from 'react';
 import type { ApprovalsApi } from '../../api';
 import { requestRouteRef } from '../../routes';
 import { StatusPill } from '../StatusPill';
+import { effectiveStatus } from '../StatusPill/effectiveStatus';
+import { useOnApprovalsChange } from '../useOnApprovalsChange';
 
 /** A row is a request; BUI's table only needs it to have an id. */
 type Row = ApprovalRequest;
@@ -126,7 +128,9 @@ export function RequestsTable(props: RequestsTableProps) {
         // `Cell` wrapper — which the table still requires at the top level.
         cell: (item: Row) => (
           <Cell>
-            <StatusPill status={item.status} />
+            {/* Past its deadline is expired, whether or not the sweep has
+                caught up with it yet (B9). */}
+            <StatusPill status={effectiveStatus(item)} />
           </Cell>
         ),
       },
@@ -139,7 +143,7 @@ export function RequestsTable(props: RequestsTableProps) {
     [],
   );
 
-  const { tableProps } = useTable<Row>({
+  const { tableProps, reload } = useTable<Row>({
     mode: 'offset',
     // `reloadToken` participates so that deciding on a request refreshes the
     // list behind it without a full page reload.
@@ -156,6 +160,10 @@ export function RequestsTable(props: RequestsTableProps) {
     },
     paginationOptions: { pageSize: 10 },
   });
+
+  // Any change to any request can move a row — a vote takes one out of an
+  // inbox, a submission adds one — so any signal refetches the page on show.
+  useOnApprovalsChange(reload);
 
   return (
     <Table<Row>

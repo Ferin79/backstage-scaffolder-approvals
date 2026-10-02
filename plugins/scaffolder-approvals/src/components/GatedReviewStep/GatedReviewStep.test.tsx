@@ -167,6 +167,61 @@ describe('GatedReviewStep', () => {
     expect(screen.getByText('user:default/lead')).toBeInTheDocument();
   });
 
+  it('shows the values being submitted, as the ordinary review step does', async () => {
+    // B7: replacing the review step had dropped its table, so a requester
+    // submitted values they could no longer see — the very values the
+    // approvers judge and the approval is bound to.
+    await render({ entity: template(true) });
+
+    await screen.findByTestId('request-approval');
+    expect(screen.getByText('backstage')).toBeInTheDocument();
+    expect(screen.getByText('on-call')).toBeInTheDocument();
+  });
+
+  describe('a template the backend would refuse', () => {
+    // B8: the button was offered, and only the backend said no.
+    it('says it cannot be requested, why, and offers only Back', async () => {
+      const entity = template(true);
+      (entity.spec.steps[0] as Record<string, unknown>).if =
+        '${{ parameters.go }}';
+      const submitRequest = jest.fn();
+      await render({ entity, api: { submitRequest } });
+
+      expect(
+        await screen.findByText('This template cannot be requested yet'),
+      ).toBeInTheDocument();
+      // The backend's own sentence, from the same function it refuses with.
+      expect(
+        screen.getByText(
+          /request-github-admin has an unusable gate: 'approval:gate' must not carry an 'if:' condition/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('request-approval')).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+      expect(REVIEW_PROPS.handleBack).toHaveBeenCalled();
+      expect(submitRequest).not.toHaveBeenCalled();
+    });
+
+    it('refuses a secret-typed parameter before the click', async () => {
+      const entity = {
+        ...template(true),
+        spec: {
+          ...template(true).spec,
+          parameters: {
+            properties: { token: { type: 'string', 'ui:field': 'Secret' } },
+          },
+        },
+      };
+      await render({ entity });
+
+      expect(
+        await screen.findByText(/its parameter\(s\) token are secret-typed/),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('request-approval')).not.toBeInTheDocument();
+    });
+  });
+
   it('renders the ordinary review step for an ungated template', async () => {
     await render({ entity: template(false) });
 

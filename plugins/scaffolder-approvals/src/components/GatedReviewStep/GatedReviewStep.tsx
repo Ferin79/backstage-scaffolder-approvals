@@ -15,8 +15,9 @@
  */
 
 import {
+  checkGatedTemplate,
   GATED_ANNOTATION,
-  readGatePolicy,
+  type GatePolicy,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import {
   DEFAULT_NAMESPACE,
@@ -26,6 +27,10 @@ import { Progress } from '@backstage/core-components';
 import { alertApiRef, useApi, useRouteRef } from '@backstage/core-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
+import {
+  type ParsedTemplateSchema,
+  ReviewState,
+} from '@backstage/plugin-scaffolder-react/alpha';
 import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import type { JsonObject } from '@backstage/types';
 import { Button, Flex, Text } from '@backstage/ui';
@@ -165,64 +170,97 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
     return <>{children}</>;
   }
 
+  // The same check the backend runs at submit (B8), so a template it would
+  // refuse is not offered for approval in the first place.
+  const check = checkGatedTemplate(state.value, templateRef!);
+
+  // The annotation is derived by the catalog and can lag a template that just
+  // lost its gate. With no gate step there is nothing to ask for.
+  if (!check.gated) {
+    return <>{children}</>;
+  }
+
   return (
     <Flex direction="column" gap="3">
-      {/* A column, because `Text` is inline: in a plain box the heading and
-          the sentence after it run together on one line. */}
-      <Flex direction="column" gap="1">
-        <Text variant="title-small">This template needs approval</Text>
-        <Text>
-          Submitting does not run it. It creates a request, and the template
-          runs on its own once the approvers below agree.
-        </Text>
-      </Flex>
+      {/* What is being asked for, before who is being asked. Replacing the
+          review step had dropped this table, so a requester submitted values
+          they could no longer see — and those values are exactly what the
+          approvers judge and what the approval is bound to (B7). */}
+      <ReviewState
+        formState={formData}
+        // The stepper passes its parsed steps, titles included; the prop type
+        // is narrower than what arrives.
+        schemas={props.steps as ParsedTemplateSchema[]}
+      />
 
-      <Approvers entity={state.value} />
+      {check.usable ? (
+        <>
+          {/* A column, because `Text` is inline: in a plain box the heading
+              and the sentence after it run together on one line. */}
+          <Flex direction="column" gap="1">
+            <Text variant="title-small">This template needs approval</Text>
+            <Text>
+              Submitting does not run it. It creates a request, and the template
+              runs on its own once the approvers below agree.
+            </Text>
+          </Flex>
 
-      <Flex gap="2">
-        <Button
-          variant="primary"
-          isDisabled={busy}
-          onClick={submit}
-          data-testid="request-approval"
-        >
-          Request approval
-        </Button>
-        <Button
-          variant="secondary"
-          isDisabled={busy}
-          onClick={props.handleBack}
-        >
-          Back
-        </Button>
-      </Flex>
+          <Approvers policy={check.policy} />
+
+          <Flex gap="2">
+            <Button
+              variant="primary"
+              isDisabled={busy}
+              onClick={submit}
+              data-testid="request-approval"
+            >
+              Request approval
+            </Button>
+            <Button
+              variant="secondary"
+              isDisabled={busy}
+              onClick={props.handleBack}
+            >
+              Back
+            </Button>
+          </Flex>
+        </>
+      ) : (
+        <>
+          {/* Said here rather than after the click: the backend would refuse
+              it whatever was filled in, and the problem is the template's,
+              which the requester cannot fix by editing the form. */}
+          <Flex direction="column" gap="1" role="alert">
+            <Text variant="title-small">
+              This template cannot be requested yet
+            </Text>
+            <Text>{check.problem}</Text>
+            <Text>
+              The problem is in the template, not in what you filled in. Its
+              owner needs to fix it before anyone can ask for it.
+            </Text>
+          </Flex>
+
+          <Flex gap="2">
+            <Button variant="secondary" onClick={props.handleBack}>
+              Back
+            </Button>
+          </Flex>
+        </>
+      )}
     </Flex>
   );
 }
 
 /**
- * Who will be asked, read from the gate step the template already carries.
+ * Who will be asked, from the policy the request will freeze.
  *
  * Shown before submitting rather than after, because "who sees this" is the
  * question people actually have at this point — and because a gate naming a
  * group nobody is in is worth noticing before waiting three days for it.
  */
-function Approvers(props: { entity: TemplateEntityV1beta3 }) {
-  const gate = props.entity.spec?.steps?.find(
-    step => step.action === 'approval:gate',
-  );
-
-  let approvers: string[] = [];
-  let quorum = 1;
-  try {
-    const policy = readGatePolicy(gate?.input);
-    approvers = policy.approvers;
-    quorum = policy.quorum;
-  } catch {
-    // An unusable policy is the catalog processor's warning to raise and the
-    // backend's to refuse. Here it just means there is nothing to list.
-    return null;
-  }
+function Approvers(props: { policy: GatePolicy }) {
+  const { approvers, quorum } = props.policy;
 
   return (
     <Flex direction="column" gap="1">
