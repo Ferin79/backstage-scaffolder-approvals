@@ -17,9 +17,10 @@ jobs:
     name: Lint, type-check, build and test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The backend tests run against every database TestDatabases supports.
-    # Left alone in CI, each test file would start its own container for each
-    # of ten Postgres and MySQL versions; give them one of each to share.
+    # Backstage supports Postgres and SQLite. Left alone in CI, TestDatabases
+    # would start a container per test file for every Postgres and MySQL
+    # version it knows; instead the backend tests share this one Postgres, plus
+    # SQLite, which needs no container.
     services:
       postgres:
         image: postgres:18
@@ -31,16 +32,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports: ['3306/tcp']
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v7
 
@@ -69,4 +60,3 @@ jobs:
         env:
           BACKSTAGE_TEST_DISABLE_DOCKER: '1'
           BACKSTAGE_TEST_DATABASE_POSTGRES18_CONNECTION_STRING: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}
-          BACKSTAGE_TEST_DATABASE_MYSQL8_CONNECTION_STRING: mysql://root:root@127.0.0.1:${{ job.services.mysql.ports['3306'] }}/ignored
