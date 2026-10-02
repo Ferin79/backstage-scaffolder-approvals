@@ -1,0 +1,15 @@
+/*
+ * Backstage UI (BUI) draws its text in `system-ui`. This app's Material UI
+ * theme, which the page chrome and most plugins still use, draws it in the
+ * stack below. Left alone, a BUI card sits beside an MUI one in a different
+ * typeface (B19 in the scaffolder-approvals browser review), and every page
+ * that puts BUI content under an MUI header mixes the two.
+ *
+ * Unlayered, so it beats BUI's `@layer tokens` without `!important`; and on
+ * `[data-theme-mode]` as well as `:root`, because BUI also sets its tokens on
+ * whichever element carries that attribute.
+ */
+:root,
+[data-theme-mode] {
+  --bui-font-regular: 'Helvetica Neue', Helvetica, Roboto, Arial, sans-serif;
+}

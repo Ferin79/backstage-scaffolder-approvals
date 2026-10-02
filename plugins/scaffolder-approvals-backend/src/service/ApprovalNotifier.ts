@@ -17,9 +17,11 @@
 import {
   type ApprovalDecision,
   type ApprovalRequest,
+  APPROVALS_SIGNAL_CHANNEL,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { LoggerService } from '@backstage/backend-plugin-api';
+import { DEFAULT_NAMESPACE, parseEntityRef } from '@backstage/catalog-model';
 import type { EventsService } from '@backstage/plugin-events-node';
 import type { NotificationService } from '@backstage/plugin-notifications-node';
 import type { SignalsService } from '@backstage/plugin-signals-node';
@@ -27,9 +29,6 @@ import type { ApprovalObserver } from './ApprovalService';
 
 /** The topic this plugin publishes its own lifecycle events on. */
 export const APPROVALS_EVENT_TOPIC = SCAFFOLDER_APPROVALS_PLUGIN_ID;
-
-/** The signals channel an open request page subscribes to. */
-export const APPROVALS_SIGNAL_CHANNEL = SCAFFOLDER_APPROVALS_PLUGIN_ID;
 
 /**
  * What happened, as the event payload names it.
@@ -46,7 +45,27 @@ export type ApprovalEventAction =
   | 'launched'
   | 'completed'
   | 'failed'
-  | 'expired';
+  | 'expired'
+  | 'withdrawn';
+
+/**
+ * How a person or a template is named in a notification: "alice", not
+ * "user:default/alice" (B16 in the browser review). The namespace stays when
+ * it is not the default one, since two people in different namespaces can share
+ * a name.
+ *
+ * Not the catalog's display name: a notification goes out in the middle of a
+ * decision, and a slow or unavailable catalog must not hold that up. The
+ * approvals page, which can wait for the catalog, shows the full names.
+ */
+function nameOf(ref: string): string {
+  try {
+    const { namespace, name } = parseEntityRef(ref);
+    return namespace === DEFAULT_NAMESPACE ? name : `${namespace}/${name}`;
+  } catch {
+    return ref;
+  }
+}
 
 export interface ApprovalNotifierOptions {
   logger: LoggerService;
@@ -91,7 +110,7 @@ export class ApprovalNotifier implements ApprovalObserver {
   private describe(request: ApprovalRequest): string {
     // The summary is nulled by the retention sweep, and the template ref is the
     // only thing that outlives it.
-    return request.summary ?? request.templateRef;
+    return request.summary ?? nameOf(request.templateRef);
   }
 
   /** Approvers, as entity refs. Group refs resolve on the receiving side. */
@@ -106,9 +125,9 @@ export class ApprovalNotifier implements ApprovalObserver {
       // notifications service filters them out even if they are an approver.
       exclude: [request.requesterRef],
       title: 'Approval requested',
-      description: `${request.requesterRef} is asking to run ${this.describe(
-        request,
-      )}`,
+      description: `${nameOf(
+        request.requesterRef,
+      )} is asking to run ${this.describe(request)}`,
       severity: 'normal',
     });
   }
@@ -119,9 +138,13 @@ export class ApprovalNotifier implements ApprovalObserver {
   ): Promise<void> {
     const approved = decision.decision === 'approve';
     await this.fanOut('decided', request, {
-      recipients: [request.requesterRef],
+      // A vote that leaves the request pending is an event and a signal, never
+      // a notification: "Request approved" while another approval is still
+      // needed would tell the requester something untrue. Q20's four are
+      // about outcomes, and a partial vote is not one.
+      recipients: request.status === 'pending' ? [] : [request.requesterRef],
       title: approved ? 'Request approved' : 'Request denied',
-      description: `${decision.approverRef} ${
+      description: `${nameOf(decision.approverRef)} ${
         approved ? 'approved' : 'denied'
       } your request to run ${this.describe(request)}${
         decision.comment ? `: ${decision.comment}` : ''
@@ -136,6 +159,32 @@ export class ApprovalNotifier implements ApprovalObserver {
     await this.fanOut('launched', request, {
       recipients: [],
       extra: request.taskId ? { taskId: request.taskId } : undefined,
+    });
+  }
+
+  /**
+   * The requester withdrew it.
+   *
+   * An event and a signal, because this was the one change that published
+   * nothing, so a page open on it never noticed (B10). And a notification that
+   * *replaces* each approver's "Approval requested" rather than adding a fifth
+   * kind (Q20): without it, that one stayed unread and led to a request nobody
+   * could act on (B11).
+   */
+  async onWithdrawn(request: ApprovalRequest): Promise<void> {
+    await this.fanOut('withdrawn', request, {
+      // The notifications service marks a replacement unread, so it shows
+      // up again; `low` says it needs nothing from them.
+      recipients: this.approvers(request),
+      exclude: [request.requesterRef],
+      title: 'Approval request withdrawn',
+      description: `${nameOf(
+        request.requesterRef,
+      )} withdrew their request to run ${this.describe(
+        request,
+      )}. Nothing is waiting on you.`,
+      severity: 'low',
+      replaces: 'requested',
     });
   }
 
@@ -187,8 +236,15 @@ export class ApprovalNotifier implements ApprovalObserver {
       exclude?: string[];
       title?: string;
       description?: string;
-      severity?: 'normal' | 'high';
+      severity?: 'low' | 'normal' | 'high';
       extra?: Record<string, string>;
+      /**
+       * Which notification this one replaces. Defaults to this action's own,
+       * so a re-notification replaces rather than piles up; a withdrawal
+       * names `requested` instead, so it overwrites the approvers' now-stale
+       * "Approval requested" rather than adding a second item.
+       */
+      replaces?: ApprovalEventAction;
     },
   ): Promise<void> {
     const recipients = [...new Set(message.recipients)].filter(Boolean);
@@ -211,7 +267,9 @@ export class ApprovalNotifier implements ApprovalObserver {
           topic: SCAFFOLDER_APPROVALS_PLUGIN_ID,
           // Scoped per request so a re-notification replaces rather than piles
           // up in somebody's inbox.
-          scope: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:${request.id}:${action}`,
+          scope: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:${request.id}:${
+            message.replaces ?? action
+          }`,
         },
       });
     });

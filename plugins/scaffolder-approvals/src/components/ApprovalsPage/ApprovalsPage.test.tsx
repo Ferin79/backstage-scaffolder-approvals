@@ -15,8 +15,11 @@
  */
 
 import type { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { entityPresentationApiRef } from '@backstage/plugin-catalog-react';
+import { signalApiRef } from '@backstage/plugin-signals-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsPage } from './ApprovalsPage';
@@ -37,6 +40,22 @@ const PENDING: ApprovalRequest = {
   createdAt: '2026-09-13T10:00:00.000Z',
   updatedAt: '2026-09-13T10:00:00.000Z',
 };
+
+/**
+ * The catalog's presentation API, answering from a fixed list of titles, the
+ * way the real one answers from each entity's title or display name.
+ */
+function fakePresentation(titles: Record<string, string>) {
+  return {
+    forEntity(entityRef: string) {
+      const snapshot = {
+        entityRef,
+        primaryTitle: titles[entityRef] ?? entityRef,
+      };
+      return { snapshot, promise: Promise.resolve(snapshot) };
+    },
+  };
+}
 
 function render(api: Partial<ApprovalsApi>) {
   return renderInTestApp(
@@ -71,6 +90,13 @@ describe('ApprovalsPage', () => {
     expect(
       await screen.findByText('Nothing is waiting on you'),
     ).toBeInTheDocument();
+    // B15: inside the table, under its column headers, and without the
+    // illustrated empty state, whose image was taller than the empty row and
+    // left the table with a scrollbar and nothing to scroll.
+    expect(
+      screen.getAllByRole('columnheader').map(header => header.textContent),
+    ).toEqual(['Template', 'Requested by', 'Status', 'Requested']);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('lists a pending request with its summary and status', async () => {
@@ -91,6 +117,66 @@ describe('ApprovalsPage', () => {
     expect(
       screen.getByRole('rowheader', { name: /request-github-admin/ }),
     ).toBeInTheDocument();
+  });
+
+  it('names templates and people as the catalog does', async () => {
+    // B16: the list showed the last segment of each ref, "request-github-admin"
+    // and "requester", rather than what the catalog calls them.
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [
+            approvalsApiRef,
+            {
+              listRequests: async () => ({ items: [PENDING], totalItems: 1 }),
+            } as Partial<ApprovalsApi> as ApprovalsApi,
+          ],
+          [
+            entityPresentationApiRef,
+            fakePresentation({
+              'template:default/request-github-admin':
+                'Request GitHub admin access',
+              'user:default/requester': 'Riley Requester',
+            }),
+          ],
+        ]}
+      >
+        <ApprovalsPage />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+
+    expect(
+      await screen.findByText('Request GitHub admin access'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Riley Requester')).toBeInTheDocument();
+    // The summary still sits under the template's name.
+    expect(screen.getByText('Admin on backstage')).toBeInTheDocument();
+  });
+
+  it('leaves out who asked on "Your requests", since it is always you', async () => {
+    // B20: a "Requested by" column whose every row named the viewer.
+    const listRequests = jest
+      .fn()
+      .mockResolvedValue({ items: [PENDING], totalItems: 1 });
+    await render({ listRequests });
+
+    await userEvent.click(
+      await screen.findByRole('tab', { name: 'Your requests' }),
+    );
+
+    await waitFor(() =>
+      expect(listRequests).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'requester' }),
+      ),
+    );
+    const panel = await screen.findByRole('tabpanel');
+    await within(panel).findByText('Admin on backstage');
+    expect(
+      within(panel)
+        .getAllByRole('columnheader')
+        .map(header => header.textContent),
+    ).toEqual(['Template', 'Status', 'Requested']);
   });
 
   it('asks the backend only for pending requests in the inbox', async () => {
@@ -131,5 +217,56 @@ describe('ApprovalsPage', () => {
 
     expect(await screen.findByText('request-github-admin')).toBeInTheDocument();
     expect(screen.getByText('Completed')).toBeInTheDocument();
+  });
+
+  it('shows a pending request past its deadline as expired', async () => {
+    // B9: the sweep that moves it to `expired` runs every five minutes, and
+    // until then it read as waiting for a decision nobody can make.
+    await render({
+      listRequests: jest.fn().mockResolvedValue({
+        items: [{ ...PENDING, expiresAt: '2020-01-01T00:00:00.000Z' }],
+        totalItems: 1,
+      }),
+    });
+
+    expect(await screen.findByText('Expired')).toBeInTheDocument();
+    expect(screen.queryByText('Awaiting approval')).not.toBeInTheDocument();
+  });
+
+  it('refetches the list when the backend signals a change', async () => {
+    // B10: a vote takes a row out of an inbox and a submission adds one; the
+    // list used to show neither until the page was reloaded.
+    let deliver: (message: object) => void = () => {};
+    const signalApi = {
+      subscribe(_channel: string, onMessage: (message: any) => void) {
+        deliver = onMessage;
+        return { unsubscribe() {} };
+      },
+    };
+    const listRequests = jest
+      .fn()
+      .mockResolvedValueOnce({ items: [PENDING], totalItems: 1 })
+      .mockResolvedValue({ items: [], totalItems: 0 });
+
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [approvalsApiRef, { listRequests } as unknown as ApprovalsApi],
+          [signalApiRef, signalApi],
+        ]}
+      >
+        <ApprovalsPage />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+    expect(await screen.findByText('Admin on backstage')).toBeInTheDocument();
+
+    await act(async () =>
+      deliver({ action: 'decided', requestId: PENDING.id, status: 'approved' }),
+    );
+
+    expect(
+      await screen.findByText('Nothing is waiting on you'),
+    ).toBeInTheDocument();
   });
 });

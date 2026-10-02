@@ -120,6 +120,7 @@ describe('ApprovalService', () => {
       onSubmitted: jest.Mock;
       onDecided: jest.Mock;
       onLaunched: jest.Mock;
+      onWithdrawn: jest.Mock;
     };
 
     const requester = caller(REQUESTER, ['group:default/devx-team']);
@@ -142,6 +143,7 @@ describe('ApprovalService', () => {
         onSubmitted: jest.fn(),
         onDecided: jest.fn(),
         onLaunched: jest.fn(),
+        onWithdrawn: jest.fn(),
       };
 
       catalogFails = false;
@@ -481,6 +483,15 @@ describe('ApprovalService', () => {
         });
         expect(afterFirst.status).toBe('pending');
         expect(scaffold).not.toHaveBeenCalled();
+        // Announced although nothing changed status (B10/B12), with the status
+        // the request really has, so an open page shows "1 of 2".
+        expect(observer.onDecided).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'pending' }),
+          expect.objectContaining({
+            approverRef: 'user:default/alice',
+            decision: 'approve',
+          }),
+        );
 
         const afterSecond = await service.decide({
           requestId: id,
@@ -1086,6 +1097,21 @@ describe('ApprovalService', () => {
           credentials: requester.credentials,
         });
         expect(cancelled.status).toBe('cancelled');
+      });
+
+      it('tells the observer, so an open page and a subscriber hear of it', async () => {
+        // B10: withdrawing was the one change that published nothing, so a
+        // page open on the request never updated.
+        const { id } = await submit();
+
+        await service.cancel({
+          requestId: id,
+          credentials: requester.credentials,
+        });
+
+        expect(observer.onWithdrawn).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'cancelled' }),
+        );
       });
 
       it('refuses anyone but the requester', async () => {

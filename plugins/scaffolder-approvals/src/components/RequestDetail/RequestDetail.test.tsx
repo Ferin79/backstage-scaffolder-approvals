@@ -16,8 +16,10 @@
 
 import type { ApprovalRequestWithDecisions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
+import { entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { screen, waitFor } from '@testing-library/react';
+import { signalApiRef } from '@backstage/plugin-signals-react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
@@ -57,10 +59,39 @@ function identityOf(userEntityRef: string, groups: string[] = []) {
 
 const APPROVER = identityOf('user:default/alice', ['group:default/devx-team']);
 
+/**
+ * A stand-in for the signals plugin: records subscribers, and lets a test
+ * deliver a message to them as the backend's broadcast would.
+ */
+function fakeSignals() {
+  const subscribers: Array<{
+    channel: string;
+    onMessage: (message: any) => void;
+  }> = [];
+  return {
+    api: {
+      subscribe(channel: string, onMessage: (message: any) => void) {
+        subscribers.push({ channel, onMessage });
+        return { unsubscribe() {} };
+      },
+    },
+    async publish(channel: string, message: object) {
+      await act(async () => {
+        for (const subscriber of subscribers) {
+          if (subscriber.channel === channel) {
+            subscriber.onMessage(message);
+          }
+        }
+      });
+    },
+  };
+}
+
 function render(
   api: Partial<ApprovalsApi>,
   identity: ReturnType<typeof identityOf> = APPROVER,
   alertApi = { post: jest.fn(), alert$: jest.fn() },
+  signals?: ReturnType<typeof fakeSignals>,
 ) {
   return renderInTestApp(
     <TestApiProvider
@@ -68,6 +99,7 @@ function render(
         [approvalsApiRef, api as ApprovalsApi],
         [identityApiRef, identity as any],
         [alertApiRef, alertApi as any],
+        ...(signals ? [[signalApiRef, signals.api] as const] : []),
       ]}
     >
       <RequestDetail requestId={REQUEST.id} />
@@ -75,7 +107,11 @@ function render(
     {
       // Only the root ref: `mountedRoutes` takes route refs, not sub route
       // refs, and a sub route resolves relative to its parent anyway.
-      mountedRoutes: { '/scaffolder-approvals': rootRouteRef },
+      // And the catalog's entity page, which people and the template link to.
+      mountedRoutes: {
+        '/scaffolder-approvals': rootRouteRef,
+        '/catalog/:namespace/:kind/:name': entityRouteRef,
+      },
     },
   );
 }
@@ -91,6 +127,18 @@ describe('RequestDetail', () => {
     // is why both use computeQuorumProgress.
     expect(screen.getByText('0 of 2 approvals needed.')).toBeInTheDocument();
     expect(screen.getByText('Nobody has decided yet.')).toBeInTheDocument();
+  });
+
+  it('puts the status in a labelled header item', async () => {
+    // B14: as a bare child of the header's spaced grid, the pill slid over
+    // the subtitle on a narrow screen. A `HeaderLabel` is a grid item, and
+    // names what the pill is.
+    await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
+
+    await screen.findByText('Admin on backstage');
+    const header = screen.getByRole('banner');
+    expect(header).toHaveTextContent('Status');
+    expect(header).toHaveTextContent('Awaiting approval');
   });
 
   it('approves through a confirmation step', async () => {
@@ -232,7 +280,7 @@ describe('RequestDetail', () => {
       expect(screen.getByText('1 of 2 approvals needed.')).toBeInTheDocument();
     });
 
-    it('explains that the request is already decided', async () => {
+    it('says what happened, rather than why you cannot decide, once it is settled', async () => {
       await render({
         getRequest: jest
           .fn()
@@ -240,8 +288,13 @@ describe('RequestDetail', () => {
       });
 
       expect(
-        await screen.findByText('This request has already been decided.'),
+        await screen.findByText(
+          'Denied. A single denial rejects a request outright.',
+        ),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByText('This request has already been decided.'),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -259,8 +312,36 @@ describe('RequestDetail', () => {
           name: 'Withdraw',
         }),
       );
+      // B11: it asks first, as Approve and Deny do — withdrawing is as final.
+      expect(
+        await screen.findByText('Withdraw this request?'),
+      ).toBeInTheDocument();
+      expect(cancel).not.toHaveBeenCalled();
 
-      expect(cancel).toHaveBeenCalledWith(REQUEST.id);
+      await userEvent.click(
+        screen.getAllByRole('button', { name: 'Withdraw' }).at(-1)!,
+      );
+
+      await waitFor(() => expect(cancel).toHaveBeenCalledWith(REQUEST.id));
+    });
+
+    it('withdraws nothing when the confirmation is declined', async () => {
+      const cancel = jest.fn().mockResolvedValue(REQUEST);
+      await render({ getRequest: async () => REQUEST, cancel }, REQUESTER);
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Withdraw' }),
+      );
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Keep it' }),
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Withdraw this request?'),
+        ).not.toBeInTheDocument(),
+      );
+      expect(cancel).not.toHaveBeenCalled();
     });
 
     it('offers Resubmit once the request has failed', async () => {
@@ -420,13 +501,284 @@ describe('RequestDetail', () => {
     ).toBeInTheDocument();
     // The decision history is what survives, and it is the point of keeping the
     // row at all.
-    expect(
-      screen.getByText('user:default/alice', { exact: false }),
-    ).toBeInTheDocument();
-    // With no summary, the template ref stands in as the title.
-    expect(screen.getAllByText(/request-github-admin/).length).toBeGreaterThan(
-      0,
+    expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
+    // With no summary, the template's name stands in as the title: not its
+    // raw ref (B16).
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      /^request-github-admin$/,
     );
+  });
+
+  describe('a settled request', () => {
+    // B4 in the browser review: "This request has already been decided" on
+    // requests nobody decided, "0 of 2 approvals needed" on settled ones, and
+    // an "Expires" date on requests that can no longer expire.
+    it.each([
+      ['cancelled', 'Withdrawn by the requester before it was decided.'],
+      ['expired', 'Timed out before it was approved.'],
+      ['completed', 'Approved, and the template has run.'],
+      ['failed', 'Approved, but the template did not complete.'],
+    ] as const)('says what happened to a %s request', async (status, says) => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          status,
+          expiresAt: '2026-09-16T10:00:00.000Z',
+        }),
+      });
+
+      expect(await screen.findByText(says)).toBeInTheDocument();
+      expect(
+        screen.queryByText(/already been decided/),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/approvals needed/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Expires')).not.toBeInTheDocument();
+    });
+
+    it('names when an expired request timed out', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          status: 'expired' as const,
+          expiresAt: '2026-09-16T10:00:00.000Z',
+        }),
+      });
+
+      expect(await screen.findByText('Timed out')).toBeInTheDocument();
+    });
+
+    it('does not call a running request denied because a denial lost the race', async () => {
+      // An approval reached quorum first; the late denial stays on record, but
+      // the request is running, and the page has to say so.
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          status: 'running' as const,
+          decisions: [
+            {
+              id: 'd1',
+              requestId: REQUEST.id,
+              approverRef: 'user:default/bob',
+              decision: 'deny' as const,
+              createdAt: '2026-09-13T10:06:00.000Z',
+            },
+          ],
+        }),
+      });
+
+      expect(
+        await screen.findByText('Approved. The template is running.'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/A single denial rejects/),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('says who can approve, how many it takes, and whether the requester may', async () => {
+    // B5: the requester could see "0 of 2" but not whose two.
+    await render({
+      getRequest: async () => ({
+        ...REQUEST,
+        policySnapshot: {
+          approvers: ['group:default/devx-team', 'user:default/lead'],
+          quorum: 2,
+          selfApprove: false,
+        },
+      }),
+    });
+
+    expect(
+      await screen.findByText(/^Needs 2 approvals from/),
+    ).toHaveTextContent(
+      'Needs 2 approvals from devx-team or lead. The requester cannot approve their own request.',
+    );
+    // Each approver links to their catalog page, so a requester can see who
+    // is in the group they are waiting on (B16).
+    expect(screen.getByRole('link', { name: 'devx-team' })).toHaveAttribute(
+      'href',
+      '/catalog/default/group/devx-team',
+    );
+    expect(screen.getByRole('link', { name: 'lead' })).toHaveAttribute(
+      'href',
+      '/catalog/default/user/lead',
+    );
+  });
+
+  it('names people and the template, each linked to its catalog page', async () => {
+    // B16: "user:default/requester", "template:default/request-github-admin"
+    // and "group:default/devx-team" everywhere, none of them links.
+    await render({
+      getRequest: async () => ({
+        ...REQUEST,
+        decisions: [
+          {
+            id: 'd1',
+            requestId: REQUEST.id,
+            approverRef: 'user:default/alice',
+            decision: 'approve' as const,
+            createdAt: '2026-09-13T10:05:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    await screen.findByText('Admin on backstage');
+    const links = Object.fromEntries(
+      screen
+        .getAllByRole('link')
+        .map(link => [link.textContent, link.getAttribute('href')]),
+    );
+    expect(links).toEqual(
+      expect.objectContaining({
+        requester: '/catalog/default/user/requester',
+        'request-github-admin':
+          '/catalog/default/template/request-github-admin',
+        'devx-team': '/catalog/default/group/devx-team',
+        alice: '/catalog/default/user/alice',
+      }),
+    );
+    // The requester is named in the header, where the raw ref used to be, as
+    // one piece of text: the header styles a string subtitle for the banner,
+    // and left a link there black on purple.
+    expect(
+      within(screen.getByRole('banner')).getByText('Requested by requester'),
+    ).toBeInTheDocument();
+    // And no raw ref is left anywhere a person reads.
+    expect(document.body).not.toHaveTextContent(
+      /(user|group|template):default\//,
+    );
+  });
+
+  describe('a request past its deadline that the sweep has not reached yet', () => {
+    // B9: still `pending` in the database for up to five minutes, but nobody
+    // can decide it, so it must not read as waiting.
+    const LAPSED = {
+      ...REQUEST,
+      expiresAt: '2020-01-01T00:00:00.000Z',
+    };
+
+    it('reads as expired, with nothing to decide', async () => {
+      await render({ getRequest: async () => LAPSED });
+
+      expect(await screen.findByText('Expired')).toBeInTheDocument();
+      expect(
+        screen.getByText('Timed out before it was approved.'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Approve' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('is not offered to its requester for withdrawal', async () => {
+      await render(
+        { getRequest: async () => LAPSED },
+        identityOf('user:default/requester'),
+      );
+
+      await screen.findByText('Expired');
+      expect(
+        screen.queryByRole('button', { name: 'Withdraw' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('when the request cannot be loaded', () => {
+    // B6: a bare error bar with no page around it and no way back.
+    // Shaped like the client's `ResponseError`, body included: the error
+    // panel reads the body of anything named ResponseError.
+    const failing = (statusCode: number, message: string) =>
+      jest.fn().mockRejectedValue(
+        Object.assign(new Error(message), {
+          name: 'ResponseError',
+          statusCode,
+          cause: Object.assign(new Error(message), { name: 'Error' }),
+          body: {
+            error: { name: 'Error', message },
+            request: { method: 'GET', url: '/requests/x' },
+            response: { statusCode },
+          },
+        }),
+      );
+
+    it('says a missing request does not exist, and offers the way back', async () => {
+      await render({
+        getRequest: failing(404, 'No such approval request: x'),
+      });
+
+      expect(
+        await screen.findByText('No such approval request'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: 'Back to approvals' }),
+      ).toHaveAttribute('href', '/scaffolder-approvals');
+      // Inside the page, with its header, not a bar on its own.
+      expect(
+        screen.getByRole('heading', { name: 'Approval request' }),
+      ).toBeInTheDocument();
+    });
+
+    it('says a malformed link is not a request link', async () => {
+      await render({
+        getRequest: failing(400, 'Invalid request id: must be a request id'),
+      });
+
+      expect(
+        await screen.findByText('This is not a link to an approval request'),
+      ).toBeInTheDocument();
+    });
+
+    it('keeps the error panel, inside the page, for anything else', async () => {
+      await render({
+        getRequest: failing(500, 'The database is on fire'),
+      });
+
+      expect(
+        (await screen.findAllByText(/The database is on fire/)).length,
+      ).toBeGreaterThan(0);
+      expect(
+        screen.getByRole('link', { name: 'Back to approvals' }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('live updates', () => {
+    // B10: somebody else's decision, or the template finishing, appeared only
+    // on a manual reload.
+    it('refetches when the backend signals a change to this request', async () => {
+      const signals = fakeSignals();
+      const getRequest = jest
+        .fn()
+        .mockResolvedValueOnce(REQUEST)
+        .mockResolvedValue({ ...REQUEST, status: 'running' as const });
+      await render({ getRequest }, APPROVER, undefined, signals);
+
+      expect(await screen.findByText('Awaiting approval')).toBeInTheDocument();
+
+      await signals.publish('scaffolder-approvals', {
+        action: 'decided',
+        requestId: REQUEST.id,
+        status: 'approved',
+      });
+
+      expect(await screen.findByText('Running')).toBeInTheDocument();
+      expect(getRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores a signal about another request', async () => {
+      const signals = fakeSignals();
+      const getRequest = jest.fn().mockResolvedValue(REQUEST);
+      await render({ getRequest }, APPROVER, undefined, signals);
+      await screen.findByText('Awaiting approval');
+
+      await signals.publish('scaffolder-approvals', {
+        action: 'decided',
+        requestId: 'someone-elses',
+        status: 'approved',
+      });
+
+      expect(getRequest).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('surfaces a failure to load the request', async () => {

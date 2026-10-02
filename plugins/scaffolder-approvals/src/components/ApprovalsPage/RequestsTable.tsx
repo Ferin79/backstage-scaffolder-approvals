@@ -19,30 +19,55 @@ import {
   type ApprovalRequestRole,
   type ApprovalRequestStatus,
 } from '@backstage-community/plugin-scaffolder-approvals-common';
-import { parseEntityRef } from '@backstage/catalog-model';
-import { EmptyState } from '@backstage/core-components';
 import { useRouteRef } from '@backstage/core-plugin-api';
+import { useEntityPresentation } from '@backstage/plugin-catalog-react';
 import {
   Cell,
   CellText,
+  Flex,
   type OffsetParams,
   Table,
+  Text,
+  useBreakpoint,
   useTable,
 } from '@backstage/ui';
 import { useMemo } from 'react';
 import type { ApprovalsApi } from '../../api';
 import { requestRouteRef } from '../../routes';
 import { StatusPill } from '../StatusPill';
+import { effectiveStatus } from '../StatusPill/effectiveStatus';
+import { useOnApprovalsChange } from '../useOnApprovalsChange';
 
 /** A row is a request; BUI's table only needs it to have an id. */
 type Row = ApprovalRequest;
 
-function shortRef(ref: string): string {
-  try {
-    return parseEntityRef(ref).name;
-  } catch {
-    return ref;
-  }
+/**
+ * The template's catalog title, with the request's summary under it.
+ *
+ * The catalog's name rather than the ref's last segment (B16): "Request GitHub
+ * admin access", not "request-github-admin". Not a link, because the whole row
+ * already is one. Until the catalog answers, and for an entity it does not
+ * know, this is the name from the ref, as it was before.
+ */
+function TemplateCell(props: { item: Row }) {
+  const { item } = props;
+  const { primaryTitle } = useEntityPresentation(item.templateRef);
+  return (
+    <CellText
+      title={primaryTitle}
+      // The summary is what an approver actually needs to read, and it is
+      // null once the retention sweep has been through.
+      description={item.summary ?? undefined}
+    />
+  );
+}
+
+/** Who asked, by the name the catalog has for them (B16). */
+function RequesterCell(props: { item: Row }) {
+  const { primaryTitle } = useEntityPresentation(props.item.requesterRef, {
+    defaultKind: 'user',
+  });
+  return <CellText title={primaryTitle} />;
 }
 
 function when(iso: string): string {
@@ -96,6 +121,17 @@ export function RequestsTable(props: RequestsTableProps) {
 
   const requestRoute = useRouteRef(requestRouteRef);
 
+  // Below BUI's `sm` breakpoint (768px) there is room for what a request is
+  // and where it stands, not for four columns: every column truncated, and the
+  // status pills were clipped mid-word (B14 in the browser review). Who asked
+  // and when are on the request page, one tap away.
+  const { up } = useBreakpoint();
+  const narrow = !up('sm');
+
+  // On "Your requests" every row was asked for by the viewer, so a column
+  // saying so is noise (B20).
+  const hideRequester = narrow || viewAs === 'requester';
+
   const columnConfig = useMemo(
     () => [
       {
@@ -105,41 +141,41 @@ export function RequestsTable(props: RequestsTableProps) {
         // the browser without it ("A table must have at least one Column with
         // the isRowHeader prop set to true"); jsdom never reached that check.
         isRowHeader: true,
-        cell: (item: Row) => (
-          <CellText
-            title={shortRef(item.templateRef)}
-            // The summary is what an approver actually needs to read, and it
-            // is null once the retention sweep has been through.
-            description={item.summary ?? undefined}
-          />
-        ),
+        cell: (item: Row) => <TemplateCell item={item} />,
       },
       {
         id: 'requesterRef',
         label: 'Requested by',
-        cell: (item: Row) => <CellText title={shortRef(item.requesterRef)} />,
+        isHidden: hideRequester,
+        cell: (item: Row) => <RequesterCell item={item} />,
       },
       {
         id: 'status',
         label: 'Status',
+        // Wide enough for the longest label, "Awaiting approval", so a pill is
+        // never cut off however the other columns share the width.
+        minWidth: 160,
         // `CellText` takes a plain string title, so a pill needs the generic
         // `Cell` wrapper — which the table still requires at the top level.
         cell: (item: Row) => (
           <Cell>
-            <StatusPill status={item.status} />
+            {/* Past its deadline is expired, whether or not the sweep has
+                caught up with it yet (B9). */}
+            <StatusPill status={effectiveStatus(item)} />
           </Cell>
         ),
       },
       {
         id: 'createdAt',
         label: 'Requested',
+        isHidden: narrow,
         cell: (item: Row) => <CellText title={when(item.createdAt)} />,
       },
     ],
-    [],
+    [narrow, hideRequester],
   );
 
-  const { tableProps } = useTable<Row>({
+  const { tableProps, reload } = useTable<Row>({
     mode: 'offset',
     // `reloadToken` participates so that deciding on a request refreshes the
     // list behind it without a full page reload.
@@ -157,17 +193,25 @@ export function RequestsTable(props: RequestsTableProps) {
     paginationOptions: { pageSize: 10 },
   });
 
+  // Any change to any request can move a row — a vote takes one out of an
+  // inbox, a submission adds one — so any signal refetches the page on show.
+  useOnApprovalsChange(reload);
+
   return (
     <Table<Row>
       {...tableProps}
       columnConfig={columnConfig}
       rowConfig={{ getHref: item => requestRoute({ requestId: item.id }) }}
       emptyState={
-        <EmptyState
-          missing="content"
-          title={emptyTitle}
-          description={emptyDescription}
-        />
+        // A heading and a sentence, not core-components' `EmptyState`: its
+        // illustration is taller than the table's empty row, so the table
+        // overflowed BUI's scroll container and showed a scrollbar with
+        // nothing to scroll (B15 in the browser review). This sits in the row
+        // under the column headers, and says the same thing.
+        <Flex direction="column" gap="1" py="6" px="2">
+          <Text variant="title-small">{emptyTitle}</Text>
+          <Text color="secondary">{emptyDescription}</Text>
+        </Flex>
       }
     />
   );

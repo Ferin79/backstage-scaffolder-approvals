@@ -17,6 +17,7 @@ export interface ApprovalObserver {
   onLaunched?(request: ApprovalRequest): Promise<void>;
   // (undocumented)
   onSubmitted(request: ApprovalRequest): Promise<void>;
+  onWithdrawn?(request: ApprovalRequest): Promise<void>;
 }
 
 // @public

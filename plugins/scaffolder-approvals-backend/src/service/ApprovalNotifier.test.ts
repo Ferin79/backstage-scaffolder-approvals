@@ -132,6 +132,38 @@ describe('ApprovalNotifier', () => {
     });
   });
 
+  describe('the words a person reads', () => {
+    // B16: every inbox read "user:default/requester is asking to run …". The
+    // event payload keeps full refs for whatever subscribes to it; the
+    // sentences people read name people.
+    it('names people, not their entity refs', async () => {
+      const n = notifier();
+      await n.onSubmitted(REQUEST);
+      await n.onDecided({ ...REQUEST, status: 'approved' as const }, APPROVAL);
+      await n.onWithdrawn({ ...REQUEST, status: 'cancelled' as const });
+
+      expect(
+        send.mock.calls.map(([{ payload }]) => payload.description),
+      ).toEqual([
+        'requester is asking to run Admin on backstage',
+        'alice approved your request to run Admin on backstage',
+        'requester withdrew their request to run Admin on backstage. Nothing is waiting on you.',
+      ]);
+    });
+
+    it('keeps a namespace that is not the default one', async () => {
+      // Two people in different namespaces can share a name.
+      await notifier().onSubmitted({
+        ...REQUEST,
+        requesterRef: 'user:ops/sam',
+      });
+
+      expect(send.mock.calls[0][0].payload.description).toBe(
+        'ops/sam is asking to run Admin on backstage',
+      );
+    });
+  });
+
   describe('onSubmitted', () => {
     it('tells the approvers, not the requester', async () => {
       await notifier().onSubmitted(REQUEST);
@@ -162,12 +194,17 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('onDecided', () => {
+    // The service hands over the request as it is after the decision (C3), so
+    // a denial arrives `rejected` and a final approval `approved`.
     it('tells the requester, and carries the comment', async () => {
-      await notifier().onDecided(REQUEST, {
-        ...APPROVAL,
-        decision: 'deny',
-        comment: 'not while the incident is open',
-      });
+      await notifier().onDecided(
+        { ...REQUEST, status: 'rejected' as const },
+        {
+          ...APPROVAL,
+          decision: 'deny',
+          comment: 'not while the incident is open',
+        },
+      );
 
       const [{ recipients, payload }] = send.mock.calls[0];
       expect(recipients.entityRef).toEqual(['user:default/requester']);
@@ -178,11 +215,42 @@ describe('ApprovalNotifier', () => {
     });
 
     it('reads as an approval when it was one', async () => {
-      await notifier().onDecided(REQUEST, APPROVAL);
+      await notifier().onDecided(
+        { ...REQUEST, status: 'approved' as const },
+        APPROVAL,
+      );
 
       const [{ payload }] = send.mock.calls[0];
       expect(payload.title).toBe('Request approved');
       expect(payload.severity).toBe('normal');
+    });
+
+    it('announces a vote that leaves it pending, without notifying anyone', async () => {
+      // B10/B12: a partial approval published nothing, so a page open on the
+      // request stayed at "0 of 2". It is an event and a signal now — and not
+      // a notification, because "Request approved" with an approval still
+      // missing would be untrue.
+      await notifier().onDecided(REQUEST, APPROVAL);
+
+      expect(send).not.toHaveBeenCalled();
+      expect(publishSignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: {
+            action: 'decided',
+            requestId: REQUEST.id,
+            status: 'pending',
+          },
+        }),
+      );
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventPayload: expect.objectContaining({
+            action: 'decided',
+            status: 'pending',
+            decision: 'approve',
+          }),
+        }),
+      );
     });
   });
 
@@ -302,6 +370,57 @@ describe('ApprovalNotifier', () => {
     });
   });
 
+  describe('withdrawn', () => {
+    it("replaces the approvers' request notification instead of adding one", async () => {
+      // B11: "Approval requested" stayed unread after a withdrawal, leading to
+      // a request nobody could act on. Q20's four kinds stay four: this one
+      // takes the scope of the notification it makes obsolete.
+      await notifier().onWithdrawn({
+        ...REQUEST,
+        status: 'cancelled' as const,
+      });
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [{ recipients, payload }] = send.mock.calls[0];
+      expect(recipients.entityRef).toEqual(REQUEST.policySnapshot.approvers);
+      expect(recipients.excludeEntityRef).toEqual([REQUEST.requesterRef]);
+      expect(payload.title).toBe('Approval request withdrawn');
+      expect(payload.description).toMatch(/Nothing is waiting on you/);
+      expect(payload.severity).toBe('low');
+      // The scope of the notification `onSubmitted` sent, so it is replaced.
+      expect(payload.scope).toBe(
+        `scaffolder-approvals:${REQUEST.id}:requested`,
+      );
+    });
+
+    it('publishes an event and a signal', async () => {
+      // B10: a page open on a withdrawn request never updated, because nothing
+      // was published.
+      await notifier().onWithdrawn({
+        ...REQUEST,
+        status: 'cancelled' as const,
+      });
+
+      expect(publishSignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: {
+            action: 'withdrawn',
+            requestId: REQUEST.id,
+            status: 'cancelled',
+          },
+        }),
+      );
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventPayload: expect.objectContaining({
+            action: 'withdrawn',
+            status: 'cancelled',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('events', () => {
     it('describe what happened for anything listening', async () => {
       await notifier().onDecided(REQUEST, APPROVAL);
@@ -322,16 +441,16 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('a redacted request', () => {
-    it('falls back to the template ref once the summary has gone', async () => {
+    it('falls back to the template once the summary has gone', async () => {
       // The retention sweep nulls the summary, and a notification about a
-      // failure can outlive it.
+      // failure can outlive it. Named, like a person, rather than as a ref.
       await notifier().onFailed(
         { ...REQUEST, summary: null, values: null },
         'the task failed',
       );
 
-      expect(send.mock.calls[0][0].payload.description).toMatch(
-        /template:default\/request-github-admin/,
+      expect(send.mock.calls[0][0].payload.description).toBe(
+        'request-github-admin did not complete: the task failed',
       );
     });
   });

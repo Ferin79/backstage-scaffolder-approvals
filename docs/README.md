@@ -176,7 +176,7 @@ What happens next:
 3. When two have approved, the template starts. A single denial rejects the request outright, whatever the approval count.
 4. The request moves to `running`, then `completed` or `failed`. Nobody deciding within 72 hours moves it to `expired`.
 
-The request page is the canonical view throughout, and links to the task log once there is a task. It does not update on its own yet: the backend broadcasts a signal on every change, but the page does not subscribe to it, so somebody else's decision appears on reload.
+The request page is the canonical view throughout, and links to the task log once there is a task. With the signals plugin installed it updates itself: somebody else's vote, the template starting and its task finishing all appear without a reload, and so do the inbox and the home-page card.
 
 ## Things to know before you rely on it
 
@@ -272,7 +272,7 @@ backend.add(
 
 Your catalog also needs **`@backstage/plugin-catalog-backend-module-scaffolder-entity-model`**, if it does not have it already. Without it the catalog does not recognise the `Template` kind and drops those entities **silently** — no error, just no template.
 
-Notifications and signals are optional. With the notifications plugin installed, approvers and requesters are notified. Signals are published but nothing subscribes to them yet, so an open request page still needs a reload to show somebody else's decision. The backend starts and works with neither.
+Notifications and signals are optional. With the notifications plugin installed, approvers and requesters are notified. With the signals plugin installed, an open request page, inbox or home-page card refreshes itself when anything changes; without it, they show what they loaded until reloaded. The backend starts and works with neither.
 
 ### Frontend
 
@@ -339,6 +339,40 @@ It is a review step rather than a decorator on `scaffolderApiRef` because of wha
 
 `ReviewStepProps` does not carry the template ref, so the component reads it from the scaffolder's route parameters. If your app mounts the wizard somewhere else, pass `templateRef` explicitly; without it the component renders your ordinary review step rather than a broken screen.
 
+#### Marking gated templates on Create…
+
+Without this, a requester finds out that a template needs approval on the wizard's last step. `GatedTemplateCard` is the scaffolder's own template card with one link per approver added, "Approver: DevX team", each to that approver's catalog page. Every other template's card is unchanged.
+
+```tsx
+import { GatedTemplateCard } from '@backstage-community/plugin-scaffolder-approvals';
+
+<ScaffolderPage
+  components={{
+    ReviewStepComponent: YourGatedReviewStep,
+    TemplateCardComponent: GatedTemplateCard,
+  }}
+/>;
+```
+
+It reads a template's gate the same way `GatedReviewStep` does, so a card never promises an approval that the last step does not ask for. A gate the backend would refuse shows **Needs approval** instead of approvers; the review step says what is wrong with it. Legacy frontend system only, like the review step: the new system's templates page takes a swappable card, and one that wraps the scaffolder's own would render itself.
+
+#### Names and links
+
+People, groups and templates appear by the name the catalog gives them, "Riley Requester" or "Request GitHub admin access", and link to their catalog pages, so the app needs the catalog's entity page mounted, as any app with the scaffolder has. Until the catalog answers, and for an entity it does not know, the name comes from the ref. Notifications say "alice approved your request …": they go out in the middle of a decision, so they name people from their refs rather than waiting on the catalog.
+
+#### Matching BUI to an MUI theme
+
+The plugin's pages are Backstage UI (BUI) inside core-components page chrome. BUI draws its text in `system-ui`; Backstage's Material UI themes use `"Helvetica Neue", Helvetica, Roboto, Arial, sans-serif`. In an app that keeps an MUI theme, the home-page card then sits beside MUI cards in a different typeface, and every page mixes the two under its header. Point BUI at the theme's font in a stylesheet loaded after BUI's own, as [`packages/app/src/bui-theme.css`](../packages/app/src/bui-theme.css) does:
+
+```css
+:root,
+[data-theme-mode] {
+  --bui-font-regular: 'Helvetica Neue', Helvetica, Roboto, Arial, sans-serif;
+}
+```
+
+Unlayered, so it beats BUI's own `@layer tokens` without `!important`.
+
 ### Configuration
 
 Gate policy lives in each template. The global configuration is only this:
@@ -364,17 +398,22 @@ If the events backend is installed, every state change is published on the `scaf
 | `action`    | When                                    | Notification | Also carries              |
 | ----------- | --------------------------------------- | ------------ | ------------------------- |
 | `requested` | A request is submitted                  | Approvers    | —                         |
-| `decided`   | An approver approves or denies          | Requester    | `decision`, `approverRef` |
+| `decided`   | An approver approves or denies          | Requester¹   | `decision`, `approverRef` |
 | `launched`  | The template starts                     | None         | `taskId`                  |
 | `completed` | The task finished successfully          | None         | `taskId`                  |
 | `failed`    | The task failed, or the approval lapsed | Both         | `reason`                  |
 | `expired`   | Nobody decided in time                  | Both         | —                         |
+| `withdrawn` | The requester withdrew it               | Approvers²   | —                         |
 
-`launched` and `completed` carry no notification on purpose: four notifications is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
+¹ Only when the vote settles the request — a denial, or the approval that meets the quorum. A vote that leaves it pending is still published, with `status: pending`, so a subscriber sees every vote; it notifies nobody, because "Request approved" with an approval still missing would be untrue.
+
+² Not a new item: it replaces each approver's "Approval requested" for that request, at `low` severity, so their inbox no longer asks them to decide something that is gone.
+
+`launched` and `completed` carry no notification on purpose: four kinds of notification is the v1 decision, and "your request started" is redundant with "your request was approved" in an inbox. They exist because a subscriber — a Slack integration, an audit pipeline — needs the whole lifecycle, not just the part worth interrupting a person for.
 
 `status` is the status the request has **after** the change, so a `decided` event on an approved request says `approved`, not `pending`.
 
-If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`. Nothing in this plugin subscribes to them yet — the page does not refresh itself — so today they are there for anything else that wants them. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
+If the signals backend is installed, the same changes are broadcast on the `scaffolder-approvals` channel as `{ action, requestId, status }`. The request page, the inbox and the home-page card subscribe to them and refetch, so they never trust a signal's own status; anything else can subscribe too. It is a broadcast rather than an addressed signal because signals can only be addressed to `user:` refs while approvers are normally groups. Nothing in the payload is privileged: any signed-in user can already read any request, and the page fetches it once told to.
 
 ## Packages
 
@@ -390,7 +429,6 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 ## Not yet
 
 - **An entity card on Templates.** Additive later; the approvals page and the home-page card are the UI today.
-- **A request page that updates itself.** The backend broadcasts a signal on every change and nothing subscribes to it yet, so somebody else's decision appears on reload.
 - **Pausing a template partway through.** The gate has to be the first step. Parking a task mid-run needs a suspend/resume primitive in core ([BEP-0016](https://github.com/backstage/backstage/pull/34966)).
 - **Restricting who can read requests.** Any signed-in user can read every request, matching the scaffolder's own task list. The permission rules needed to narrow it already exist.
 
@@ -398,7 +436,7 @@ If the signals backend is installed, the same changes are broadcast on the `scaf
 
 See the [repository README](../README.md) for running the app, trying an approval end to end as several different people, and running `scripts/verify-gate.sh`.
 
-To work on the approvals page on its own, run `yarn start` inside `plugins/scaffolder-approvals`, which serves it against a mock API.
+To work on the approvals page on its own, run `yarn start` inside `plugins/scaffolder-approvals`, which serves it against a mock API. With no backend running, sign in as a guest and accept the fallback to the legacy guest token. The mock makes whoever signs in an approver, and applies the backend's rules, so approving, denying and withdrawing can all be tried; its requests start over when the page reloads. A **Home card** page shows the home-page card, whose count follows your votes, and people's names link to a stand-in for the catalog page.
 
 ## Documentation
 

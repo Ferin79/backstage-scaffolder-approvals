@@ -16,10 +16,12 @@
 
 import { InfoCard, Progress } from '@backstage/core-components';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
-import { Flex, Link, Text } from '@backstage/ui';
+import { ButtonLink, Flex, Link, Text } from '@backstage/ui';
+import { useState } from 'react';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { useOnApprovalsChange } from '../useOnApprovalsChange';
 
 /**
  * How many requests are waiting on you, on the home page.
@@ -39,12 +41,32 @@ import { rootRouteRef } from '../../routes';
  * @public
  */
 export function PendingApprovalsCard() {
+  return (
+    <InfoCard title="Approvals" actions={<PendingApprovalsActions />}>
+      <PendingApprovalsContent />
+    </InfoCard>
+  );
+}
+
+/**
+ * The card's footer: the way to the approvals page, whatever the count, since
+ * that is also where somebody's own requests are.
+ *
+ * In the card's actions rather than as an `InfoCard` deep link, because the
+ * home-page extensions draw their own card and take only `Content` and
+ * `Actions` from this one. With a deep link, the card on the home page had no
+ * way to the page at all (B19 in the browser review). This way the standalone
+ * card and both extensions are the same card.
+ *
+ * @internal
+ */
+export function PendingApprovalsActions() {
   const rootPath = useRouteRef(rootRouteRef);
 
   return (
-    <InfoCard title="Approvals" deepLink={{ title: 'Open', link: rootPath() }}>
-      <PendingApprovalsContent />
-    </InfoCard>
+    <ButtonLink href={rootPath()} variant="tertiary">
+      Open approvals
+    </ButtonLink>
   );
 }
 
@@ -61,6 +83,11 @@ export function PendingApprovalsContent() {
   const api = useApi(approvalsApiRef);
   const rootPath = useRouteRef(rootRouteRef);
 
+  // Bumped by a signal, so a request arriving — or somebody else deciding the
+  // one that was waiting — changes the number without a page reload.
+  const [version, setVersion] = useState(0);
+  useOnApprovalsChange(() => setVersion(value => value + 1));
+
   const state = useAsync(
     () =>
       api.listRequests({
@@ -69,12 +96,14 @@ export function PendingApprovalsContent() {
         status: ['pending'],
         limit: 1,
       }),
-    [api],
+    [api, version],
   );
 
   return (
     <>
-      {state.loading && <Progress />}
+      {/* The first load only; a refresh keeps the old number until the new one
+          arrives rather than flashing a spinner on the home page. */}
+      {state.loading && !state.value && <Progress />}
 
       {/* A home card that cannot reach its backend says so and stays out of
           the way. Throwing here would take the whole home page with it. */}
@@ -85,7 +114,9 @@ export function PendingApprovalsContent() {
       {state.value && (
         <Flex direction="column" gap="2">
           <Text variant="title-medium">{state.value.totalItems}</Text>
-          <Text>
+          {/* `body-large`, the size of the body text in the MUI cards a home
+              page puts beside this one (B19). */}
+          <Text variant="body-large">
             {state.value.totalItems === 0
               ? 'Nothing is waiting on you.'
               : `${

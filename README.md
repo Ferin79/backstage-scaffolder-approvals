@@ -26,7 +26,7 @@ yarn install
 yarn start
 ```
 
-Open <http://localhost:3000> and press **Enter** to sign in as a guest. Data is kept in `packages/backend/.local-db/`, so it survives a restart; delete that folder to start clean.
+Open <http://localhost:3000> and press **Enter** on the Guest card. The browser remembers that choice, so later visits sign you in by themselves; clear the site's storage to see the card again. [Trying an approval end to end](#trying-an-approval-end-to-end) shows how to sign in as one of the example's people. Data is kept in `packages/backend/.local-db/`, so it survives a restart; delete that folder to start clean.
 
 ## Trying an approval end to end
 
@@ -53,7 +53,7 @@ Things worth trying along the way: approving your own request, approving as `out
 Two things to know:
 
 - **Wait for the catalog after a fresh start.** A guest who signs in before the catalog has loaded `org.yaml` gets no groups, and so cannot approve anything. Reload once the catalog has data.
-- **Notification links** point at `http://localhost:3000/scaffolder-approvals/requests/<id>`, and the request page does not refresh on its own yet: reload to see somebody else's decision.
+- **Notification links** point at `http://localhost:3000/scaffolder-approvals/requests/<id>`. An open request page, the inbox and the home-page card update themselves through signals, so somebody else's decision appears without a reload — but switching who you are signed in as still needs one.
 
 ## Checking the gate holds
 

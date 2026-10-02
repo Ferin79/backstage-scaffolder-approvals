@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
+import { signalApiRef } from '@backstage/plugin-signals-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { PendingApprovalsHomePageCard } from '../../plugin';
@@ -95,8 +96,40 @@ describe('PendingApprovalsCard', () => {
       { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
     );
 
-    expect(await screen.findByText('2')).toBeInTheDocument();
+    // The card extension is lazy-loaded, which is slow on a busy machine: this
+    // and the test below failed twice under load in the browser review and
+    // passed every time alone. Generous waits rather than flaky ones.
+    expect(
+      await screen.findByText('2', undefined, { timeout: 10_000 }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Approvals')).toHaveLength(1);
+    // B19: the extension draws its own card, and used to take only the
+    // content from this one, so the home page had no way to the page.
+    expect(
+      screen.getByRole('link', { name: 'Open approvals' }),
+    ).toHaveAttribute('href', '/scaffolder-approvals');
+  }, 20_000);
+
+  it('has the same way to the page on its own as on the home page', async () => {
+    await render({
+      listRequests: async () => ({ items: [], totalItems: 0 }),
+    });
+
+    expect(
+      await screen.findByRole('link', { name: 'Open approvals' }),
+    ).toHaveAttribute('href', '/scaffolder-approvals');
+  });
+
+  it('writes its sentence at the size of the cards beside it', async () => {
+    // B19: BUI's default body text is 14px; the Material UI cards a home page
+    // puts next to this one use 16px, which is BUI's `body-large`.
+    await render({
+      listRequests: async () => ({ items: [], totalItems: 0 }),
+    });
+
+    expect(
+      await screen.findByText('Nothing is waiting on you.'),
+    ).toHaveAttribute('data-variant', 'body-large');
   });
 
   it('stays out of the way when the backend cannot be reached', async () => {
@@ -106,7 +139,45 @@ describe('PendingApprovalsCard', () => {
     });
 
     expect(
-      await screen.findByText(/Could not load your approvals/),
+      await screen.findByText(/Could not load your approvals/, undefined, {
+        timeout: 10_000,
+      }),
     ).toBeInTheDocument();
+  }, 20_000);
+
+  it('recounts when the backend signals a change', async () => {
+    // B10: a request arriving, or somebody else deciding the one that was
+    // waiting, changed the number only on a page reload.
+    let deliver: (message: object) => void = () => {};
+    const signalApi = {
+      subscribe(_channel: string, onMessage: (message: any) => void) {
+        deliver = onMessage;
+        return { unsubscribe() {} };
+      },
+    };
+    const listRequests = jest
+      .fn()
+      .mockResolvedValueOnce({ items: [], totalItems: 2 })
+      .mockResolvedValue({ items: [], totalItems: 1 });
+
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [approvalsApiRef, { listRequests } as unknown as ApprovalsApi],
+          [signalApiRef, signalApi],
+        ]}
+      >
+        <PendingApprovalsCard />
+      </TestApiProvider>,
+      { mountedRoutes: { '/scaffolder-approvals': rootRouteRef } },
+    );
+    expect(await screen.findByText('2')).toBeInTheDocument();
+
+    await act(async () =>
+      deliver({ action: 'decided', requestId: 'r1', status: 'approved' }),
+    );
+
+    expect(await screen.findByText('1')).toBeInTheDocument();
+    expect(listRequests).toHaveBeenCalledTimes(2);
   });
 });

@@ -22,6 +22,18 @@
 export const SCAFFOLDER_APPROVALS_PLUGIN_ID = 'scaffolder-approvals';
 
 /**
+ * The signals channel the approvals backend broadcasts every change to a
+ * request on, as `{ action, requestId, status }`.
+ *
+ * Defined here because it is a contract between the backend that publishes and
+ * the pages that subscribe to refresh themselves; a typo on either side would
+ * fail silently, with pages that simply never update.
+ *
+ * @public
+ */
+export const APPROVALS_SIGNAL_CHANNEL = SCAFFOLDER_APPROVALS_PLUGIN_ID;
+
+/**
  * The id of the scaffolder action that gates a template.
  *
  * A gated template carries this action as its first step. The action is the

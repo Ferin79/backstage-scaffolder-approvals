@@ -12,6 +12,7 @@ import { CardExtensionProps } from '@backstage/plugin-home-react';
 import { DecideApprovalRequestOptions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import type { DiscoveryApi } from '@backstage/core-plugin-api';
 import type { FetchApi } from '@backstage/core-plugin-api';
+import { IconComponent } from '@backstage/core-plugin-api';
 import { JSX as JSX_2 } from 'react';
 import { ListApprovalRequestsOptions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { ListApprovalRequestsResponse } from '@backstage-community/plugin-scaffolder-approvals-common';
@@ -21,6 +22,7 @@ import { RouteRef } from '@backstage/core-plugin-api';
 import { SubmitApprovalRequestOptions } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { SubmitApprovalRequestResponse } from '@backstage-community/plugin-scaffolder-approvals-common';
 import { SubRouteRef } from '@backstage/core-plugin-api';
+import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 
 // @public
 export interface ApprovalsApi {
@@ -78,6 +80,20 @@ export function GatedReviewStep(props: GatedReviewStepProps): JSX_2.Element;
 export interface GatedReviewStepProps extends ReviewStepProps {
   children: React.ReactNode;
   templateRef?: string;
+}
+
+// @public
+export function GatedTemplateCard(props: GatedTemplateCardProps): JSX_2.Element;
+
+// @public
+export interface GatedTemplateCardProps {
+  additionalLinks?: {
+    icon: IconComponent;
+    text: string;
+    url: string;
+  }[];
+  onSelected?: (template: TemplateEntityV1beta3) => void;
+  template: TemplateEntityV1beta3;
 }
 
 // @public

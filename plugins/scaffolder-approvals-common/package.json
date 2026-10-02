@@ -38,6 +38,7 @@
   "dependencies": {
     "@backstage/catalog-model": "^1.10.1",
     "@backstage/plugin-permission-common": "^0.9.11",
+    "@backstage/plugin-scaffolder-common": "^2.3.0",
     "@backstage/types": "^1.2.2"
   },
   "devDependencies": {

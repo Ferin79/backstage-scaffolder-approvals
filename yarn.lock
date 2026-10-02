@@ -1495,6 +1495,7 @@ __metadata:
     "@backstage/catalog-model": "npm:^1.10.1"
     "@backstage/cli": "npm:^0.36.6"
     "@backstage/plugin-permission-common": "npm:^0.9.11"
+    "@backstage/plugin-scaffolder-common": "npm:^2.3.0"
     "@backstage/types": "npm:^1.2.2"
   languageName: unknown
   linkType: soft
@@ -1537,6 +1538,7 @@ __metadata:
     "@backstage/plugin-permission-react": "npm:^0.5.5"
     "@backstage/plugin-scaffolder-common": "npm:^2.3.0"
     "@backstage/plugin-scaffolder-react": "npm:^2.1.0"
+    "@backstage/plugin-signals-react": "npm:^0.0.26"
     "@backstage/test-utils": "npm:^1.7.22"
     "@backstage/ui": "npm:^0.18.0"
     "@testing-library/dom": "npm:^10.0.0"
@@ -14530,6 +14532,7 @@ __metadata:
     "@material-ui/core": "npm:^4.12.2"
     "@material-ui/icons": "npm:^4.9.1"
     "@playwright/test": "npm:^1.32.3"
+    "@remixicon/react": "npm:>=4.6.0 <4.9.0"
     "@testing-library/dom": "npm:^9.0.0"
     "@testing-library/jest-dom": "npm:^6.0.0"
     "@testing-library/react": "npm:^14.0.0"
