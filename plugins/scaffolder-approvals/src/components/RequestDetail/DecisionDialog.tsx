@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ApprovalDecisionOutcome } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { ApprovalDecisionOutcome } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   Button,
   Dialog,

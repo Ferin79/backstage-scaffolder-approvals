@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ApprovalRequest } from '@backstage-community/plugin-scaffolder-approvals-common';
+import type { ApprovalRequest } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { renderInTestApp } from '@backstage/test-utils';
 import { screen } from '@testing-library/react';
 import type { ApprovalsApi } from '../../api';

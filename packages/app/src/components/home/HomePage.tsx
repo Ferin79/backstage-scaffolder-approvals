@@ -1,4 +1,4 @@
-import { PendingApprovalsHomePageCard } from '@backstage-community/plugin-scaffolder-approvals';
+import { PendingApprovalsHomePageCard } from '@ferin79/backstage-plugin-scaffolder-approvals';
 import { Content, Header, Page } from '@backstage/core-components';
 import { HomePageStarredEntities, WelcomeTitle } from '@backstage/plugin-home';
 import { Grid } from '@material-ui/core';

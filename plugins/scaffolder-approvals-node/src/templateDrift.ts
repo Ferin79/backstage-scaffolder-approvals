@@ -18,7 +18,7 @@ import {
   canonicalJson,
   type TemplateDrift,
   type TemplateDriftReason,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { Entity } from '@backstage/catalog-model';
 import type {
   TemplateEntityStepV1beta3,

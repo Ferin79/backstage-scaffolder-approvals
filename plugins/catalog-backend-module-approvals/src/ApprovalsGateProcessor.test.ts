@@ -17,7 +17,7 @@
 import {
   GATE_ACTION_ID,
   GATED_ANNOTATION,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { mockServices } from '@backstage/backend-test-utils';
 import type { Entity } from '@backstage/catalog-model';
 import { ApprovalsGateProcessor } from './ApprovalsGateProcessor';

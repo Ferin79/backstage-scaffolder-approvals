@@ -30,7 +30,7 @@ import {
   renderGateSummary,
   type SubmitApprovalRequestResponse,
   type TemplateDrift,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   compareTemplate,
   computeTemplateStepsHash,
@@ -38,7 +38,7 @@ import {
   formatGrant,
   generateGrantToken,
   hashGrantToken,
-} from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type {
   AuthService,
   BackstageCredentials,

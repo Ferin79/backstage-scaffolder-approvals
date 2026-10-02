@@ -17,8 +17,8 @@
 import {
   APPROVAL_GRANT_SECRET,
   GATE_ACTION_ID,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
-import { scaffolderApprovalsPlugin } from '@backstage-community/plugin-scaffolder-approvals-backend';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import { scaffolderApprovalsPlugin } from '@ferin79/backstage-plugin-scaffolder-approvals-backend';
 import {
   mockCredentials,
   mockServices,

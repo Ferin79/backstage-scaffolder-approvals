@@ -23,8 +23,8 @@ import {
   type ApprovalRequestStatus,
   type ConsumeGrantRequest,
   type ConsumeGrantResponse,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
-import { parseGrant } from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import { parseGrant } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type {
   AuditorService,
   BackstageCredentials,

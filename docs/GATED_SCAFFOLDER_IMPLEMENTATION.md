@@ -1,6 +1,6 @@
 # Gated Scaffolder Workflows — Implementation Guide
 
-Step-by-step build plan for `@backstage-community/plugin-scaffolder-approvals`.
+Step-by-step build plan for `@ferin79/backstage-plugin-scaffolder-approvals`.
 
 Design rationale, prior art and the full decision record live in
 [GATED_SCAFFOLDER_WORKFLOWS.md](GATED_SCAFFOLDER_WORKFLOWS.md). **This document is the how.** Every
@@ -576,7 +576,7 @@ import {
 } from '@backstage/backend-plugin-api';
 
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 
@@ -2036,11 +2036,11 @@ repeats the check.
 
 ### Packages
 
-- `@backstage-community/plugin-scaffolder-approvals` — approvals page (legacy and new frontend system)
-- `@backstage-community/plugin-scaffolder-approvals-backend` — requests, decisions, grants, sweeps, API
-- `@backstage-community/plugin-scaffolder-backend-module-approvals` — the `approval:gate` action
-- `@backstage-community/plugin-catalog-backend-module-approvals` — derives the `gated` annotation
-- `@backstage-community/plugin-scaffolder-approvals-common` / `-node` — shared code
+- `@ferin79/backstage-plugin-scaffolder-approvals` — approvals page (legacy and new frontend system)
+- `@ferin79/backstage-plugin-scaffolder-approvals-backend` — requests, decisions, grants, sweeps, API
+- `@ferin79/backstage-plugin-scaffolder-backend-module-approvals` — the `approval:gate` action
+- `@ferin79/backstage-plugin-catalog-backend-module-approvals` — derives the `gated` annotation
+- `@ferin79/backstage-plugin-scaffolder-approvals-common` / `-node` — shared code
 
 ### Worth a reviewer's attention
 

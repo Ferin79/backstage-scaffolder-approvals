@@ -20,12 +20,12 @@ import {
   GATED_ANNOTATION,
   GatePolicyError,
   readGatePolicy,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   findGateStep,
   GateStepError,
   isGated,
-} from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type { LoggerService } from '@backstage/backend-plugin-api';
 import { type Entity, stringifyEntityRef } from '@backstage/catalog-model';
 import type {

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { CanonicalJsonError } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { CanonicalJsonError } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   assertSha256Hex,
   computeValuesHash,

@@ -77,7 +77,39 @@ yarn build:api-reports
 
 To work on the approvals page by itself against a mock API, run `yarn start` inside `plugins/scaffolder-approvals`.
 
+[CI](.github/workflows/ci.yml) runs the formatting check, type-check, lint, build and tests on every pull request and push to `main`.
+
+## Releasing
+
+The six plugins are published to npm under `@ferin79` and always share one version.
+
+1. Bump all six, commit, and merge to `main`:
+
+   ```sh
+   yarn workspaces foreach -A --no-private version 0.0.2
+   ```
+
+2. Tag the merged commit and push the tag:
+
+   ```sh
+   git tag v0.0.2
+   git push origin v0.0.2
+   ```
+
+   The [release workflow](.github/workflows/release.yml) checks that the tag matches every package's version, then type-checks, builds, tests, and stages each package to npm with provenance. A pre-release version such as `v0.1.0-next.1` is staged under the `next` dist-tag; any other under `latest`.
+
+3. **Approve the staged versions.** The workflow's npm token can only stage, so nothing is public until a maintainer approves each version with 2FA, on npmjs.com or from a terminal (npm 11.15 or later):
+
+   ```sh
+   npm stage list @ferin79/backstage-plugin-scaffolder-approvals
+   npm stage approve <stage-id>
+   ```
+
+   Approve all six together. The packages depend on each other at `^<version>`, which for a `0.0.x` version means that exact version.
+
+Re-running the workflow skips versions already published, but cannot stage a version that is staged and still awaiting approval; approve or reject it first.
+
 ## Notes
 
-- **Where this came from.** The plugins were built in a fork of [`backstage/community-plugins`](https://github.com/backstage/community-plugins) and moved here with their history. They keep the `@backstage-community/` package names they were written under; that npm scope belongs to the Backstage project, so they would need a scope of their own to be published.
+- **Where this came from.** The plugins were built in a fork of [`backstage/community-plugins`](https://github.com/backstage/community-plugins) and moved here with their history. They were written under the `@backstage-community/` scope, which belongs to the Backstage project, and are published as `@ferin79/backstage-plugin-*` instead.
 - **`@yarnpkg/core` is pinned to 4.9.1** in the root `package.json`. Version 4.9.2 depends on `got` through a patch file that only exists in yarn's own repository, so a fresh install fails to resolve. Drop the pin once a fixed version is out.

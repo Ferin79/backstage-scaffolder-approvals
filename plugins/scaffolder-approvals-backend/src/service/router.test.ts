@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   computeValuesHash,
   parseGrant,
-} from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import {
   mockCredentials,
@@ -40,7 +40,7 @@ import { createRouter } from './router';
 jest.setTimeout(60_000);
 
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 

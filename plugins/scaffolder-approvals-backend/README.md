@@ -1,4 +1,4 @@
-# @backstage-community/plugin-scaffolder-approvals-backend
+# @ferin79/backstage-plugin-scaffolder-approvals-backend
 
 Stores approval requests, decisions and grants; exposes the REST API the frontend and the `approval:gate` action talk to; and runs the scheduled sweeps that reconcile task status, time out stale requests and redact old request payloads.
 
@@ -6,14 +6,14 @@ Stores approval requests, decisions and grants; exposes the REST API the fronten
 
 ```ts
 // packages/backend/src/index.ts
-backend.add(import('@backstage-community/plugin-scaffolder-approvals-backend'));
+backend.add(import('@ferin79/backstage-plugin-scaffolder-approvals-backend'));
 ```
 
 Pair it with the gate action, which belongs in whichever backend runs the scaffolder:
 
 ```ts
 backend.add(
-  import('@backstage-community/plugin-scaffolder-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-scaffolder-backend-module-approvals'),
 );
 ```
 

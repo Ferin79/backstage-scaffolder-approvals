@@ -1,4 +1,4 @@
-# @backstage-community/plugin-scaffolder-approvals-common
+# @ferin79/backstage-plugin-scaffolder-approvals-common
 
 Types, permissions and pure helpers shared by every scaffolder-approvals package. Isomorphic — safe to import from frontend and backend code alike, with no Node-only dependencies.
 

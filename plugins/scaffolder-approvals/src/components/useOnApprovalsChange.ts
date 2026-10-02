@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { APPROVALS_SIGNAL_CHANNEL } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { APPROVALS_SIGNAL_CHANNEL } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { useSignal } from '@backstage/plugin-signals-react';
 import { useEffect, useRef } from 'react';
 

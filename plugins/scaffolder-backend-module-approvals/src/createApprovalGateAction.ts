@@ -20,8 +20,8 @@ import {
   type ConsumeGrantResponse,
   GATE_ACTION_ID,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
-import { computeValuesHash } from '@backstage-community/plugin-scaffolder-approvals-node';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import { computeValuesHash } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type {
   AuthService,
   DiscoveryService,

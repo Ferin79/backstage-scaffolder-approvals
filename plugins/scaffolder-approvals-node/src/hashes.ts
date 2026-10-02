@@ -15,7 +15,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { canonicalJson } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { canonicalJson } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { JsonObject } from '@backstage/types';
 
 /**

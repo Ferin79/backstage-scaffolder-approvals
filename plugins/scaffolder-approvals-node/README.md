@@ -1,4 +1,4 @@
-# @backstage-community/plugin-scaffolder-approvals-node
+# @ferin79/backstage-plugin-scaffolder-approvals-node
 
 Node-side building blocks shared by the scaffolder-approvals backend and its two modules. Not something an app installs directly — it is a dependency of those packages.
 

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import { findSecretParameters } from '@backstage-community/plugin-scaffolder-approvals-common';
-import { findGateStep } from '@backstage-community/plugin-scaffolder-approvals-node';
+import { findSecretParameters } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import { findGateStep } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type { Entity } from '@backstage/catalog-model';
 import { readFileSync } from 'fs';
 import { parse } from 'yaml';

@@ -1,4 +1,4 @@
-# @backstage-community/plugin-scaffolder-backend-module-approvals
+# @ferin79/backstage-plugin-scaffolder-backend-module-approvals
 
 Provides the `approval:gate` scaffolder action.
 
@@ -9,11 +9,11 @@ This action is the enforcement point. A gated template carries it as its first s
 ```ts
 // packages/backend/src/index.ts
 backend.add(
-  import('@backstage-community/plugin-scaffolder-backend-module-approvals'),
+  import('@ferin79/backstage-plugin-scaffolder-backend-module-approvals'),
 );
 ```
 
-Install it in the same backend as the scaffolder. It needs the approvals backend (`@backstage-community/plugin-scaffolder-approvals-backend`) to be reachable through discovery.
+Install it in the same backend as the scaffolder. It needs the approvals backend (`@ferin79/backstage-plugin-scaffolder-approvals-backend`) to be reachable through discovery.
 
 ## Gating a template
 

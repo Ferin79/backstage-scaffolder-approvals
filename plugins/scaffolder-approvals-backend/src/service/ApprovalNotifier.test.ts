@@ -17,7 +17,7 @@
 import type {
   ApprovalDecision,
   ApprovalRequest,
-} from '@backstage-community/plugin-scaffolder-approvals-common';
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { mockServices } from '@backstage/backend-test-utils';
 import type { EventsService } from '@backstage/plugin-events-node';
 import type { NotificationService } from '@backstage/plugin-notifications-node';

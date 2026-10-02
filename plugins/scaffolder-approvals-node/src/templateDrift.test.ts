@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { GATE_ACTION_ID } from '@backstage-community/plugin-scaffolder-approvals-common';
+import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { Entity } from '@backstage/catalog-model';
 import { compareTemplate, computeTemplateStepsHash } from './templateDrift';
 

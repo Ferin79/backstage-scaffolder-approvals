@@ -37,7 +37,7 @@ import knexFactory, { type Knex } from 'knex';
  * remembers to add it here.
  */
 const migrationsDir = resolvePackagePath(
-  '@backstage-community/plugin-scaffolder-approvals-backend',
+  '@ferin79/backstage-plugin-scaffolder-approvals-backend',
   'migrations',
 );
 
