@@ -40,7 +40,7 @@ Both entrypoints mount the same components; only the wiring differs.
 
 The inbox lists only pending requests — somebody looking for work does not want a history of everything they ever approved. Your own requests list every status, because "it failed" is often the answer you need.
 
-The pages are built from [Backstage UI](https://ui.backstage.io): BUI's plugin header names the plugin and carries the two lists as tabs, and a request page puts where it stands — and the approve, deny, withdraw or resubmit buttons — in one panel at the top, above its parameters, its activity and its details. The plugin draws that header itself in both frontend systems, so the new-system page is registered with `noHeader`.
+The pages are built from [Backstage UI](https://ui.backstage.io): BUI's plugin header names the plugin and carries the two lists as tabs. A request page puts where it stands — and the approve, deny, withdraw or resubmit buttons — in one panel at the top, with its activity under it and its details and parameters beside it; on a narrow screen the details and parameters come straight after the panel. The plugin draws that header itself in both frontend systems, so the new-system page is registered with `noHeader`.
 
 ## Notes
 

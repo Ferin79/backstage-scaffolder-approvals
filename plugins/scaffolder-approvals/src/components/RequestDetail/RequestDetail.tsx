@@ -36,7 +36,6 @@ import {
   ButtonLink,
   Container,
   Flex,
-  Grid,
   Header,
   Skeleton,
   Text,
@@ -270,7 +269,7 @@ export function RequestDetail(props: RequestDetailProps) {
     request.requesterRef.toLocaleLowerCase('en-US');
 
   return (
-    <ApprovalsLayout>
+    <ApprovalsLayout tabs={false}>
       <RequestHeader request={request} status={status} />
 
       <Container>
@@ -279,29 +278,33 @@ export function RequestDetail(props: RequestDetailProps) {
               has to be read before the buttons. */}
           <DriftNotice drift={request.templateDrift} />
 
-          <Grid.Root columns={{ initial: '1', md: '3' }} gap="4">
-            <Grid.Item colSpan={{ initial: '1', md: '2' }}>
-              <Flex direction="column" gap="4">
-                <DecisionPanel
-                  request={request}
-                  status={status}
-                  progress={progress}
-                  eligibility={eligibility}
-                  isRequester={isRequester}
-                  busy={busy}
-                  onDecide={setDeciding}
-                  onWithdraw={() => setConfirmingWithdraw(true)}
-                  onResubmit={resubmit}
-                />
-                <RequestParameters request={request} />
-                <RequestActivity request={request} />
-              </Flex>
-            </Grid.Item>
+          <div className={styles.layout}>
+            <div className={styles.decision}>
+              <DecisionPanel
+                request={request}
+                status={status}
+                progress={progress}
+                eligibility={eligibility}
+                isRequester={isRequester}
+                busy={busy}
+                onDecide={setDeciding}
+                onWithdraw={() => setConfirmingWithdraw(true)}
+                onResubmit={resubmit}
+              />
+            </div>
 
-            <Grid.Item>
+            {/* Beside the decision on a wide screen, and straight under it on
+                a narrow one: what is being decided belongs next to the
+                buttons, ahead of the history. */}
+            <Flex direction="column" gap="4" className={styles.aside}>
               <RequestDetails request={request} status={status} />
-            </Grid.Item>
-          </Grid.Root>
+              <RequestParameters request={request} />
+            </Flex>
+
+            <div className={styles.activity}>
+              <RequestActivity request={request} />
+            </div>
+          </div>
         </Flex>
 
         {deciding && (
@@ -330,22 +333,23 @@ export function RequestDetail(props: RequestDetailProps) {
 /** The page's shape while the request loads, so nothing jumps when it lands. */
 function RequestSkeleton() {
   return (
-    <ApprovalsLayout>
+    <ApprovalsLayout tabs={false}>
       <Container>
         <Flex direction="column" gap="4" py="3" aria-busy="true">
           <Skeleton width="40%" height={32} />
           <Skeleton width="20%" height={18} />
-          <Grid.Root columns={{ initial: '1', md: '3' }} gap="4">
-            <Grid.Item colSpan={{ initial: '1', md: '2' }}>
-              <Flex direction="column" gap="4">
-                <Skeleton height={140} />
-                <Skeleton height={120} />
-              </Flex>
-            </Grid.Item>
-            <Grid.Item>
+          <div className={styles.layout}>
+            <div className={styles.decision}>
+              <Skeleton height={140} />
+            </div>
+            <Flex direction="column" gap="4" className={styles.aside}>
               <Skeleton height={200} />
-            </Grid.Item>
-          </Grid.Root>
+              <Skeleton height={120} />
+            </Flex>
+            <div className={styles.activity}>
+              <Skeleton height={160} />
+            </div>
+          </div>
         </Flex>
       </Container>
     </ApprovalsLayout>
@@ -423,7 +427,7 @@ function RequestLoadError(props: { error: Error }) {
   }
 
   return (
-    <ApprovalsLayout title="Approval request">
+    <ApprovalsLayout title="Approval request" tabs={false}>
       <Header title="Approval request" />
       <Container>{body}</Container>
     </ApprovalsLayout>

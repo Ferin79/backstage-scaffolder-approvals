@@ -51,8 +51,7 @@ export function DocumentTitle(props: { title: string }) {
  *
  * The tabs are routes rather than in-page state, so each list has an address:
  * going back from a request returns to the list it was opened from, and
- * "Your requests" can be linked to. A request page keeps the tabs, with
- * neither selected, as the way back to both lists.
+ * "Your requests" can be linked to.
  *
  * Drawn by the plugin in both frontend systems: the new one is told not to
  * draw its own (`noHeader`), so the two look the same.
@@ -67,9 +66,16 @@ export function ApprovalsLayout(props: {
    * rewrites the title as it changes and could put the first one back.
    */
   title?: string;
+  /**
+   * Whether to show the two lists as tabs. A request page leaves them out:
+   * it belongs to neither list, and two tabs with neither selected read as a
+   * choice to make. Its way back is the plugin's name, which links to the
+   * inbox.
+   */
+  tabs?: boolean;
   children: ReactNode;
 }) {
-  const { title, children } = props;
+  const { title, tabs = true, children } = props;
   const rootPath = useRouteRef(rootRouteRef)();
 
   return (
@@ -79,19 +85,23 @@ export function ApprovalsLayout(props: {
         icon={<ApprovalsIcon fontSize="inherit" />}
         title="Approvals"
         titleLink={rootPath}
-        tabs={[
-          {
-            id: 'inbox',
-            label: 'Waiting on you',
-            href: rootPath,
-            matchStrategy: 'exact',
-          },
-          {
-            id: 'mine',
-            label: 'Your requests',
-            href: `${rootPath}${YOUR_REQUESTS_PATH}`,
-          },
-        ]}
+        tabs={
+          tabs
+            ? [
+                {
+                  id: 'inbox',
+                  label: 'Waiting on you',
+                  href: rootPath,
+                  matchStrategy: 'exact',
+                },
+                {
+                  id: 'mine',
+                  label: 'Your requests',
+                  href: `${rootPath}${YOUR_REQUESTS_PATH}`,
+                },
+              ]
+            : undefined
+        }
       />
       {children}
     </>

@@ -142,18 +142,16 @@ describe('RequestDetail', () => {
     expect(label?.nextElementSibling).toHaveTextContent('Awaiting approval');
   });
 
-  it('keeps the way back to both lists', async () => {
-    // The plugin header's tabs, with neither selected on a request.
+  it('leaves the list tabs out, and links back through the plugin name', async () => {
+    // A request belongs to neither list, and two tabs with neither selected
+    // read as a choice to make.
     await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
 
     await screen.findByText('Admin on backstage');
-    expect(screen.getByRole('tab', { name: 'Waiting on you' })).toHaveAttribute(
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Approvals' })).toHaveAttribute(
       'href',
       '/scaffolder-approvals',
-    );
-    expect(screen.getByRole('tab', { name: 'Your requests' })).toHaveAttribute(
-      'href',
-      '/scaffolder-approvals/mine',
     );
   });
 

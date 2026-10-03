@@ -78,7 +78,7 @@ export function RequestParameters(props: {
       <Text color="secondary">
         The submitted parameters were removed on{' '}
         {redactedAt ? formatDateTime(redactedAt) : 'expiry'} by the retention
-        policy. The decision history below is kept indefinitely.
+        policy. The decision history is kept indefinitely.
       </Text>
     );
   } else if (Object.keys(values).length === 0) {

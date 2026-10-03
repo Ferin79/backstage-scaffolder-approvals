@@ -90,6 +90,10 @@ function RequesterCell(props: { item: Row }) {
  * Not core-components' `EmptyState`: its illustration is taller than the
  * table's empty row, so the table overflowed BUI's scroll container and
  * showed a scrollbar with nothing to scroll (B15 in the browser review).
+ *
+ * `grow`, because BUI puts the empty state in a row of its own: without it
+ * this took only its content's width, and sat centred over the first column
+ * rather than the table.
  */
 function EmptyRow(props: { title: string; description: string }) {
   return (
@@ -99,6 +103,7 @@ function EmptyRow(props: { title: string; description: string }) {
       gap="2"
       py="8"
       px="4"
+      grow
       className={styles.empty}
     >
       <span className={styles.emptyIcon} aria-hidden="true">

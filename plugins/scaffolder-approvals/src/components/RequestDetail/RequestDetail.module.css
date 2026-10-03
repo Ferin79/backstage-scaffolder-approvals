@@ -39,6 +39,52 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * The page's grid. Named areas rather than BUI's Grid, because the order has
+ * to differ by width: on a wide screen the details and parameters sit beside
+ * the decision and its history; on a narrow one they come straight after the
+ * decision, ahead of the history, so what is being decided is read before
+ * scrolling through who said what. 1024px is BUI's `md` breakpoint.
+ */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'decision'
+    'aside'
+    'activity';
+  gap: var(--bui-space-4);
+  align-items: start;
+}
+
+.decision {
+  grid-area: decision;
+  min-width: 0;
+}
+
+.aside {
+  grid-area: aside;
+  min-width: 0;
+}
+
+.activity {
+  grid-area: activity;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .layout {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    /* The side column spans both rows; the flexible second row takes any
+       height it adds, so the history still starts right under the panel. */
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'decision aside'
+      'activity aside';
+  }
+}
+
 /* The decision panel: tinted by where the request stands. */
 
 .panel {
@@ -134,7 +180,8 @@
   background-color: var(--bui-fg-success);
 }
 
-/* Parameters: a key/value list that stacks on a phone. */
+/* Parameters: each name over its value, as Details lays out its facts. The
+   card sits in the narrow side column, which has no room for two. */
 
 .values {
   display: flex;
@@ -143,9 +190,9 @@
 }
 
 .valueRow {
-  display: grid;
-  grid-template-columns: minmax(120px, 30%) minmax(0, 1fr);
-  gap: var(--bui-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-1);
   padding-block: var(--bui-space-2);
   border-top: 1px solid var(--bui-border-1);
 }
@@ -190,13 +237,6 @@
   color: var(--bui-fg-primary);
   font-family: var(--bui-font-monospace);
   font-size: var(--bui-font-size-2);
-}
-
-@media (max-width: 640px) {
-  .valueRow {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--bui-space-1);
-  }
 }
 
 /* Activity: a vertical timeline, one person per event. */
