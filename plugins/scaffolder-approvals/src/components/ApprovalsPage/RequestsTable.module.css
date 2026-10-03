@@ -1,0 +1,36 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+.empty {
+  text-align: center;
+}
+
+/* An icon in a circle: small enough to fit the table's empty row (B15). A
+   surface and a border rather than a neutral fill, which is within a shade of
+   the page and vanished on it. */
+.emptyIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--bui-space-1);
+  border: 1px solid var(--bui-border-1);
+  border-radius: var(--bui-radius-full);
+  background-color: var(--bui-bg-neutral-1);
+  color: var(--bui-fg-secondary);
+  font-size: 20px;
+}

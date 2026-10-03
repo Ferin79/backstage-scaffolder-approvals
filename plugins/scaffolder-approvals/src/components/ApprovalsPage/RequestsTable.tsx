@@ -22,6 +22,7 @@ import {
 import { useRouteRef } from '@backstage/core-plugin-api';
 import { useEntityPresentation } from '@backstage/plugin-catalog-react';
 import {
+  Avatar,
   Cell,
   CellText,
   Flex,
@@ -34,9 +35,12 @@ import {
 import { useMemo } from 'react';
 import type { ApprovalsApi } from '../../api';
 import { requestRouteRef } from '../../routes';
+import { ApprovalsIcon } from '../ApprovalsIcon';
 import { StatusPill } from '../StatusPill';
 import { effectiveStatus } from '../StatusPill/effectiveStatus';
+import { Timestamp } from '../Timestamp';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
+import styles from './RequestsTable.module.css';
 
 /** A row is a request; BUI's table only needs it to have an id. */
 type Row = ApprovalRequest;
@@ -62,17 +66,50 @@ function TemplateCell(props: { item: Row }) {
   );
 }
 
-/** Who asked, by the name the catalog has for them (B16). */
+/**
+ * Who asked, by the name the catalog has for them (B16), beside their
+ * initials. The avatar is decoration: the name next to it says the same.
+ */
 function RequesterCell(props: { item: Row }) {
   const { primaryTitle } = useEntityPresentation(props.item.requesterRef, {
     defaultKind: 'user',
   });
-  return <CellText title={primaryTitle} />;
+  return (
+    <Cell>
+      <Flex align="center" gap="2">
+        <Avatar src="" name={primaryTitle} size="small" purpose="decoration" />
+        <Text variant="body-medium">{primaryTitle}</Text>
+      </Flex>
+    </Cell>
+  );
 }
 
-function when(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+/**
+ * An empty list, said in the table's own row under its column headers.
+ *
+ * Not core-components' `EmptyState`: its illustration is taller than the
+ * table's empty row, so the table overflowed BUI's scroll container and
+ * showed a scrollbar with nothing to scroll (B15 in the browser review).
+ */
+function EmptyRow(props: { title: string; description: string }) {
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      gap="2"
+      py="8"
+      px="4"
+      className={styles.empty}
+    >
+      <span className={styles.emptyIcon} aria-hidden="true">
+        <ApprovalsIcon fontSize="inherit" />
+      </span>
+      <Text variant="body-large" weight="bold" as="h3">
+        {props.title}
+      </Text>
+      <Text color="secondary">{props.description}</Text>
+    </Flex>
+  );
 }
 
 /** @public */
@@ -169,7 +206,13 @@ export function RequestsTable(props: RequestsTableProps) {
         id: 'createdAt',
         label: 'Requested',
         isHidden: narrow,
-        cell: (item: Row) => <CellText title={when(item.createdAt)} />,
+        // How long ago, which is what tells an approver what has been waiting
+        // longest; the exact time is in the tooltip.
+        cell: (item: Row) => (
+          <Cell>
+            <Timestamp iso={item.createdAt} color="secondary" />
+          </Cell>
+        ),
       },
     ],
     [narrow, hideRequester],
@@ -203,15 +246,7 @@ export function RequestsTable(props: RequestsTableProps) {
       columnConfig={columnConfig}
       rowConfig={{ getHref: item => requestRoute({ requestId: item.id }) }}
       emptyState={
-        // A heading and a sentence, not core-components' `EmptyState`: its
-        // illustration is taller than the table's empty row, so the table
-        // overflowed BUI's scroll container and showed a scrollbar with
-        // nothing to scroll (B15 in the browser review). This sits in the row
-        // under the column headers, and says the same thing.
-        <Flex direction="column" gap="1" py="6" px="2">
-          <Text variant="title-small">{emptyTitle}</Text>
-          <Text color="secondary">{emptyDescription}</Text>
-        </Flex>
+        <EmptyRow title={emptyTitle} description={emptyDescription} />
       }
     />
   );

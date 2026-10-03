@@ -19,7 +19,7 @@ import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
 import { entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { signalApiRef } from '@backstage/plugin-signals-react';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
@@ -131,14 +131,30 @@ describe('RequestDetail', () => {
 
   it('puts the status in a labelled header item', async () => {
     // B14: as a bare child of the header's spaced grid, the pill slid over
-    // the subtitle on a narrow screen. A `HeaderLabel` is a grid item, and
-    // names what the pill is.
+    // the subtitle on a narrow screen. A labelled metadata item wraps under
+    // the title instead, and names what the pill is.
     await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
 
     await screen.findByText('Admin on backstage');
-    const header = screen.getByRole('banner');
-    expect(header).toHaveTextContent('Status');
-    expect(header).toHaveTextContent('Awaiting approval');
+    const label = screen
+      .getAllByRole('term')
+      .find(term => term.textContent === 'Status');
+    expect(label?.nextElementSibling).toHaveTextContent('Awaiting approval');
+  });
+
+  it('keeps the way back to both lists', async () => {
+    // The plugin header's tabs, with neither selected on a request.
+    await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
+
+    await screen.findByText('Admin on backstage');
+    expect(screen.getByRole('tab', { name: 'Waiting on you' })).toHaveAttribute(
+      'href',
+      '/scaffolder-approvals',
+    );
+    expect(screen.getByRole('tab', { name: 'Your requests' })).toHaveAttribute(
+      'href',
+      '/scaffolder-approvals/mine',
+    );
   });
 
   it('approves through a confirmation step', async () => {
@@ -503,8 +519,8 @@ describe('RequestDetail', () => {
     // row at all.
     expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
     // With no summary, the template's name stands in as the title: not its
-    // raw ref (B16).
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+    // raw ref (B16). The page's title, under the plugin header's "Approvals".
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
       /^request-github-admin$/,
     );
   });
@@ -639,11 +655,8 @@ describe('RequestDetail', () => {
       }),
     );
     // The requester is named in the header, where the raw ref used to be, as
-    // one piece of text: the header styles a string subtitle for the banner,
-    // and left a link there black on purple.
-    expect(
-      within(screen.getByRole('banner')).getByText('Requested by requester'),
-    ).toBeInTheDocument();
+    // one piece of text: the header's description is a string.
+    expect(screen.getByText('Requested by requester')).toBeInTheDocument();
     // And no raw ref is left anywhere a person reads.
     expect(document.body).not.toHaveTextContent(
       /(user|group|template):default\//,

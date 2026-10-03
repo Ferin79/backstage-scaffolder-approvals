@@ -18,8 +18,7 @@ import type {
   TemplateDrift,
   TemplateDriftReason,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { Box, Text } from '@backstage/ui';
-import styles from './DriftNotice.module.css';
+import { Alert, Flex, Text } from '@backstage/ui';
 
 /**
  * What each kind of drift means to somebody about to approve.
@@ -67,13 +66,22 @@ export function DriftNotice(props: DriftNoticeProps) {
   }
 
   return (
-    // `alert` rather than `status`: this changes what approving means, so it
-    // is worth interrupting a screen-reader user for.
-    <Box role="alert" className={styles.notice}>
-      <Text variant="title-x-small">The template has changed</Text>
-      {reasons.map(reason => (
-        <Text key={reason}>{EXPLANATIONS[reason]}</Text>
-      ))}
-    </Box>
+    <Alert
+      // `alert` rather than `status`: this changes what approving means, so
+      // it is worth interrupting a screen-reader user for.
+      role="alert"
+      status="danger"
+      icon
+      title="The template has changed"
+      description={
+        <Flex direction="column" gap="1">
+          {reasons.map(reason => (
+            <Text key={reason} variant="body-small">
+              {EXPLANATIONS[reason]}
+            </Text>
+          ))}
+        </Flex>
+      }
+    />
   );
 }

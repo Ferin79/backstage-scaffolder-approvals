@@ -18,8 +18,7 @@ import type { ApprovalRequest } from '@ferin79/backstage-plugin-scaffolder-appro
 import { entityPresentationApiRef } from '@backstage/plugin-catalog-react';
 import { signalApiRef } from '@backstage/plugin-signals-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { act, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, screen, waitFor } from '@testing-library/react';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsPage } from './ApprovalsPage';
@@ -57,10 +56,10 @@ function fakePresentation(titles: Record<string, string>) {
   };
 }
 
-function render(api: Partial<ApprovalsApi>) {
+function render(api: Partial<ApprovalsApi>, view?: 'inbox' | 'mine') {
   return renderInTestApp(
     <TestApiProvider apis={[[approvalsApiRef, api as ApprovalsApi]]}>
-      <ApprovalsPage />
+      <ApprovalsPage view={view} />
     </TestApiProvider>,
     {
       // Only the root ref: `mountedRoutes` takes route refs, not sub route
@@ -71,15 +70,22 @@ function render(api: Partial<ApprovalsApi>) {
 }
 
 describe('ApprovalsPage', () => {
-  it('shows both tabs', async () => {
+  it('shows both lists as tabs, each with an address of its own', async () => {
     await render({
       listRequests: jest.fn().mockResolvedValue({ items: [], totalItems: 0 }),
     });
 
     // Two tabs rather than one filtered table, because they answer different
-    // questions for different people.
-    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
-    expect(screen.getByText('Your requests')).toBeInTheDocument();
+    // questions for different people. Routes rather than in-page state, so
+    // going back from a request returns to the list it came from.
+    const inbox = await screen.findByRole('tab', { name: 'Waiting on you' });
+    const mine = screen.getByRole('tab', { name: 'Your requests' });
+    expect(inbox).toHaveAttribute('href', '/scaffolder-approvals');
+    expect(mine).toHaveAttribute('href', '/scaffolder-approvals/mine');
+    // In the plugin's own header, which names the plugin.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Approvals',
+    );
   });
 
   it('says so when the inbox is empty, rather than showing a bare table', async () => {
@@ -159,24 +165,21 @@ describe('ApprovalsPage', () => {
     const listRequests = jest
       .fn()
       .mockResolvedValue({ items: [PENDING], totalItems: 1 });
-    await render({ listRequests });
-
-    await userEvent.click(
-      await screen.findByRole('tab', { name: 'Your requests' }),
-    );
+    await render({ listRequests }, 'mine');
 
     await waitFor(() =>
       expect(listRequests).toHaveBeenCalledWith(
         expect.objectContaining({ role: 'requester' }),
       ),
     );
-    const panel = await screen.findByRole('tabpanel');
-    await within(panel).findByText('Admin on backstage');
+    expect(await screen.findByText('Admin on backstage')).toBeInTheDocument();
     expect(
-      within(panel)
-        .getAllByRole('columnheader')
-        .map(header => header.textContent),
+      screen.getAllByRole('columnheader').map(header => header.textContent),
     ).toEqual(['Template', 'Status', 'Requested']);
+    // Everything they asked for, not only what is still pending.
+    expect(listRequests).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: expect.anything() }),
+    );
   });
 
   it('asks the backend only for pending requests in the inbox', async () => {

@@ -48,6 +48,7 @@ export function WithdrawDialog(props: WithdrawDialogProps) {
     // Dismissing it is the same as cancelling.
     <Dialog
       isOpen
+      width={480}
       isDismissable={!busy}
       onOpenChange={open => {
         if (!open) {
@@ -55,15 +56,13 @@ export function WithdrawDialog(props: WithdrawDialogProps) {
         }
       }}
     >
-      <DialogHeader>
-        <Text variant="title-small">Withdraw this request?</Text>
-      </DialogHeader>
+      <DialogHeader>Withdraw this request?</DialogHeader>
 
       <DialogBody>
         <Text>
-          Withdrawing stops {summary}. Nobody will be asked to decide on it, any
-          approvals it already has are discarded, and it cannot be undone: to
-          ask again, you will have to submit a new request.
+          Withdrawing stops <strong>{summary}</strong>. Nobody will be asked to
+          decide on it, any approvals it already has are discarded, and it
+          cannot be undone: to ask again, you will have to submit a new request.
         </Text>
       </DialogBody>
 
@@ -71,7 +70,13 @@ export function WithdrawDialog(props: WithdrawDialogProps) {
         <Button variant="secondary" onClick={onCancel} isDisabled={busy}>
           Keep it
         </Button>
-        <Button variant="primary" onClick={onConfirm} isDisabled={busy}>
+        <Button
+          variant="primary"
+          destructive
+          onClick={onConfirm}
+          isPending={busy}
+          isDisabled={busy}
+        >
           Withdraw
         </Button>
       </DialogFooter>

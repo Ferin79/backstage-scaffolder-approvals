@@ -25,6 +25,7 @@ import {
   Text,
   TextAreaField,
 } from '@backstage/ui';
+import { RiCheckLine, RiCloseLine } from '@remixicon/react';
 import { type ReactNode, useState } from 'react';
 
 /** @public */
@@ -57,6 +58,7 @@ export function DecisionDialog(props: DecisionDialogProps) {
     // shows nothing without `isOpen`. Dismissing it is the same as cancelling.
     <Dialog
       isOpen
+      width={480}
       isDismissable={!busy}
       onOpenChange={open => {
         if (!open) {
@@ -65,9 +67,7 @@ export function DecisionDialog(props: DecisionDialogProps) {
       }}
     >
       <DialogHeader>
-        <Text variant="title-small">
-          {denying ? 'Deny this request?' : 'Approve this request?'}
-        </Text>
+        {denying ? 'Deny this request?' : 'Approve this request?'}
       </DialogHeader>
 
       <DialogBody>
@@ -75,13 +75,15 @@ export function DecisionDialog(props: DecisionDialogProps) {
           <Text>
             {denying ? (
               <>
-                Denying rejects {summary} outright. Nobody else's approval can
-                undo it, and the requester will have to ask again.
+                Denying rejects <strong>{summary}</strong> outright. Nobody
+                else's approval can undo it, and the requester will have to ask
+                again.
               </>
             ) : (
               <>
-                Approving counts towards the quorum for {summary}. Once the
-                quorum is met the template starts straight away.
+                Approving counts towards the quorum for{' '}
+                <strong>{summary}</strong>. Once the quorum is met the template
+                starts straight away.
               </>
             )}
           </Text>
@@ -93,7 +95,7 @@ export function DecisionDialog(props: DecisionDialogProps) {
             description={
               denying
                 ? 'Tell the requester why. This is all they will see.'
-                : 'Optional.'
+                : 'Optional. The requester and the other approvers will see it.'
             }
             value={comment}
             onChange={setComment}
@@ -108,8 +110,13 @@ export function DecisionDialog(props: DecisionDialogProps) {
         </Button>
         <Button
           variant="primary"
+          destructive={denying}
+          isPending={busy}
           isDisabled={busy}
           onClick={() => onConfirm(comment.trim() || undefined)}
+          iconStart={
+            denying ? <RiCloseLine aria-hidden /> : <RiCheckLine aria-hidden />
+          }
         >
           {denying ? 'Deny' : 'Approve'}
         </Button>

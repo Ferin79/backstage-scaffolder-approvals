@@ -14,18 +14,27 @@
  * limitations under the License.
  */
 
-/*
- * BUI has no callout or alert component, so this is hand-rolled from its own
- * variables — the same approach as `StatusPill`, and the reason it follows the
- * viewer's theme without a hard-coded colour.
- */
-
-.notice {
+/* The plugin's icon in a tile: grey when there is nothing to do, amber when
+   something is waiting, the colour the inbox uses for "Awaiting approval". */
+.badge {
   display: flex;
-  flex-direction: column;
-  gap: var(--bui-space-1);
-  padding: var(--bui-space-3);
-  border: 1px solid var(--bui-fg-danger);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
   border-radius: var(--bui-radius-3);
-  color: var(--bui-fg-danger);
+  background-color: var(--bui-border-1);
+  color: var(--bui-fg-secondary);
+  font-size: 24px;
+}
+
+.badge[data-waiting] {
+  background-color: var(--bui-bg-warning);
+  color: var(--bui-fg-warning-on-bg);
+}
+
+.count {
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }

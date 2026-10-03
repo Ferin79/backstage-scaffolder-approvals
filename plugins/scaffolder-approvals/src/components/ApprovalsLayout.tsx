@@ -1,0 +1,99 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { configApiRef, useApi, useRouteRef } from '@backstage/core-plugin-api';
+import { PluginHeader } from '@backstage/ui';
+import type { ReactNode } from 'react';
+import { Helmet } from 'react-helmet';
+import { rootRouteRef } from '../routes';
+import { ApprovalsIcon } from './ApprovalsIcon';
+
+/** Where "Your requests" lives, under the plugin's root. */
+export const YOUR_REQUESTS_PATH = '/mine';
+
+/**
+ * What the browser tab says: the page's title, then the app's name.
+ *
+ * The shape core-components' header used to set, through the same Helmet, so
+ * it hands over cleanly to and from pages that still use that header. The
+ * innermost one wins, so a page can name itself once it knows what it shows.
+ *
+ * @internal
+ */
+export function DocumentTitle(props: { title: string }) {
+  const { title } = props;
+  const appTitle =
+    useApi(configApiRef).getOptionalString('app.title') ?? 'Backstage';
+  return (
+    <Helmet
+      titleTemplate={`${title} | %s | ${appTitle}`}
+      defaultTitle={`${title} | ${appTitle}`}
+    />
+  );
+}
+
+/**
+ * The frame every approvals page sits in: BUI's plugin header, naming the
+ * plugin, with the inbox and your own requests as its tabs.
+ *
+ * The tabs are routes rather than in-page state, so each list has an address:
+ * going back from a request returns to the list it was opened from, and
+ * "Your requests" can be linked to. A request page keeps the tabs, with
+ * neither selected, as the way back to both lists.
+ *
+ * Drawn by the plugin in both frontend systems: the new one is told not to
+ * draw its own (`noHeader`), so the two look the same.
+ *
+ * @internal
+ */
+export function ApprovalsLayout(props: {
+  /**
+   * What the browser tab says, before the app's name. Left out by a page that
+   * names itself only once it has loaded: changing the title twice in quick
+   * succession races the notifications plugin's unread counter, which
+   * rewrites the title as it changes and could put the first one back.
+   */
+  title?: string;
+  children: ReactNode;
+}) {
+  const { title, children } = props;
+  const rootPath = useRouteRef(rootRouteRef)();
+
+  return (
+    <>
+      {title && <DocumentTitle title={title} />}
+      <PluginHeader
+        icon={<ApprovalsIcon fontSize="inherit" />}
+        title="Approvals"
+        titleLink={rootPath}
+        tabs={[
+          {
+            id: 'inbox',
+            label: 'Waiting on you',
+            href: rootPath,
+            matchStrategy: 'exact',
+          },
+          {
+            id: 'mine',
+            label: 'Your requests',
+            href: `${rootPath}${YOUR_REQUESTS_PATH}`,
+          },
+        ]}
+      />
+      {children}
+    </>
+  );
+}

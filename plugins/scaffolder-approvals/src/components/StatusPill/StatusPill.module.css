@@ -15,62 +15,52 @@
  */
 
 /*
- * Hand-rolled because BUI has no coloured badge: `Badge` and `Tag` take only
- * `icon`, `size` and `children`. Status colour exists in BUI solely as CSS
- * variables, so the pill reads them directly — which also means it follows the
- * viewer's theme without a single hard-coded colour.
- *
- * Each status pairs a background with its `-on-bg` foreground. The pill sits
- * on the request page's coloured header as well as on plain surfaces, and a
- * transparent pill took whatever was behind it: "Completed" in green on the
- * header's purple was close to unreadable.
+ * A tint on BUI's `Badge`. These rules are unlayered, so they win over the
+ * badge's own neutral background, which lives in BUI's `components` layer.
  */
 
 .pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--bui-space-1);
-  padding: 0 var(--bui-space-2);
-  border: 1px solid currentColor;
+  height: 24px;
+  padding-inline: var(--bui-space-2);
   border-radius: var(--bui-radius-full);
+  /* BUI's small badge is set in its smallest size, 10px: too small to read
+     a status at a glance. */
   font-size: var(--bui-font-size-2);
-  line-height: 1.6;
+  font-weight: var(--bui-font-weight-bold);
   white-space: nowrap;
 }
 
-/* A dot as well as colour, so status does not depend on colour alone. */
 .dot {
-  width: 0.5em;
-  height: 0.5em;
+  display: block;
+  width: 6px;
+  height: 6px;
   border-radius: var(--bui-radius-full);
   background: currentColor;
-  flex: none;
 }
 
-.pending {
+.warning {
   color: var(--bui-fg-warning-on-bg);
-  background: var(--bui-bg-warning);
+  background-color: var(--bui-bg-warning);
 }
 
-.approved,
-.running {
+.info {
   color: var(--bui-fg-info-on-bg);
-  background: var(--bui-bg-info);
+  background-color: var(--bui-bg-info);
 }
 
-.completed {
+.success {
   color: var(--bui-fg-success-on-bg);
-  background: var(--bui-bg-success);
+  background-color: var(--bui-bg-success);
 }
 
-.rejected,
-.failed {
+.danger {
   color: var(--bui-fg-danger-on-bg);
-  background: var(--bui-bg-danger);
+  background-color: var(--bui-bg-danger);
 }
 
-.cancelled,
-.expired {
+/* A border tone rather than a neutral background: the neutral levels are
+   within a shade of the page, and a grey pill on them disappeared. */
+.neutral {
   color: var(--bui-fg-secondary);
-  background: var(--bui-bg-neutral-1);
+  background-color: var(--bui-border-1);
 }

@@ -20,17 +20,7 @@ import {
   type ApprovalRequestStatus,
   checkDecisionEligibility,
   computeQuorumProgress,
-  type DecisionIneligibility,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import {
-  Content,
-  EmptyState,
-  Header,
-  HeaderLabel,
-  Page,
-  Progress,
-  ResponseErrorPanel,
-} from '@backstage/core-components';
 import {
   alertApiRef,
   identityApiRef,
@@ -39,57 +29,39 @@ import {
 } from '@backstage/core-plugin-api';
 import {
   EntityDisplayName,
-  EntityRefLink,
   useEntityPresentation,
 } from '@backstage/plugin-catalog-react';
-import { Button, ButtonLink, Card, Flex, Link, Text } from '@backstage/ui';
+import {
+  Alert,
+  ButtonLink,
+  Container,
+  Flex,
+  Grid,
+  Header,
+  Skeleton,
+  Text,
+} from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
+import { RiArrowLeftLine, RiQuestionLine } from '@remixicon/react';
 import { type ReactNode, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
-import { PolicySummary } from '../PolicySummary';
+import { ApprovalsLayout, DocumentTitle } from '../ApprovalsLayout';
 import { StatusPill } from '../StatusPill';
 import { effectiveStatus } from '../StatusPill/effectiveStatus';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
 import { DecisionDialog } from './DecisionDialog';
+import { DecisionPanel } from './DecisionPanel';
 import { DriftNotice } from './DriftNotice';
-import { RequesterActions } from './RequesterActions';
+import {
+  RequestActivity,
+  RequestDetails,
+  RequestParameters,
+} from './RequestSections';
 import { WithdrawDialog } from './WithdrawDialog';
-
-/**
- * Why the decide buttons are not available, in the approver's words.
- *
- * Only shown while a request is pending. Once it has settled, nobody can decide
- * and the question is what happened, which `OUTCOME` answers.
- */
-const WHY_NOT: Record<DecisionIneligibility, string> = {
-  'not-an-approver': 'You are not an approver for this request.',
-  'self-approval': 'You cannot approve your own request.',
-  'not-pending': 'This request has already been decided.',
-  expired: 'This request timed out before anyone decided.',
-  'already-voted': 'You have already decided on this request.',
-};
-
-/**
- * What happened to a request that is no longer waiting, by its status.
- *
- * Not "this request has already been decided": a withdrawn or expired request
- * was never decided at all, and saying so sends people looking for a decision
- * that does not exist (B4 in the browser review). Written from the status
- * rather than from the decisions, too, so a denial that lost the race to an
- * approval does not make a running request read as denied.
- */
-const OUTCOME: Record<Exclude<ApprovalRequestStatus, 'pending'>, string> = {
-  approved: 'Approved. The template is starting.',
-  running: 'Approved. The template is running.',
-  completed: 'Approved, and the template has run.',
-  failed: 'Approved, but the template did not complete.',
-  rejected: 'Denied. A single denial rejects a request outright.',
-  cancelled: 'Withdrawn by the requester before it was decided.',
-  expired: 'Timed out before it was approved.',
-};
+import styles from './RequestDetail.module.css';
 
 /**
  * What a request is called: its gate's rendered summary, or the template's
@@ -110,10 +82,11 @@ function RequestTitle(props: {
 /**
  * The page header: what the request is, who asked, and where it stands.
  *
- * The catalog's names, not raw refs (B16), but as plain strings: the core
- * header styles a string subtitle for the banner and leaves anything else
- * unstyled, which put black text on purple. The requester's link to their
- * catalog page is in the Request card instead.
+ * The catalog's names, not raw refs (B16), as plain strings: BUI's header
+ * takes a string title and description. The requester's link to their
+ * catalog page is in the Details card instead. The status is a labelled
+ * metadata item, which wraps under the title on a narrow screen rather than
+ * sliding over it (B14).
  */
 function RequestHeader(props: {
   request: Pick<ApprovalRequest, 'summary' | 'templateRef' | 'requesterRef'>;
@@ -125,23 +98,19 @@ function RequestHeader(props: {
     defaultKind: 'user',
   });
 
-  return (
-    <Header
-      title={request.summary ?? template.primaryTitle}
-      subtitle={`Requested by ${requester.primaryTitle}`}
-    >
-      {/* In a `HeaderLabel`, as Backstage pages put their header items. The
-          header lays its children out in a spaced grid whose negative margins
-          expect grid items; a bare pill was not one, so on a narrow screen it
-          slid up over the subtitle (B14). */}
-      <HeaderLabel label="Status" value={<StatusPill status={status} />} />
-    </Header>
-  );
-}
+  const title = request.summary ?? template.primaryTitle;
 
-function when(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return (
+    <>
+      <DocumentTitle title={title} />
+      <Header
+        className={styles.header}
+        title={title}
+        description={`Requested by ${requester.primaryTitle}`}
+        metadata={[{ label: 'Status', value: <StatusPill status={status} /> }]}
+      />
+    </>
+  );
 }
 
 /** @public */
@@ -268,11 +237,11 @@ export function RequestDetail(props: RequestDetailProps) {
     [api, alertApi, navigate, rootPath],
   );
 
-  // Only the first load shows a spinner. A reload — after a decision, or
+  // Only the first load shows a placeholder. A reload — after a decision, or
   // prompted by a signal — keeps the request on screen until the new copy
   // arrives, rather than flashing the page away while somebody reads it.
   if (state.loading && !state.value) {
-    return <Progress />;
+    return <RequestSkeleton />;
   }
   if (state.error) {
     return <RequestLoadError error={state.error} />;
@@ -296,151 +265,43 @@ export function RequestDetail(props: RequestDetailProps) {
     request.decisions,
     request.policySnapshot,
   );
+  const isRequester =
+    identity.userEntityRef.toLocaleLowerCase('en-US') ===
+    request.requesterRef.toLocaleLowerCase('en-US');
 
   return (
-    <Page themeId="tool">
+    <ApprovalsLayout>
       <RequestHeader request={request} status={status} />
 
-      <Content>
+      <Container>
         <Flex direction="column" gap="4">
-          {/* Above the request rather than beside it: it changes what
-              approving means, so it has to be read before the buttons. */}
+          {/* Above everything else: it changes what approving means, so it
+              has to be read before the buttons. */}
           <DriftNotice drift={request.templateDrift} />
 
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text variant="title-small">Request</Text>
-
-              <Detail
-                label="Requested by"
-                value={
-                  <EntityRefLink entityRef={request.requesterRef} hideIcon />
-                }
-              />
-              <Detail
-                label="Template"
-                value={
-                  <EntityRefLink entityRef={request.templateRef} hideIcon />
-                }
-              />
-              <Detail label="Requested" value={when(request.createdAt)} />
-              {/* A deadline only means something while the request is waiting.
-                  On a settled one, "Expires" read as if it still could. */}
-              {request.expiresAt && status === 'pending' && (
-                <Detail label="Expires" value={when(request.expiresAt)} />
-              )}
-              {request.expiresAt && status === 'expired' && (
-                <Detail label="Timed out" value={when(request.expiresAt)} />
-              )}
-              {request.taskId && (
-                <Detail
-                  label="Task"
-                  value={
-                    // §10.1: the requester cannot find this task under "my
-                    // tasks", because it was created by the service principal.
-                    // This link is how they reach its log at all.
-                    <Link
-                      href={`/create/tasks/${request.taskId}`}
-                      target="_blank"
-                    >
-                      {request.taskId}
-                    </Link>
-                  }
+          <Grid.Root columns={{ initial: '1', md: '3' }} gap="4">
+            <Grid.Item colSpan={{ initial: '1', md: '2' }}>
+              <Flex direction="column" gap="4">
+                <DecisionPanel
+                  request={request}
+                  status={status}
+                  progress={progress}
+                  eligibility={eligibility}
+                  isRequester={isRequester}
+                  busy={busy}
+                  onDecide={setDeciding}
+                  onWithdraw={() => setConfirmingWithdraw(true)}
+                  onResubmit={resubmit}
                 />
-              )}
+                <RequestParameters request={request} />
+                <RequestActivity request={request} />
+              </Flex>
+            </Grid.Item>
 
-              <Text variant="title-x-small">Parameters</Text>
-              {request.values === null ? (
-                // Redaction is a normal end state, not a failure, so it is
-                // explained rather than rendered as a blank or an error.
-                <Text>
-                  The submitted parameters were removed on{' '}
-                  {request.redactedAt ? when(request.redactedAt) : 'expiry'} by
-                  the retention policy. The decision history below is kept
-                  indefinitely.
-                </Text>
-              ) : (
-                <ValueList values={request.values} />
-              )}
-            </Flex>
-          </Card>
-
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text variant="title-small">Decisions</Text>
-
-              {/* Who can approve, from the frozen policy: the requester needs
-                  to know whom to chase, and anyone can notice a gate that
-                  names a group nobody is in (B5). */}
-              <PolicySummary policy={request.policySnapshot} />
-
-              <Text>
-                {status === 'pending'
-                  ? `${progress.approvals} of ${progress.quorum} approval${
-                      progress.quorum === 1 ? '' : 's'
-                    } needed.`
-                  : OUTCOME[status]}
-              </Text>
-
-              {request.decisions.length === 0 ? (
-                <Text>Nobody has decided yet.</Text>
-              ) : (
-                request.decisions.map(decision => (
-                  // A column: `Text` is inline, so in a plain box the comment
-                  // ran straight on from the timestamp.
-                  <Flex key={decision.id} direction="column" gap="1">
-                    <Text>
-                      <EntityRefLink
-                        entityRef={decision.approverRef}
-                        hideIcon
-                      />{' '}
-                      {decision.decision === 'approve' ? 'approved' : 'denied'}{' '}
-                      on {when(decision.createdAt)}
-                    </Text>
-                    {decision.comment && (
-                      <Text color="secondary">{decision.comment}</Text>
-                    )}
-                  </Flex>
-                ))
-              )}
-
-              <RequesterActions
-                // The shown status, so a request past its deadline is not
-                // offered for withdrawal: there is nothing left to withdraw.
-                request={{ ...request, status }}
-                isRequester={
-                  identity.userEntityRef.toLocaleLowerCase('en-US') ===
-                  request.requesterRef.toLocaleLowerCase('en-US')
-                }
-                busy={busy}
-                onWithdraw={() => setConfirmingWithdraw(true)}
-                onResubmit={resubmit}
-              />
-
-              {status === 'pending' &&
-                (eligibility.allowed ? (
-                  <Flex gap="2">
-                    <Button
-                      variant="primary"
-                      onClick={() => setDeciding('approve')}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => setDeciding('deny')}
-                    >
-                      Deny
-                    </Button>
-                  </Flex>
-                ) : (
-                  // The same reasons the backend would refuse with, so a
-                  // disabled control and a server error can never tell
-                  // different stories.
-                  <Text>{WHY_NOT[eligibility.reason]}</Text>
-                ))}
-            </Flex>
-          </Card>
+            <Grid.Item>
+              <RequestDetails request={request} status={status} />
+            </Grid.Item>
+          </Grid.Root>
         </Flex>
 
         {deciding && (
@@ -461,8 +322,33 @@ export function RequestDetail(props: RequestDetailProps) {
             onConfirm={withdraw}
           />
         )}
-      </Content>
-    </Page>
+      </Container>
+    </ApprovalsLayout>
+  );
+}
+
+/** The page's shape while the request loads, so nothing jumps when it lands. */
+function RequestSkeleton() {
+  return (
+    <ApprovalsLayout>
+      <Container>
+        <Flex direction="column" gap="4" py="3" aria-busy="true">
+          <Skeleton width="40%" height={32} />
+          <Skeleton width="20%" height={18} />
+          <Grid.Root columns={{ initial: '1', md: '3' }} gap="4">
+            <Grid.Item colSpan={{ initial: '1', md: '2' }}>
+              <Flex direction="column" gap="4">
+                <Skeleton height={140} />
+                <Skeleton height={120} />
+              </Flex>
+            </Grid.Item>
+            <Grid.Item>
+              <Skeleton height={200} />
+            </Grid.Item>
+          </Grid.Root>
+        </Flex>
+      </Container>
+    </ApprovalsLayout>
   );
 }
 
@@ -484,78 +370,62 @@ function RequestLoadError(props: { error: Error }) {
   const back = (
     // A link, because it navigates: announced as one, and it opens in a new
     // tab like any other link.
-    <ButtonLink href={rootPath()} variant="secondary">
+    <ButtonLink
+      href={rootPath()}
+      variant="secondary"
+      iconStart={<RiArrowLeftLine aria-hidden />}
+    >
       Back to approvals
     </ButtonLink>
   );
 
   let body: ReactNode;
-  if (statusCode === 404) {
+  if (statusCode === 404 || statusCode === 400) {
     body = (
-      <EmptyState
-        missing="data"
-        title="No such approval request"
-        description="Nothing matches this link. It may have been mistyped, or it may belong to another Backstage instance."
-        action={back}
-      />
-    );
-  } else if (statusCode === 400) {
-    body = (
-      <EmptyState
-        missing="data"
-        title="This is not a link to an approval request"
-        description="The address does not contain a request id. Check that it was copied in full."
-        action={back}
-      />
+      <Flex
+        direction="column"
+        align="center"
+        gap="3"
+        py="10"
+        className={styles.notFound}
+      >
+        <span className={styles.notFoundIcon} aria-hidden="true">
+          <RiQuestionLine />
+        </span>
+        <Text as="h3" variant="title-small">
+          {statusCode === 404
+            ? 'No such approval request'
+            : 'This is not a link to an approval request'}
+        </Text>
+        <Text color="secondary" className={styles.notFoundText}>
+          {statusCode === 404
+            ? 'Nothing matches this link. It may have been mistyped, or it may belong to another Backstage instance.'
+            : 'The address does not contain a request id. Check that it was copied in full.'}
+        </Text>
+        {back}
+      </Flex>
     );
   } else {
     body = (
-      <Flex direction="column" gap="3" align="start">
-        <ResponseErrorPanel error={error} />
+      <Flex direction="column" gap="4" align="start">
+        <Alert
+          status="danger"
+          icon
+          title="Could not load this approval request"
+          description={
+            statusCode ? `${error.message} (HTTP ${statusCode})` : error.message
+          }
+          style={{ alignSelf: 'stretch' }}
+        />
         {back}
       </Flex>
     );
   }
 
   return (
-    <Page themeId="tool">
+    <ApprovalsLayout title="Approval request">
       <Header title="Approval request" />
-      <Content>{body}</Content>
-    </Page>
-  );
-}
-
-function Detail(props: { label: string; value: ReactNode }) {
-  return (
-    <Flex gap="2">
-      <Text weight="bold">{props.label}</Text>
-      {/* A string is the common case, but the task id is a link. Wrapping a
-          link in `Text` would nest an anchor inside a span for no reason. */}
-      {typeof props.value === 'string' ? (
-        <Text>{props.value}</Text>
-      ) : (
-        props.value
-      )}
-    </Flex>
-  );
-}
-
-function ValueList(props: { values: Record<string, unknown> }) {
-  const entries = Object.entries(props.values);
-  if (entries.length === 0) {
-    return <Text>This template takes no parameters.</Text>;
-  }
-
-  return (
-    <Flex direction="column" gap="1">
-      {entries.map(([key, value]) => (
-        <Flex key={key} gap="2">
-          <Text weight="bold">{key}</Text>
-          <Text>
-            {typeof value === 'string' ? value : JSON.stringify(value)}
-          </Text>
-        </Flex>
-      ))}
-    </Flex>
+      <Container>{body}</Container>
+    </ApprovalsLayout>
   );
 }

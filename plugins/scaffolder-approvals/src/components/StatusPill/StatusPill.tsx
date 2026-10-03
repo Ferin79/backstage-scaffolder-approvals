@@ -15,7 +15,7 @@
  */
 
 import type { ApprovalRequestStatus } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { Text } from '@backstage/ui';
+import { Badge } from '@backstage/ui';
 import styles from './StatusPill.module.css';
 
 /**
@@ -36,17 +36,37 @@ const LABELS: Record<ApprovalRequestStatus, string> = {
   expired: 'Expired',
 };
 
+/** The colour family a status is drawn in. */
+export type StatusTone = 'warning' | 'info' | 'success' | 'danger' | 'neutral';
+
+/**
+ * Waiting is amber, in progress is blue, done is green, refused or broken is
+ * red, and a request nobody decided is grey.
+ *
+ * @internal
+ */
+export const STATUS_TONE: Record<ApprovalRequestStatus, StatusTone> = {
+  pending: 'warning',
+  approved: 'info',
+  running: 'info',
+  completed: 'success',
+  failed: 'danger',
+  rejected: 'danger',
+  cancelled: 'neutral',
+  expired: 'neutral',
+};
+
 /** @public */
 export interface StatusPillProps {
   status: ApprovalRequestStatus;
 }
 
 /**
- * A coloured status pill.
+ * A request's status, as a coloured badge.
  *
- * Hand-rolled: BUI's `Badge` and `Tag` accept only an icon, a size and
- * children, so there is no coloured badge to reach for. Colour comes from BUI's
- * own CSS variables, which is what keeps it correct in both themes.
+ * BUI's `Badge` gives the shape, size and type; it has no colour variants, so
+ * the tint comes from BUI's own status variables, which is what keeps it
+ * right in both themes.
  *
  * @public
  */
@@ -54,13 +74,14 @@ export function StatusPill(props: StatusPillProps) {
   const { status } = props;
 
   return (
-    // BUI's `Text` renders a span and carries the type scale, so the pill sits
-    // in the same typography as everything around it.
-    <Text variant="body-small" className={`${styles.pill} ${styles[status]}`}>
-      {/* Colour alone would not be enough for a colour-blind reader; the text
-          carries the meaning and the dot is reinforcement. */}
-      <Text className={styles.dot} aria-hidden="true" />
+    <Badge
+      size="small"
+      className={`${styles.pill} ${styles[STATUS_TONE[status] ?? 'neutral']}`}
+      // Colour alone would not be enough for a colour-blind reader; the text
+      // carries the meaning and the dot is reinforcement.
+      icon={<span className={styles.dot} aria-hidden="true" />}
+    >
       {LABELS[status] ?? status}
-    </Text>
+    </Badge>
   );
 }

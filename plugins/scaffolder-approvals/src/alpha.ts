@@ -66,6 +66,10 @@ const approvalsPage = PageBlueprint.make({
     title: 'Approvals',
     icon: navIcon,
     routeRef: convertLegacyRouteRef(rootRouteRef),
+    // The pages draw BUI's plugin header themselves, tabs included, so that
+    // they look the same in both frontend systems. The app's own header would
+    // be a second one above it.
+    noHeader: true,
     // `createElement` rather than JSX, so this entrypoint stays a `.ts` file
     // and the `./alpha` export in package.json needs no special casing.
     loader: () => import('./components').then(m => createElement(m.Router)),
