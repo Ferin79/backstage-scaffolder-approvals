@@ -275,8 +275,12 @@ export function RequestDetail(props: RequestDetailProps) {
       <Container>
         <Flex direction="column" gap="4">
           {/* Above everything else: it changes what approving means, so it
-              has to be read before the buttons. */}
-          <DriftNotice drift={request.templateDrift} />
+              has to be read before the buttons. Only while there is still
+              something to approve: once a request has run, or never will,
+              "the edited steps are the ones that will run" is untrue. */}
+          {status === 'pending' && (
+            <DriftNotice drift={request.templateDrift} />
+          )}
 
           <div className={styles.layout}>
             <div className={styles.decision}>

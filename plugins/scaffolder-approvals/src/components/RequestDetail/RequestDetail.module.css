@@ -219,6 +219,85 @@
   overflow-wrap: anywhere;
 }
 
+.number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A short value beside its label rather than under it. */
+.valueRowInline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--bui-space-3);
+}
+
+.valueRowInline dd {
+  text-align: right;
+}
+
+/* Values set apart: hidden by the form, or never asked for. */
+.parameterGroup {
+  padding-top: var(--bui-space-3);
+  border-top: 1px dashed var(--bui-border-2);
+}
+
+/* A list of names or values, one chip each. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bui-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 1px var(--bui-space-2);
+  border-radius: var(--bui-radius-full);
+  background-color: var(--bui-border-1);
+  color: var(--bui-fg-primary);
+  font-size: var(--bui-font-size-2);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* An object's fields, label beside value, inside the parameter they belong to. */
+.nested {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.nestedRow {
+  display: grid;
+  grid-template-columns: minmax(72px, 40%) minmax(0, 1fr);
+  gap: var(--bui-space-2);
+  align-items: baseline;
+}
+
+.nestedRow dt,
+.nestedRow dd {
+  margin: 0;
+  min-width: 0;
+}
+
+/* A list of objects: one small block per item. */
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: var(--bui-space-2) var(--bui-space-3);
+  border: 1px solid var(--bui-border-1);
+  border-radius: var(--bui-radius-2);
+}
+
 .code {
   margin: 0;
   padding: var(--bui-space-2) var(--bui-space-3);
