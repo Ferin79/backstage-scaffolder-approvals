@@ -52,15 +52,57 @@ function walk(schema: unknown, path: string[], found: string[]): void {
     }
   }
 
-  for (const key of ['items', 'then', 'else', 'not']) {
+  for (const key of [
+    'items',
+    'additionalItems',
+    'contains',
+    'if',
+    'then',
+    'else',
+    'not',
+  ]) {
     walk(node[key], path, found);
   }
 
-  for (const key of ['allOf', 'anyOf', 'oneOf']) {
+  for (const key of ['allOf', 'anyOf', 'oneOf', 'prefixItems']) {
     const branches = node[key];
     if (Array.isArray(branches)) {
       for (const branch of branches) {
         walk(branch, path, found);
+      }
+    }
+  }
+
+  // How Backstage templates usually make a field conditional: a `dependencies`
+  // entry whose `oneOf` adds the field once another one has a given value. A
+  // secret that only appears after ticking a box is still a secret. The other
+  // form of `dependencies`, a list of property names, holds no schema.
+  for (const key of ['dependencies', 'dependentSchemas']) {
+    const dependencies = node[key];
+    if (typeof dependencies === 'object' && dependencies !== null) {
+      for (const dependency of Object.values(dependencies)) {
+        walk(dependency, path, found);
+      }
+    }
+  }
+
+  // Properties not named in `properties`: the field sits under whatever name
+  // the person types, so the path says only that it is one of them.
+  walk(node.additionalProperties, [...path, '*'], found);
+  const patterned = node.patternProperties;
+  if (typeof patterned === 'object' && patterned !== null) {
+    for (const [pattern, child] of Object.entries(patterned)) {
+      walk(child, [...path, pattern], found);
+    }
+  }
+
+  // Reached through `$ref`, which is not followed: a definition that holds a
+  // secret is refused whether or not anything refers to it.
+  for (const key of ['definitions', '$defs']) {
+    const definitions = node[key];
+    if (typeof definitions === 'object' && definitions !== null) {
+      for (const [name, child] of Object.entries(definitions)) {
+        walk(child, [...path, key, name], found);
       }
     }
   }
