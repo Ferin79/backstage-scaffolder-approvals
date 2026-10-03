@@ -1,0 +1,91 @@
+# Entities for the provision-service template's pickers to offer: a system
+# to put the service in, things it can depend on, and APIs it can provide.
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: payments
+  title: Payments
+  description: Taking, settling and reconciling customer payments
+spec:
+  owner: group:default/devx-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: identity
+  title: Identity
+  description: Sign-in, sessions and account recovery
+spec:
+  owner: group:default/devx-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ledger-service
+  title: Ledger service
+  description: Double-entry ledger for every money movement
+  tags: [java, payments]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/devx-team
+  system: payments
+  providesApis: [payments-api]
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: payments-db
+  title: Payments database
+  description: PostgreSQL cluster holding payment state
+spec:
+  type: database
+  owner: group:default/devx-team
+  system: payments
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: events-queue
+  title: Events queue
+  description: Kafka topic carrying domain events between services
+spec:
+  type: queue
+  owner: group:default/devx-team
+  system: payments
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: payments-api
+  title: Payments API
+  description: Create, capture and refund payments
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/devx-team
+  system: payments
+  definition: |
+    openapi: 3.0.3
+    info:
+      title: Payments API
+      version: 1.0.0
+    paths: {}
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: refunds-events
+  title: Refund events
+  description: Events published when a refund settles
+spec:
+  type: asyncapi
+  lifecycle: experimental
+  owner: group:default/devx-team
+  system: payments
+  definition: |
+    asyncapi: 2.6.0
+    info:
+      title: Refund events
+      version: 0.1.0
+    channels: {}

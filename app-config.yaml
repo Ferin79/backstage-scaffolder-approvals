@@ -127,6 +127,15 @@ catalog:
       rules:
         - allow: [Template]
 
+    # A production-shaped gated template with every kind of form input, and
+    # the system, resources and APIs its pickers offer
+    - type: file
+      target: ../../examples/scaffolder-approvals/provision-service/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../examples/scaffolder-approvals/provision-service/catalog.yaml
+
     ## Uncomment these lines to add more example data
     # - type: url
     #   target: https://github.com/backstage/backstage/blob/master/packages/catalog-model/examples/all.yaml

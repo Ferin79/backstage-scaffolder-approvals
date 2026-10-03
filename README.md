@@ -6,14 +6,14 @@ The gate is a step in the template, so it holds even against someone calling the
 
 ## What is in here
 
-| Path                                                             | What it is                                                                                                  |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| [`packages/app`](packages/app)                                   | The Backstage frontend, with the approvals page, a sidebar item, a home-page card and the gated review step |
-| [`packages/backend`](packages/backend)                           | The Backstage backend, with the approvals backend, the `approval:gate` action and the catalog module        |
-| [`plugins/`](plugins)                                            | The six `scaffolder-approvals` packages                                                                     |
-| [`examples/scaffolder-approvals`](examples/scaffolder-approvals) | A gated example template, and the people and group its gate names                                           |
-| [`docs/`](docs)                                                  | The plugin guide, plus the design record, implementation guide and review                                   |
-| [`scripts/verify-gate.sh`](scripts/verify-gate.sh)               | Checks, against a running backend, that the gate cannot be skipped by calling the scaffolder directly       |
+| Path                                                             | What it is                                                                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [`packages/app`](packages/app)                                   | The Backstage frontend, with the approvals page, a sidebar item, a home-page card and the gated review step               |
+| [`packages/backend`](packages/backend)                           | The Backstage backend, with the approvals backend, the `approval:gate` action and the catalog module                      |
+| [`plugins/`](plugins)                                            | The six `scaffolder-approvals` packages                                                                                   |
+| [`examples/scaffolder-approvals`](examples/scaffolder-approvals) | Two gated example templates, a small one and a production-shaped one, and the people, group and catalog entities they use |
+| [`docs/`](docs)                                                  | The plugin guide, plus the design record, implementation guide and review                                                 |
+| [`scripts/verify-gate.sh`](scripts/verify-gate.sh)               | Checks, against a running backend, that the gate cannot be skipped by calling the scaffolder directly                     |
 
 The app is Backstage 1.55 on the **legacy frontend system**. That is deliberate: the review step that lets a requester submit a gated template from the scaffolder's own wizard needs a hook only the legacy scaffolder page has. The plugins also ship a new-frontend-system entry point (`/alpha`), but there a requester could not submit from the UI.
 
@@ -54,6 +54,8 @@ Two things to know:
 
 - **Wait for the catalog after a fresh start.** A guest who signs in before the catalog has loaded `org.yaml` gets no groups, and so cannot approve anything. Reload once the catalog has data.
 - **Notification links** point at `http://localhost:3000/scaffolder-approvals/requests/<id>`. An open request page, the inbox and the home-page card update themselves through signals, so somebody else's decision appears without a reload — but switching who you are signed in as still needs one.
+
+For something closer to a real template, try **Provision a production service**, in [`examples/scaffolder-approvals/provision-service/`](examples/scaffolder-approvals/provision-service/). Its four pages use every kind of form input except a secret, which a gated template cannot have, and some fields appear only for certain answers. After the gate come 15 steps that look things up in the catalog, render a skeleton, write catalog entities and send notifications. It runs without credentials unless **Publish to GitHub** is ticked, which needs a token in `integrations.github`. [§16 of the browser review](docs/GATED_SCAFFOLDER_BROWSER_REVIEW.md#16-a-production-shaped-template) records what it was used to test.
 
 ## Checking the gate holds
 

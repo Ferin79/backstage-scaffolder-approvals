@@ -2,3 +2,6 @@ dist
 dist-types
 coverage
 .vscode
+
+# Scaffolder skeletons: Nunjucks templates, not valid YAML or JSON until rendered.
+examples/scaffolder-approvals/provision-service/skeleton

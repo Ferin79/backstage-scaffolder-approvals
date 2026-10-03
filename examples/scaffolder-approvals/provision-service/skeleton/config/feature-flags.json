@@ -1,0 +1,4 @@
+{
+  "service": ${{ values.name | dump }},
+  "flags": ${{ values.featureFlags | dump }}
+}

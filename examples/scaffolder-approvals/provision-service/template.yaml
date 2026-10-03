@@ -1,0 +1,616 @@
+# A production-shaped gated template: four pages of parameters covering every
+# kind of input the scaffolder form offers, and a run that looks entities up,
+# renders a skeleton, writes catalog entities in a loop, validates one, sends
+# notifications and, when asked to, publishes to GitHub.
+#
+# Two approvals from devx-team are needed before any of it runs. Everything
+# except "Publish to GitHub" works without credentials, so the whole flow can
+# be tried locally; publishing needs `integrations.github` to carry a token.
+#
+# One kind of input is missing on purpose: a `Secret` field. The scaffolder
+# keeps secrets out of the task's values, so they cannot survive the wait for
+# an approval, and the approvals plugin refuses a gated template that has one.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: provision-service
+  title: Provision a production service
+  description: >-
+    Creates a service with its deployment config, environments, on-call and
+    catalog entries. Two members of devx-team have to approve it before
+    anything is created.
+  tags:
+    - approvals
+    - service
+    - production
+spec:
+  owner: group:default/devx-team
+  type: service
+
+  parameters:
+    # Page 1: what is being created, and who owns it.
+    - title: Service
+      description: What you are creating and who will own it.
+      required:
+        - name
+        - description
+        - owner
+        - lifecycle
+      properties:
+        name:
+          title: Name
+          type: string
+          description: Lowercase letters, digits and dashes. Becomes the component and repository name.
+          maxLength: 40
+          ui:field: EntityNamePicker
+          ui:autofocus: true
+        displayName:
+          title: Display name
+          type: string
+          description: How people will see it in the catalog. Optional.
+          maxLength: 60
+        description:
+          title: Description
+          type: string
+          description: What it does and why it exists. Approvers read this first.
+          minLength: 20
+          maxLength: 600
+          ui:widget: textarea
+          ui:options:
+            rows: 4
+        owner:
+          title: Owner
+          type: string
+          description: The team that will run it
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: Group
+        system:
+          title: System
+          type: string
+          description: The system it belongs to. Optional.
+          ui:field: EntityPicker
+          ui:options:
+            defaultKind: System
+            catalogFilter:
+              kind: System
+        lifecycle:
+          title: Lifecycle
+          type: string
+          enum: [experimental, production, deprecated]
+          enumNames: [Experimental, Production, Deprecated]
+          default: experimental
+        tags:
+          title: Tags
+          type: array
+          description: Up to five catalog tags
+          maxItems: 5
+          items:
+            type: string
+          ui:field: EntityTagsPicker
+          ui:options:
+            kinds: [Component]
+
+    # Page 2: how it runs. The version question changes with the language,
+    # and the base image is only asked for a container.
+    - title: Runtime
+      description: How it is built and how much it is allowed to use.
+      required:
+        - language
+        - tier
+        - replicas
+        - cpu
+        - memoryMb
+        - regions
+      properties:
+        language:
+          title: Language
+          type: string
+          enum: [typescript, go, java, python]
+          enumNames: [TypeScript, Go, Java, Python]
+          default: typescript
+          ui:widget: radio
+        tier:
+          title: Service tier
+          type: string
+          default: tier-2
+          oneOf:
+            - const: tier-1
+              title: Tier 1 - customer facing, 99.95%
+            - const: tier-2
+              title: Tier 2 - internal, 99.9%
+            - const: tier-3
+              title: Tier 3 - best effort
+        replicas:
+          title: Replicas
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 2
+          ui:widget: updown
+        cpu:
+          title: CPU per replica (cores)
+          type: number
+          minimum: 0.25
+          maximum: 8
+          multipleOf: 0.25
+          default: 0.5
+        memoryMb:
+          title: Memory per replica (MiB)
+          type: integer
+          minimum: 256
+          maximum: 4096
+          multipleOf: 256
+          default: 512
+          ui:widget: range
+        containerised:
+          title: Run as a container
+          type: boolean
+          default: true
+        regions:
+          title: Regions
+          type: array
+          description: Where it is deployed. At least one.
+          minItems: 1
+          uniqueItems: true
+          default: [eu-west-1]
+          items:
+            type: string
+            enum:
+              [eu-west-1, eu-central-1, us-east-1, us-west-2, ap-southeast-1]
+          ui:widget: checkboxes
+        alertChannels:
+          title: Alert channels
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [slack, email, pagerduty, teams]
+            enumNames: [Slack, Email, PagerDuty, Microsoft Teams]
+      dependencies:
+        language:
+          oneOf:
+            - properties:
+                language:
+                  const: typescript
+                nodeVersion:
+                  title: Node.js version
+                  type: string
+                  enum: ['20', '22', '24']
+                  default: '22'
+              required: [nodeVersion]
+            - properties:
+                language:
+                  const: go
+                goVersion:
+                  title: Go version
+                  type: string
+                  enum: ['1.22', '1.23', '1.24']
+                  default: '1.24'
+              required: [goVersion]
+            - properties:
+                language:
+                  const: java
+                javaVersion:
+                  title: JDK version
+                  type: integer
+                  enum: [17, 21]
+                  default: 21
+                buildTool:
+                  title: Build tool
+                  type: string
+                  enum: [gradle, maven]
+                  default: gradle
+              required: [javaVersion, buildTool]
+            - properties:
+                language:
+                  const: python
+                pythonVersion:
+                  title: Python version
+                  type: string
+                  enum: ['3.11', '3.12', '3.13']
+                  default: '3.12'
+              required: [pythonVersion]
+        containerised:
+          oneOf:
+            - properties:
+                containerised:
+                  const: true
+                baseImage:
+                  title: Base image
+                  type: string
+                  description: Pinned by tag or digest
+                  default: gcr.io/distroless/nodejs22-debian12:nonroot
+                  pattern: '^[a-z0-9.\-/]+(:[A-Za-z0-9._\-]+|@sha256:[a-f0-9]{64})$'
+              required: [baseImage]
+            - properties:
+                containerised:
+                  const: false
+
+    # Page 3: where it goes, when, and who answers the pager.
+    - title: Delivery
+      description: Environments, launch date and on-call.
+      required:
+        - environments
+        - launchDate
+        - oncall
+      properties:
+        environments:
+          title: Environments
+          type: array
+          minItems: 1
+          maxItems: 4
+          ui:options:
+            orderable: true
+          default:
+            - name: development
+              url: https://dev.example.com
+              autoDeploy: true
+              minReplicas: 1
+          items:
+            type: object
+            required: [name, url]
+            properties:
+              name:
+                title: Environment
+                type: string
+                enum: [development, staging, production, sandbox]
+              url:
+                title: Base URL
+                type: string
+                format: uri
+              autoDeploy:
+                title: Deploy on every merge
+                type: boolean
+                default: false
+              minReplicas:
+                title: Minimum replicas
+                type: integer
+                minimum: 0
+                maximum: 20
+                default: 1
+        launchDate:
+          title: Launch date
+          type: string
+          format: date
+        featureFlags:
+          title: Feature flags
+          type: array
+          description: Flags to create, in rollout order
+          maxItems: 10
+          ui:options:
+            orderable: true
+          items:
+            type: string
+            pattern: '^[a-z][a-z0-9-]*$'
+        oncall:
+          title: On-call
+          type: object
+          required: [primaryContact]
+          properties:
+            primaryContact:
+              title: Primary contact
+              type: string
+              format: email
+            escalationMinutes:
+              title: Escalate after (minutes)
+              type: integer
+              minimum: 5
+              maximum: 120
+              default: 15
+            pagerEnabled:
+              title: Page out of hours
+              type: boolean
+              default: true
+        includeDocs:
+          title: Include TechDocs
+          type: boolean
+          default: true
+
+    # Page 4: what it touches, how sensitive it is, and whether to publish.
+    # Confidential and restricted data need a security review ticket; the
+    # repository is only asked for when publishing.
+    - title: Access and compliance
+      description: Dependencies, data handling and publishing.
+      required:
+        - dataClassification
+        - acceptPolicy
+      properties:
+        dependsOn:
+          title: Depends on
+          type: array
+          description: Components and resources it calls or stores data in
+          items:
+            type: string
+          ui:field: MultiEntityPicker
+          ui:options:
+            catalogFilter:
+              kind: [Component, Resource]
+        providesApis:
+          title: Provides APIs
+          type: array
+          items:
+            type: string
+          ui:field: MultiEntityPicker
+          ui:options:
+            catalogFilter:
+              kind: API
+        dataClassification:
+          title: Data classification
+          type: string
+          enum: [public, internal, confidential, restricted]
+          enumNames: [Public, Internal, Confidential, Restricted]
+          default: internal
+        publish:
+          title: Publish to GitHub
+          type: boolean
+          description: Needs a GitHub token in integrations.github. Leave off to keep everything local.
+          default: false
+        acceptPolicy:
+          title: I have read the service onboarding policy
+          type: boolean
+          # `enum: [true]` rather than `const: true`: the form fills a field
+          # with its `const` as a default, which ticks the box for them.
+          enum: [true]
+        requestedVia:
+          type: string
+          default: backstage-scaffolder
+          ui:widget: hidden
+      if:
+        properties:
+          dataClassification:
+            enum: [confidential, restricted]
+      then:
+        properties:
+          securityReview:
+            title: Security review ticket
+            type: string
+            description: Required for confidential and restricted data, for example SEC-1234
+            pattern: '^SEC-[0-9]+$'
+          retentionDays:
+            title: Retention (days)
+            type: integer
+            minimum: 1
+            maximum: 3650
+            default: 365
+        required: [securityReview]
+      dependencies:
+        publish:
+          oneOf:
+            - properties:
+                publish:
+                  const: true
+                repoUrl:
+                  title: Repository
+                  type: string
+                  ui:field: RepoUrlPicker
+                  ui:options:
+                    allowedHosts:
+                      - github.com
+                visibility:
+                  title: Visibility
+                  type: string
+                  enum: [private, internal, public]
+                  default: private
+              required: [repoUrl]
+            - properties:
+                publish:
+                  const: false
+
+  steps:
+    # Must be the first step, with no `if:` or `each:`, and no later step may
+    # run on failure. The approvals plugin refuses the template otherwise.
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers:
+          - group:default/devx-team
+        quorum: 2
+        selfApprove: false
+        timeout: { days: 7 }
+        summary: 'Provision ${{ parameters.name }} (${{ parameters.tier }}, ${{ parameters.lifecycle }})'
+        # Not optional: this is how the gate checks that the run matches what
+        # was approved.
+        values: ${{ parameters }}
+
+    - id: fetch-owner
+      name: Look up the owning team
+      action: catalog:fetch
+      input:
+        entityRef: ${{ parameters.owner }}
+
+    - id: fetch-system
+      name: Look up the system
+      if: ${{ parameters.system }}
+      action: catalog:fetch
+      input:
+        entityRef: ${{ parameters.system }}
+        defaultKind: System
+        optional: true
+
+    - id: fetch-dependencies
+      name: Resolve dependencies
+      if: ${{ parameters.dependsOn | length }}
+      action: catalog:fetch
+      input:
+        entityRefs: ${{ parameters.dependsOn }}
+
+    - id: render
+      name: Render the service skeleton
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          displayName: ${{ parameters.displayName or parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          ownerTitle: ${{ steps['fetch-owner'].output.entity.spec.profile.displayName or steps['fetch-owner'].output.entity.metadata.name }}
+          system: ${{ parameters.system }}
+          lifecycle: ${{ parameters.lifecycle }}
+          tags: ${{ parameters.tags or [] }}
+          language: ${{ parameters.language }}
+          nodeVersion: ${{ parameters.nodeVersion }}
+          goVersion: ${{ parameters.goVersion }}
+          javaVersion: ${{ parameters.javaVersion }}
+          buildTool: ${{ parameters.buildTool }}
+          pythonVersion: ${{ parameters.pythonVersion }}
+          tier: ${{ parameters.tier }}
+          replicas: ${{ parameters.replicas }}
+          cpu: ${{ parameters.cpu }}
+          memoryMb: ${{ parameters.memoryMb }}
+          containerised: ${{ parameters.containerised }}
+          baseImage: ${{ parameters.baseImage }}
+          regions: ${{ parameters.regions }}
+          alertChannels: ${{ parameters.alertChannels or [] }}
+          environments: ${{ parameters.environments }}
+          launchDate: ${{ parameters.launchDate }}
+          featureFlags: ${{ parameters.featureFlags or [] }}
+          oncall: ${{ parameters.oncall }}
+          includeDocs: ${{ parameters.includeDocs }}
+          dependsOn: ${{ parameters.dependsOn or [] }}
+          providesApis: ${{ parameters.providesApis or [] }}
+          dataClassification: ${{ parameters.dataClassification }}
+          securityReview: ${{ parameters.securityReview }}
+          retentionDays: ${{ parameters.retentionDays }}
+          approvalRequest: ${{ steps.gate.output.requestId }}
+          requestedBy: ${{ steps.gate.output.requestedBy }}
+          approvedBy: ${{ steps.gate.output.approvedBy }}
+
+    - id: licence
+      name: Add the licence
+      action: fetch:plain:file
+      input:
+        url: ./static/LICENSE
+        targetPath: ./LICENSE
+
+    - id: docs
+      name: Move the docs into place
+      if: ${{ parameters.includeDocs }}
+      action: fs:rename
+      input:
+        files:
+          - from: docs-template
+            to: docs
+
+    - id: drop-docs
+      name: Remove the docs skeleton
+      if: ${{ not parameters.includeDocs }}
+      action: fs:delete
+      input:
+        files:
+          - docs-template
+          - mkdocs.yml
+
+    - id: drop-container
+      name: Remove the container files
+      if: ${{ not parameters.containerised }}
+      action: fs:delete
+      input:
+        files:
+          - Dockerfile
+          - .dockerignore
+
+    - id: environments
+      name: Describe each environment
+      each: ${{ parameters.environments }}
+      action: catalog:write
+      input:
+        filePath: catalog/environments/${{ each.value.name }}.yaml
+        entity:
+          apiVersion: backstage.io/v1alpha1
+          kind: Resource
+          metadata:
+            name: ${{ parameters.name }}-${{ each.value.name }}
+            description: ${{ each.value.name }} environment of ${{ parameters.name }}
+            # Annotations must be strings. Quoting does not make them so: a
+            # value that is one `${{ }}` expression is parsed as JSON, so
+            # `true` and `3` would come out as a boolean and a number.
+            annotations:
+              example.com/base-url: ${{ each.value.url }}
+              example.com/auto-deploy: ${{ each.value.autoDeploy | string }}
+              example.com/min-replicas: ${{ each.value.minReplicas | string }}
+          spec:
+            type: environment
+            owner: ${{ parameters.owner }}
+            dependencyOf:
+              - component:default/${{ parameters.name }}
+
+    - id: validate
+      name: Validate the component entity
+      action: catalog:validate-entity
+      input:
+        entity: |
+          apiVersion: backstage.io/v1alpha1
+          kind: Component
+          metadata:
+            name: ${{ parameters.name }}
+            description: ${{ parameters.description | dump }}
+            tags: ${{ (parameters.tags or []) | dump }}
+          spec:
+            type: service
+            lifecycle: ${{ parameters.lifecycle }}
+            owner: ${{ parameters.owner }}
+
+    - id: provision
+      name: Wait for the platform to provision
+      action: debug:wait
+      input:
+        seconds: 15
+
+    - id: publish
+      name: Publish to GitHub
+      if: ${{ parameters.publish }}
+      action: publish:github
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        description: ${{ parameters.description }}
+        repoVisibility: ${{ parameters.visibility }}
+        defaultBranch: main
+        topics: ${{ parameters.tags or [] }}
+
+    - id: register
+      name: Register in the catalog
+      if: ${{ parameters.publish }}
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+    - id: workspace
+      name: Show what was generated
+      action: debug:log
+      input:
+        message: 'Generated ${{ parameters.name }}; component entity valid: ${{ steps.validate.output.isValid }}'
+        listWorkspace: with-contents
+
+    - id: notify
+      name: Tell the requester and the owners
+      action: notification:send
+      input:
+        recipients: entity
+        entityRefs: ${{ [steps.gate.output.requestedBy, parameters.owner] }}
+        title: ${{ parameters.name }} has been provisioned
+        info: Approved by ${{ steps.gate.output.approvedBy | join(', ') }}.
+        link: /scaffolder-approvals/requests/${{ steps.gate.output.requestId }}
+        severity: normal
+        topic: provision-service
+
+  output:
+    links:
+      - title: Approval request
+        url: /scaffolder-approvals/requests/${{ steps.gate.output.requestId }}
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+        if: ${{ parameters.publish }}
+    text:
+      - title: Provisioned
+        content: |
+          **${{ parameters.displayName or parameters.name }}** is ready.
+
+          - Requested by `${{ steps.gate.output.requestedBy }}`
+          - Approved by `${{ steps.gate.output.approvedBy | join('`, `') }}`
+          - ${{ parameters.environments | length }} environment(s), ${{ parameters.regions | length }} region(s)
+          - Component entity valid: ${{ steps.validate.output.isValid }}
