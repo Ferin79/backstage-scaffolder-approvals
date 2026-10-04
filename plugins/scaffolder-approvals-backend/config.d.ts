@@ -30,8 +30,11 @@ export interface Config {
      *
      * Short by design: it is a single-use capability to run the template, and
      * it only has to survive the launch. Defaults to one hour.
+     *
+     * An object such as `{ hours: 1 }`, or a string such as `1h` or `PT1H`.
+     * Must be longer than zero; the backend refuses to start otherwise.
      */
-    grantTtl?: HumanDuration;
+    grantTtl?: HumanDuration | string;
 
     /**
      * Service principal subjects allowed to redeem an approval grant.
@@ -58,8 +61,13 @@ export interface Config {
        * Redaction nulls those two fields; the request and every decision on it
        * are kept indefinitely, because that is the audit trail this plugin
        * exists to produce. Defaults to 180 days.
+       *
+       * An object such as `{ days: 180 }`, or a string such as `180d` or
+       * `P180D`. Must be longer than zero; the backend refuses to start
+       * otherwise. Redaction cannot be switched off, so to keep values longer
+       * set a long window.
        */
-      redactAfter?: HumanDuration;
+      redactAfter?: HumanDuration | string;
     };
   };
 }

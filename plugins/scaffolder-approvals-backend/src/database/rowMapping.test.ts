@@ -37,6 +37,7 @@ const ROW: ApprovalRequestRow = {
   template_steps_hash: null,
   launch_attempt: 0,
   launch_attempted_at: null,
+  failure_reason: null,
   created_at: new Date('2026-09-12T10:00:00.000Z'),
   updated_at: new Date('2026-09-12T10:00:00.000Z'),
   expires_at: null,
@@ -108,6 +109,7 @@ describe('rowToApprovalRequest', () => {
     const mapped = rowToApprovalRequest(ROW);
     expect(Object.keys(mapped)).not.toContain('taskId');
     expect(Object.keys(mapped)).not.toContain('expiresAt');
+    expect(Object.keys(mapped)).not.toContain('failureReason');
     expect(mapped).toEqual(JSON.parse(JSON.stringify(mapped)));
   });
 
@@ -115,16 +117,19 @@ describe('rowToApprovalRequest', () => {
     expect(
       rowToApprovalRequest({
         ...ROW,
+        status: 'failed',
         task_id: 'task-1',
         expires_at: new Date('2026-09-15T10:00:00.000Z'),
         decided_at: new Date('2026-09-13T10:00:00.000Z'),
         redacted_at: new Date('2027-03-12T10:00:00.000Z'),
+        failure_reason: 'the task failed',
       }),
     ).toMatchObject({
       taskId: 'task-1',
       expiresAt: '2026-09-15T10:00:00.000Z',
       decidedAt: '2026-09-13T10:00:00.000Z',
       redactedAt: '2027-03-12T10:00:00.000Z',
+      failureReason: 'the task failed',
     });
   });
 

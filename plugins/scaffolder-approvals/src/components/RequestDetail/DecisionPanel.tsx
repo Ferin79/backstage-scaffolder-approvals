@@ -97,6 +97,17 @@ const ICON: Record<ApprovalRequestStatus, ReactElement> = {
 };
 
 /**
+ * A failure reason as a sentence of its own. The backend writes reasons to
+ * follow "did not complete:" in a notification, so they start in lower case
+ * and carry no full stop.
+ */
+function asSentence(reason: string): string {
+  const text = reason.trim();
+  const capitalised = text.charAt(0).toLocaleUpperCase('en-US') + text.slice(1);
+  return /[.!?…]$/.test(capitalised) ? capitalised : `${capitalised}.`;
+}
+
+/**
  * How far a pending request is towards its quorum, one segment per approval
  * it needs. Decoration: the heading above it says the same in words.
  */
@@ -194,6 +205,14 @@ export function DecisionPanel(props: DecisionPanelProps) {
                   } needed.`
                 : OUTCOME[status]}
             </Text>
+            {/* Why it failed, where the backend recorded it. "Did not
+                complete" on its own sent people to the task log, and a launch
+                the scaffolder refused has no task log to read. */}
+            {status === 'failed' && request.failureReason && (
+              <Text data-testid="failure-reason">
+                {asSentence(request.failureReason)}
+              </Text>
+            )}
             <PolicySummary policy={request.policySnapshot} color="secondary" />
             {pending && (
               <QuorumMeter

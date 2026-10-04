@@ -124,6 +124,11 @@ export function rowToApprovalRequest(row: ApprovalRequestRow): ApprovalRequest {
   if (row.template_steps_hash !== null) {
     request.templateStepsHash = row.template_steps_hash;
   }
+  // `?? null`, because a row built before the column existed has no key at all.
+  const failureReason = row.failure_reason ?? null;
+  if (failureReason !== null) {
+    request.failureReason = failureReason;
+  }
   const expiresAt = optionalTimestampToIso(row.expires_at, 'expires_at');
   if (expiresAt) {
     request.expiresAt = expiresAt;

@@ -106,6 +106,7 @@ describe('migrations', () => {
         'created_at',
         'decided_at',
         'expires_at',
+        'failure_reason',
         'id',
         'last_checked_at',
         'launch_attempt',
@@ -202,9 +203,13 @@ describe('migrations', () => {
     it('backfills self_approve from the snapshots already stored', async () => {
       // The upgrade path: requests stored before the column existed hold
       // `selfApprove` only inside their JSON, and the inbox query reads the
-      // column. Roll back just the newest migration to get there.
+      // column. Roll back just that migration, by name, to get there: it is no
+      // longer the newest.
       await knex.migrate.latest({ directory: migrationsDir });
-      await knex.migrate.down({ directory: migrationsDir });
+      await knex.migrate.down({
+        directory: migrationsDir,
+        name: '20261001000000_self_approve.js',
+      });
 
       const snapshotted = (id: string, policySnapshot: string) => ({
         id,

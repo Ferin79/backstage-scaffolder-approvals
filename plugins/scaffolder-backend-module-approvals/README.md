@@ -60,7 +60,7 @@ Nothing else is needed. The `gated` annotation is derived from the presence of t
 
 It is how the gate checks that the run matches what was approved. The action hashes these and the backend compares that against the hash it bound the grant to when the request was submitted, so a grant cannot be redeemed against a task running different parameters.
 
-A gate step without it fails rather than running unchecked. `${{ parameters }}` is the same whole-object form `fetch:template` uses.
+A gate step without it fails rather than running unchecked, and since such a gate could never pass, the approvals backend refuses to take a request for the template at all, instead of collecting approvals for a run that cannot happen. The same goes for anything narrower than the whole object, such as `${{ parameters.repository }}`. `${{ parameters }}` is the same whole-object form `fetch:template` uses.
 
 ### The gate must be first, and there may be only one
 

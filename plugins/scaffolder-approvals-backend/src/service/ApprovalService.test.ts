@@ -54,7 +54,12 @@ function gatedTemplate(gateInput: JsonObject, parameters?: unknown): Entity {
       type: 'service',
       ...(parameters ? { parameters } : {}),
       steps: [
-        { id: 'gate', action: GATE_ACTION_ID, input: gateInput },
+        {
+          id: 'gate',
+          action: GATE_ACTION_ID,
+          // Required of every usable gate; a test can still override it.
+          input: { values: '${{ parameters }}', ...gateInput },
+        },
         { id: 'grant', action: 'github:admin:grant' },
       ],
     },
@@ -79,7 +84,10 @@ function bypassTemplate(extra: {
         {
           id: 'gate',
           action: GATE_ACTION_ID,
-          input: { approvers: ['group:default/devx-team'] },
+          input: {
+            approvers: ['group:default/devx-team'],
+            values: '${{ parameters }}',
+          },
           ...extra.gate,
         },
         { id: 'grant', action: 'github:admin:grant', ...extra.grant },
@@ -121,6 +129,7 @@ describe('ApprovalService', () => {
       onDecided: jest.Mock;
       onLaunched: jest.Mock;
       onWithdrawn: jest.Mock;
+      onFailed: jest.Mock;
     };
 
     const requester = caller(REQUESTER, ['group:default/devx-team']);
@@ -144,6 +153,7 @@ describe('ApprovalService', () => {
         onDecided: jest.fn(),
         onLaunched: jest.fn(),
         onWithdrawn: jest.fn(),
+        onFailed: jest.fn(),
       };
 
       catalogFails = false;
@@ -323,6 +333,37 @@ describe('ApprovalService', () => {
         ).resolves.toEqual({ changed: true, reasons: ['steps'] });
       });
 
+      it('reports drift once the parameters change so the values no longer fit', async () => {
+        // H3: the steps hash cannot see this, and it is the change that makes
+        // the scaffolder refuse the launch.
+        entity = gatedTemplate(
+          { approvers: ['group:default/devx-team'] },
+          { required: ['repository'], properties: { repository: {} } },
+        );
+        (entity!.metadata as { uid?: string }).uid = 'uid-1';
+        const { id } = await submit();
+
+        (entity as any).spec.parameters = {
+          required: ['repository', 'ticket'],
+          properties: { repository: {}, ticket: { type: 'string' } },
+        };
+
+        const request = await store.getRequest(id);
+        await expect(
+          service.templateDrift(request!, requester.credentials),
+        ).resolves.toEqual({ changed: true, reasons: ['parameters'] });
+
+        // Only while it can still launch: a settled request has nothing left
+        // for an approver to act on.
+        await knex('approval_requests')
+          .where({ id })
+          .update({ status: 'completed' });
+        const settled = await store.getRequest(id);
+        await expect(
+          service.templateDrift(settled!, requester.credentials),
+        ).resolves.toEqual({ changed: false, reasons: [] });
+      });
+
       it('reports no drift while the template is untouched', async () => {
         (entity!.metadata as { uid?: string }).uid = 'uid-1';
         const { id } = await submit();
@@ -447,6 +488,29 @@ describe('ApprovalService', () => {
         await expect(submit()).rejects.toThrow(/unusable gate policy/);
         expect((await store.listRequests()).totalItems).toBe(0);
       });
+
+      // H1 in the second browser review: these were accepted and approved,
+      // and then every run failed at the gate.
+      it.each([
+        ['no values', { values: undefined }, /no 'values' input/],
+        [
+          'a subset of the values',
+          { values: { repository: '${{ parameters.repository }}' } },
+          /passes something other than/,
+        ],
+      ])(
+        'refuses a gate given %s, storing nothing',
+        async (_, input, reason) => {
+          entity = gatedTemplate({
+            approvers: ['group:default/devx-team'],
+            ...input,
+          });
+
+          await expect(submit()).rejects.toThrow(reason);
+          expect((await store.listRequests()).totalItems).toBe(0);
+          expect(observer.onSubmitted).not.toHaveBeenCalled();
+        },
+      );
 
       it('rejects invalid values and stores nothing', async () => {
         entity = gatedTemplate(
@@ -866,6 +930,67 @@ describe('ApprovalService', () => {
 
         expect(decided.status).toBe('approved');
         expect(decided.taskId).toBeUndefined();
+      });
+
+      it('fails at once, with the reason, when the scaffolder refuses the launch', async () => {
+        // H3 in the second browser review: the template's parameters changed
+        // under the request, the scaffolder answered 400 on every attempt,
+        // and the request sat at "Starting" for the whole grant TTL before
+        // failing as "the approval grant expired".
+        scaffold.mockRejectedValue(
+          new Error(
+            'Backend request failed, 400 Bad Request {"errors":[{"property":"instance","message":"requires property \\"ticket\\"","instance":{"repository":"backstage"}}]}',
+          ),
+        );
+        const { id } = await submit();
+
+        const decided = await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+
+        const reason =
+          'the scaffolder refused to start the template (400 Bad Request): requires property "ticket"';
+        expect(decided).toMatchObject({
+          status: 'failed',
+          failureReason: reason,
+        });
+        expect(decided.taskId).toBeUndefined();
+        expect(observer.onFailed).toHaveBeenCalledWith(
+          expect.objectContaining({ id, status: 'failed' }),
+          reason,
+        );
+        expect(observer.onLaunched).not.toHaveBeenCalled();
+
+        // Nothing left that could redeem it.
+        const grants = await knex('approval_grants').where({ request_id: id });
+        expect(grants).toHaveLength(1);
+        expect(grants[0].revoked_at).not.toBeNull();
+
+        // And a later sweep tick does not try again.
+        clock = new Date('2026-09-12T10:15:00.000Z');
+        await service.launch(id);
+        expect(scaffold).toHaveBeenCalledTimes(1);
+      });
+
+      it('still retries a launch whose outcome is unknown', async () => {
+        // A 5xx says nothing about whether a task exists (Q9).
+        scaffold.mockRejectedValueOnce(
+          new Error('Backend request failed, 503 Service Unavailable '),
+        );
+        const { id } = await submit();
+        await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: alice.credentials,
+        });
+        expect((await store.getRequest(id))?.status).toBe('approved');
+        expect(observer.onFailed).not.toHaveBeenCalled();
+
+        clock = new Date('2026-09-12T10:15:00.000Z');
+        await service.launch(id);
+        expect((await store.getRequest(id))?.status).toBe('running');
       });
 
       it('declines a second launch while one is in flight', async () => {

@@ -220,6 +220,14 @@ export interface ApprovalRequest {
 
   /** When the retention sweep redacted `values` and `summary`. */
   redactedAt?: string;
+
+  /**
+   * Why the request failed, when its status is `failed`: the scaffolder
+   * refusing to start the template, the task failing, or the approval lapsing
+   * before a launch got through. Undefined for any other status, and for a
+   * request that failed before reasons were recorded.
+   */
+  failureReason?: string;
 }
 
 /**
@@ -286,6 +294,9 @@ export interface TemplateDrift {
    * `missing` — the template is no longer in the catalog.
    * `replaced` — same name, different entity: deleted and recreated.
    * `steps` — the steps that will run have been edited.
+   * `parameters` — the template's parameters have changed so that the
+   * submitted values no longer fit them, and the scaffolder will refuse to
+   * start it.
    * `unknown` — the request predates drift tracking, so there is nothing to
    * compare against.
    */
@@ -297,7 +308,12 @@ export interface TemplateDrift {
  *
  * @public
  */
-export type TemplateDriftReason = 'missing' | 'replaced' | 'steps' | 'unknown';
+export type TemplateDriftReason =
+  | 'missing'
+  | 'replaced'
+  | 'steps'
+  | 'parameters'
+  | 'unknown';
 
 /**
  * How far a pending request has got towards its quorum.

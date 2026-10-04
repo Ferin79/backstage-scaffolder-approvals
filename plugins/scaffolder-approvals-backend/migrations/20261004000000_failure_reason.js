@@ -1,0 +1,50 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// @ts-check
+
+/**
+ * Why a request failed, in words a requester can act on.
+ *
+ * A failed request used to say only that it had failed. The reason went into
+ * the notification and the log and nowhere else, so somebody opening the
+ * request page — the canonical view of a gated run — could not find out what
+ * happened. Worse, a launch the scaffolder refused outright (the template's
+ * parameters had changed under the request) was retried until the grant lapsed
+ * and then blamed on the lapse.
+ *
+ * Text and nullable: existing rows, and requests that have not failed, have no
+ * reason. Not indexed; nothing queries by it.
+ *
+ * @param {import('knex').Knex} knex
+ */
+exports.up = async function up(knex) {
+  await knex.schema.alterTable('approval_requests', table => {
+    table
+      .text('failure_reason')
+      .nullable()
+      .comment('Why the request failed, for the request page');
+  });
+};
+
+/**
+ * @param {import('knex').Knex} knex
+ */
+exports.down = async function down(knex) {
+  await knex.schema.alterTable('approval_requests', table => {
+    table.dropColumn('failure_reason');
+  });
+};

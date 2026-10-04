@@ -34,6 +34,8 @@ const EXPLANATIONS: Record<TemplateDriftReason, string> = {
     'The template was deleted and recreated since this request was submitted. It shares a name with the one that was asked for, and nothing else.',
   steps:
     'The steps in this template have been edited since the request was submitted. The edited steps are the ones that will run, not the ones that were asked for.',
+  parameters:
+    "The template's parameters have changed since the request was submitted, and the submitted values no longer fit them. The scaffolder will refuse to start it, so approving will fail; the requester needs to submit it again.",
   unknown: '',
 };
 

@@ -87,6 +87,39 @@ describe('checkGatedTemplate', () => {
     );
   });
 
+  // H1 in the second browser review: these were accepted, offered on Create…
+  // and approved, then failed at the gate on every run — an approval spent on
+  // a request that could never run.
+  it.each([
+    ['no values input', { values: undefined }, /no 'values' input/],
+    [
+      'a subset of the parameters',
+      { values: { repository: '${{ parameters.repository }}' } },
+      /passes something other than/,
+    ],
+    [
+      'one parameter as an expression',
+      { values: '${{ parameters.repository }}' },
+      /passes something other than/,
+    ],
+  ])('refuses a gate given %s', (_, input, reason) => {
+    const check = checkGatedTemplate(template([gate({}, input), after]), REF);
+
+    expect(check).toMatchObject({ gated: true, usable: false });
+    expect(check.gated && !check.usable && check.problem).toMatch(
+      /^template:default\/probe has an unusable gate: /,
+    );
+    expect(check.gated && !check.usable && check.problem).toMatch(reason);
+  });
+
+  it('accepts the whole parameters however it is spaced', () => {
+    for (const values of ['${{parameters}}', '  ${{   parameters  }} ']) {
+      expect(
+        checkGatedTemplate(template([gate({}, { values }), after]), REF),
+      ).toMatchObject({ gated: true, usable: true });
+    }
+  });
+
   it('refuses a secret-typed parameter', () => {
     const check = checkGatedTemplate(
       template([gate(), after], {

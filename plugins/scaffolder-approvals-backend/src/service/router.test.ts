@@ -63,7 +63,10 @@ function newTemplate(): Entity {
         {
           id: 'gate',
           action: GATE_ACTION_ID,
-          input: { approvers: ['group:default/devx-team'] },
+          input: {
+            approvers: ['group:default/devx-team'],
+            values: '${{ parameters }}',
+          },
         },
         { id: 'grant', action: 'github:admin:grant' },
       ],

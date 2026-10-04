@@ -85,8 +85,8 @@ export interface ApprovalNotifierOptions {
  * failure is swallowed with a log. A notification that cannot be sent is not a
  * reason to undo an approval that has already been committed.
  *
- * Implements {@link ApprovalObserver} for the two events the service raises,
- * and adds the two the sweeps raise.
+ * Implements {@link ApprovalObserver} for the events the service raises, and
+ * adds the ones only the sweeps raise.
  */
 export class ApprovalNotifier implements ApprovalObserver {
   private readonly logger: LoggerService;

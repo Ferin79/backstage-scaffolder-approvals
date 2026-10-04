@@ -454,6 +454,20 @@ describe('RequestDetail', () => {
       );
     });
 
+    // H3: the scaffolder would refuse these values, so approving cannot work.
+    it('warns that the values no longer fit the parameters', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: true, reasons: ['parameters'] },
+        }),
+      });
+
+      const notice = await screen.findByRole('alert');
+      expect(notice).toHaveTextContent(/submitted values no longer fit them/);
+      expect(notice).toHaveTextContent(/approving will fail/);
+    });
+
     it('explains a template that has left the catalog', async () => {
       await render({
         getRequest: async () => ({
@@ -684,6 +698,32 @@ describe('RequestDetail', () => {
       ).not.toBeInTheDocument();
       expect(screen.queryByText(/approvals needed/)).not.toBeInTheDocument();
       expect(screen.queryByText('Expires')).not.toBeInTheDocument();
+    });
+
+    it('says why a failed request failed', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          status: 'failed' as const,
+          failureReason:
+            'the scaffolder refused to start the template (400 Bad Request): requires property "ticket"',
+        }),
+      });
+
+      expect(await screen.findByTestId('failure-reason')).toHaveTextContent(
+        'The scaffolder refused to start the template (400 Bad Request): requires property "ticket".',
+      );
+    });
+
+    it('keeps an old failed request, recorded without a reason, as it was', async () => {
+      await render({
+        getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
+      });
+
+      expect(
+        await screen.findByText('Approved, but the template did not complete.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('failure-reason')).not.toBeInTheDocument();
     });
 
     it('names when an expired request timed out', async () => {

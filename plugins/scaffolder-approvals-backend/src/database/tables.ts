@@ -57,6 +57,8 @@ export interface ApprovalRequestRow {
   launch_attempt: number;
   /** When a launch was last claimed; null means never. */
   launch_attempted_at: DbTimestamp | null;
+  /** Why the request failed; null unless it has. */
+  failure_reason: string | null;
   created_at: DbTimestamp;
   updated_at: DbTimestamp;
   expires_at: DbTimestamp | null;

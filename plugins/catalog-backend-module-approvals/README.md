@@ -33,12 +33,12 @@ It is not what enforces anything. It tells the UI which templates to route throu
 
 The processor logs, and never blocks ingestion, when a gated template looks wrong:
 
-| Warning                                      | Why it matters                                                                            |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Gate is not the first step                   | Steps before it run before anyone has approved, while the template looks gated            |
-| More than one gate                           | Which policy applies is ambiguous, and the second grant could never be satisfied          |
-| Gate has no `values` input                   | The gate cannot check the run against what was approved, so it refuses every run          |
-| A later step uses `secrets.USER_OAUTH_TOKEN` | That token belongs to the requester and expires long before a multi-day approval finishes |
+| Warning                                      | Why it matters                                                                                                                                                                           |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gate is not the first step                   | Steps before it run before anyone has approved, while the template looks gated                                                                                                           |
+| More than one gate                           | Which policy applies is ambiguous, and the second grant could never be satisfied                                                                                                         |
+| Gate's `values` is not `${{ parameters }}`   | The gate cannot check the run against what was approved, so it refuses every run. The backend refuses such a template at submit, and the scaffolder page says it cannot be requested yet |
+| A later step uses `secrets.USER_OAUTH_TOKEN` | That token belongs to the requester and expires long before a multi-day approval finishes                                                                                                |
 
 These are warnings on purpose. An error that kept a template out of the catalog would make _deleting the gate_ the way to make it appear again, which is the wrong incentive for the one step that enforces anything.
 

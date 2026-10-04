@@ -19,7 +19,7 @@ import type {
   TemplateEntityStepV1beta3,
   TemplateEntityV1beta3,
 } from '@backstage/plugin-scaffolder-common';
-import { findGateStep, GateStepError } from './gateStep';
+import { findGateStep, findGateValuesProblem, GateStepError } from './gateStep';
 import { readGatePolicy } from './gatePolicy';
 import { findSecretParameters } from './secretFields';
 import type { GatePolicy } from './types';
@@ -44,8 +44,8 @@ export type GatedTemplateCheck =
 
 /**
  * Check a template the way the approvals backend does before it accepts a
- * request for it: the gate's shape, then secret-typed parameters, then the gate
- * policy. Everything submit refuses about a *template*, that is — validating
+ * request for it: the gate's shape, then its `values` input, then secret-typed
+ * parameters, then the gate policy. Everything submit refuses about a *template*, that is — validating
  * the submitted values needs the values, and stays with the backend.
  *
  * One function, used by the backend at submit and by the wizard's review step
@@ -80,6 +80,17 @@ export function checkGatedTemplate(
 
   if (!step) {
     return { gated: false };
+  }
+
+  // A gate that cannot check the run against the approval refuses every run,
+  // so accepting a request for it would spend an approval on nothing (Q3).
+  const valuesProblem = findGateValuesProblem(step);
+  if (valuesProblem) {
+    return {
+      gated: true,
+      usable: false,
+      problem: `${templateRef} has an unusable gate: ${valuesProblem}`,
+    };
   }
 
   // S7. A secret-typed parameter never reaches the request at all — the
