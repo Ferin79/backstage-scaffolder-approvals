@@ -1,31 +1,43 @@
 # @ferin79/backstage-plugin-scaffolder-backend-module-approvals
 
-Provides the `approval:gate` scaffolder action.
+A scaffolder backend module that provides the **`approval:gate`** action, part of [Scaffolder Approvals](https://github.com/Ferin79/backstage-scaffolder-approvals).
 
-This action is the enforcement point. A gated template carries it as its first step; the action demands a single-use grant, minted by the approvals backend only once a request has been approved, and throws without one. Running a gated template directly — bypassing the approvals UI — therefore fails before any real step executes.
+The gate is where approval is enforced. A gated template has `approval:gate` as its first step. The step only lets the run continue if the task holds a single-use grant, which the approvals backend mints only when a request has been approved. Started any other way, including by calling the scaffolder API directly, the template fails at this step and nothing after it runs.
 
 ## Installation
 
+Install it in the **same backend as the scaffolder**, together with the approvals backend:
+
+```sh
+yarn --cwd packages/backend add \
+  @ferin79/backstage-plugin-scaffolder-backend-module-approvals \
+  @ferin79/backstage-plugin-scaffolder-approvals-backend
+```
+
 ```ts
 // packages/backend/src/index.ts
+backend.add(import('@backstage/plugin-scaffolder-backend'));
 backend.add(
   import('@ferin79/backstage-plugin-scaffolder-backend-module-approvals'),
 );
+backend.add(import('@ferin79/backstage-plugin-scaffolder-approvals-backend'));
 ```
 
-Install it in the same backend as the scaffolder. It needs the approvals backend (`@ferin79/backstage-plugin-scaffolder-approvals-backend`) to be reachable through discovery.
+The action reaches the approvals backend through discovery, so in a split deployment the scaffolder's backend must be able to resolve the `scaffolder-approvals` plugin.
 
 ## Gating a template
 
-Add the step first, before anything that has an effect:
+Add the gate as the first step:
 
 ```yaml
 apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: request-github-admin
+  title: Request GitHub admin access
 spec:
   type: service
+  owner: group:default/devx-team
   parameters:
     - title: Access
       required: [repository, justification]
@@ -34,69 +46,76 @@ spec:
           type: string
         justification:
           type: string
-
   steps:
     - id: gate
       name: Await approval
       action: approval:gate
       input:
-        approvers:
-          - group:default/devx-team
+        approvers: [group:default/devx-team]
         quorum: 2
+        timeout: { hours: 72 }
         summary: 'Admin on ${{ parameters.repository }}'
         values: ${{ parameters }}
 
+    # Runs only after approval. Replace with the action that does the work.
     - id: grant
       name: Grant access
-      action: github:admin:grant
+      action: debug:log
       input:
-        repository: ${{ parameters.repository }}
-        requestedBy: ${{ steps.gate.output.requestedBy }}
+        message: >-
+          Admin on ${{ parameters.repository }} for
+          ${{ steps.gate.output.requestedBy }}, approved by
+          ${{ steps.gate.output.approvedBy }}
 ```
 
-Nothing else is needed. The `gated` annotation is derived from the presence of this step, so there is no second place to keep in sync.
-
-### `values: ${{ parameters }}` is not optional
-
-It is how the gate checks that the run matches what was approved. The action hashes these and the backend compares that against the hash it bound the grant to when the request was submitted, so a grant cannot be redeemed against a task running different parameters.
-
-A gate step without it fails rather than running unchecked, and since such a gate could never pass, the approvals backend refuses to take a request for the template at all, instead of collecting approvals for a run that cannot happen. The same goes for anything narrower than the whole object, such as `${{ parameters.repository }}`. `${{ parameters }}` is the same whole-object form `fetch:template` uses.
-
-### The gate must be first, and there may be only one
-
-Any step before the gate would run before anyone had approved, while the template still looked gated. Both shapes are rejected outright rather than interpreted.
+Nothing else is needed: the catalog module ([`@ferin79/backstage-plugin-catalog-backend-module-approvals`](https://github.com/Ferin79/backstage-scaffolder-approvals/tree/main/plugins/catalog-backend-module-approvals)) marks the template as gated because it has this step.
 
 ## Input
 
-| Field         | Required | Description                                                                                                                         |
-| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `approvers`   | yes      | Group or user entity refs that may decide. Case and namespace are normalised.                                                       |
-| `values`      | yes      | Always `${{ parameters }}`. See above.                                                                                              |
-| `quorum`      | no       | How many **distinct** principals must approve. Default 1. May exceed `approvers.length`, since one group can expand to many people. |
-| `selfApprove` | no       | Whether the requester may approve their own request. Default `false`.                                                               |
-| `timeout`     | no       | How long the request may stay pending, as a `HumanDuration` such as `{ hours: 72 }`. Default: forever.                              |
-| `summary`     | no       | A short description of the ask, shown to approvers. Templated, so it can reference `parameters`.                                    |
+| Field         | Required | Default        | Description                                                                                                                                                           |
+| ------------- | -------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `approvers`   | Yes      |                | Group or user entity refs whose members may decide. Must include the kind (`group:` or `user:`); the namespace defaults to `default`. Cannot be a template expression |
+| `values`      | Yes      |                | Always exactly `${{ parameters }}`. The gate checks these against the approved values                                                                                 |
+| `quorum`      | No       | `1`            | How many different people must approve. May exceed the number of `approvers` entries, since a group has many members                                                  |
+| `selfApprove` | No       | `false`        | Whether the requester may approve their own request                                                                                                                   |
+| `timeout`     | No       | No timeout     | How long the request may wait, such as `{ hours: 72 }`. Must be greater than zero                                                                                     |
+| `summary`     | No       | Template title | What approvers see. `${{ parameters.<path> }}` is filled in                                                                                                           |
 
-A single denial rejects the request outright, whatever the approval count — a quorum is a threshold for assent, not a tally.
+One denial rejects a request, whatever the approval count.
 
 ## Output
 
-The task is launched by this plugin's service principal, so `task.createdBy` names the plugin rather than a person. These outputs are the only record of who actually asked and who agreed, and later steps should use them wherever they would otherwise reach for the task's creator.
+An approved run is started by the approvals plugin's service principal, so the task does not know who asked. Use these instead:
 
-| Field         | Description                                          |
+| Output        | Description                                          |
 | ------------- | ---------------------------------------------------- |
 | `requestId`   | The approval request that unlocked this run          |
 | `requestedBy` | Entity ref of the person who asked                   |
 | `approvedBy`  | Entity refs of the people who approved, oldest first |
 
-## Notes
+`${{ user.* }}` is empty in an approved run, and `secrets.USER_OAUTH_TOKEN` will have expired; use these outputs and integration credentials instead.
 
-- **Dry runs do not exercise the gate.** A dry run has no grant, and pretending to hold one would make the gate look passable.
-- **An unreachable approvals backend fails the step.** Treating an outage as a pass would turn it into an ungated execution.
-- **Every refusal reads the same.** Whether the grant was already used, expired, or bound to different parameters, the answer is identical — distinguishing them would tell a token holder which part to change.
+## Rules
+
+The approvals backend refuses requests for a template that breaks any of these, and the catalog module warns about it:
+
+- the gate is the **first** step, and there is **only one**;
+- `values` is exactly `${{ parameters }}`;
+- the gate has no `if:` or `each:`;
+- no later step runs on `always()` or `failure()`;
+- the gate carries every `backstage:permissions.tags` value that another step carries;
+- the template has no `ui:field: Secret` parameters.
+
+[Writing gated templates](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/writing-gated-templates.md) explains each one.
+
+## Behaviour
+
+- **Dry runs fail at the gate.** A dry run has no grant, and pretending it had one would make the gate look passable.
+- **An unreachable approvals backend fails the step.** An outage never turns into an ungated run.
+- **Every refusal reads the same,** whether the grant was used, expired, or bound to different values, so a token holder cannot learn which part to change.
 
 ## Documentation
 
-- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Plugin guide](../../docs/README.md)
+- [Writing gated templates](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/writing-gated-templates.md)
+- [Security model](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md)
+- [All documentation](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/README.md)

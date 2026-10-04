@@ -1,9 +1,14 @@
-# The Plugins Folder
+# Plugins
 
-This is where your own plugins and their associated modules live, each in a
-separate folder of its own.
+The six Scaffolder Approvals packages. See the [package overview](../docs/README.md#packages) for how they fit together.
 
-If you want to create a new plugin here, go to your project root directory, run
-the command `yarn new`, and follow the on-screen instructions.
+| Package                                                                      | Role              | What it does                                                        |
+| ---------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------- |
+| [`scaffolder-approvals`](scaffolder-approvals)                               | Frontend plugin   | Approvals page, home-page card, gated review step and template card |
+| [`scaffolder-approvals-backend`](scaffolder-approvals-backend)               | Backend plugin    | Requests, decisions and grants; starts approved templates; REST API |
+| [`scaffolder-backend-module-approvals`](scaffolder-backend-module-approvals) | Scaffolder module | The `approval:gate` action                                          |
+| [`catalog-backend-module-approvals`](catalog-backend-module-approvals)       | Catalog module    | Marks gated templates, and warns about gates that cannot work       |
+| [`scaffolder-approvals-common`](scaffolder-approvals-common)                 | Common library    | Shared types, permissions and helpers                               |
+| [`scaffolder-approvals-node`](scaffolder-approvals-node)                     | Node library      | Backend helpers and permission rules                                |
 
-You can also check out existing plugins on [the plugin marketplace](https://backstage.io/plugins)!
+To add a new package, run `yarn new` from the repository root.

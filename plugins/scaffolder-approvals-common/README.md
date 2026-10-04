@@ -1,32 +1,68 @@
 # @ferin79/backstage-plugin-scaffolder-approvals-common
 
-Types, permissions and pure helpers shared by every scaffolder-approvals package. Isomorphic — safe to import from frontend and backend code alike, with no Node-only dependencies.
+Types, permissions, constants and helpers shared by every [Scaffolder Approvals](https://github.com/Ferin79/backstage-scaffolder-approvals) package. It has no Node-only dependencies, so it is safe to import from frontend and backend code.
 
-Most apps never import it directly. It is worth knowing about if you are writing an RBAC policy, a notification consumer, or a UI that has to agree with the backend.
+You do not install it yourself: the other packages depend on it. Import from it when you write a permission policy, an events subscriber, or UI that needs to agree with the backend.
 
-## What is in it
+```sh
+yarn --cwd packages/backend add @ferin79/backstage-plugin-scaffolder-approvals-common
+```
 
-**Types.** `ApprovalRequest`, `ApprovalDecision`, `GatePolicy`, `ApprovalRequestStatus`, and the request and response shapes of the backend API — including `ConsumeGrantRequest` and `ConsumeGrantResponse`, which the gate action and the backend router are both typed against so that neither can drift from the other.
+## Permissions
 
-**Permissions.** Four, for use in a permission policy:
+| Export                            | Name                                 | Type     | Guards                       |
+| --------------------------------- | ------------------------------------ | -------- | ---------------------------- |
+| `approvalRequestCreatePermission` | `scaffolderApprovals.request.create` | Basic    | Submitting a request         |
+| `approvalRequestReadPermission`   | `scaffolderApprovals.request.read`   | Resource | Listing and reading requests |
+| `approvalRequestDecidePermission` | `scaffolderApprovals.request.decide` | Resource | Approving or denying         |
+| `approvalRequestCancelPermission` | `scaffolderApprovals.request.cancel` | Resource | Withdrawing a request        |
 
-| Permission                           | Type     | Guards                       |
-| ------------------------------------ | -------- | ---------------------------- |
-| `scaffolderApprovals.request.create` | basic    | Submitting a request         |
-| `scaffolderApprovals.request.read`   | resource | Listing and reading requests |
-| `scaffolderApprovals.request.decide` | resource | Approving or denying         |
-| `scaffolderApprovals.request.cancel` | resource | Withdrawing a request        |
+`scaffolderApprovalsPermissions` lists all four. The resource type is `RESOURCE_TYPE_APPROVAL_REQUEST` (`scaffolder-approval-request`). The permission rules are in [`-node`](https://github.com/Ferin79/backstage-scaffolder-approvals/tree/main/plugins/scaffolder-approvals-node).
 
-**Helpers**, each shared because two sides of the system must agree on the answer:
+```ts
+import { isPermission } from '@backstage/plugin-permission-common';
+import { approvalRequestDecidePermission } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 
-- `checkDecisionEligibility` — whether someone may decide on a request, and if not, why: not an approver, self-approval, already voted, or no longer pending. The backend refuses with these reasons and the UI explains a withheld button with the same ones.
-- `computeQuorumProgress` — "1 of 2 approvals". A single denial rejects a request outright; a quorum is a threshold for assent, not a tally.
-- `readGatePolicy` — parses and normalises an `approval:gate` step's input. Entity refs are normalised, so `Group:DevX` and `group:default/devx` match.
-- `canonicalJson` — deterministic JSON, the input to the values hash that binds a grant to the parameters that were approved. It throws rather than coercing values JSON cannot represent, since coercion would let two different inputs share a hash.
-- `renderGateSummary` — fills `${{ parameters.<path> }}` in a gate's summary. The scaffolder's own templating has not run when an approver reads it, so without this they would see the literal expression. Deliberately not a templating engine: anything other than that one form is left exactly as written.
+if (isPermission(request.permission, approvalRequestDecidePermission)) {
+  // ...
+}
+```
+
+A full example policy is in [Security model and permissions](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md#example-policy).
+
+## Types
+
+`ApprovalRequest`, `ApprovalRequestWithDecisions`, `ApprovalDecision`, `ApprovalRequestStatus`, `GatePolicy`, `TemplateDrift`, and the request and response shapes of the backend API (`ListApprovalRequestsOptions`, `ListApprovalRequestsResponse`, `SubmitApprovalRequestOptions`, `SubmitApprovalRequestResponse`, `ConsumeGrantRequest`, `ConsumeGrantResponse`, and so on).
+
+`APPROVAL_REQUEST_STATUSES` and `TERMINAL_APPROVAL_REQUEST_STATUSES` list the statuses.
+
+## Constants
+
+| Export                           | Value                                     | Use                                                  |
+| -------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
+| `SCAFFOLDER_APPROVALS_PLUGIN_ID` | `scaffolder-approvals`                    | Plugin id; also the events topic                     |
+| `APPROVALS_SIGNAL_CHANNEL`       | `scaffolder-approvals`                    | The signals channel request changes are broadcast on |
+| `GATE_ACTION_ID`                 | `approval:gate`                           | The gate action's id                                 |
+| `GATED_ANNOTATION`               | `scaffolder-approvals.backstage.io/gated` | The annotation the catalog module derives            |
+| `APPROVAL_GRANT_SECRET`          | `APPROVAL_GRANT`                          | The task secret carrying the grant                   |
+| `DEFAULT_QUORUM`                 | `1`                                       |                                                      |
+| `DEFAULT_SELF_APPROVE`           | `false`                                   |                                                      |
+
+## Helpers
+
+Each is shared because two sides of the system must give the same answer:
+
+| Helper                     | What it does                                                                                                                                                                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkDecisionEligibility` | Whether someone may decide on a request and, if not, why: not an approver, their own request, already voted, or no longer pending. The backend refuses with these reasons and the UI explains a missing button with the same ones |
+| `computeQuorumProgress`    | "1 of 2 approvals", and whether a denial has rejected the request                                                                                                                                                                 |
+| `readGatePolicy`           | Parses and normalises an `approval:gate` step's input, so `Group:DevX` and `group:default/devx` match                                                                                                                             |
+| `checkGatedTemplate`       | Whether a template is gated and, if its gate is unusable, why                                                                                                                                                                     |
+| `canonicalJson`            | Deterministic JSON, the input to the values hash that binds a grant to the approved values. Throws rather than coercing values JSON cannot represent                                                                              |
+| `renderGateSummary`        | Fills `${{ parameters.<path> }}` in a gate's summary for display; everything else is left as written                                                                                                                              |
+| `findSecretParameters`     | The parameters a template declares as `ui:field: Secret`                                                                                                                                                                          |
 
 ## Documentation
 
-- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Plugin guide](../../docs/README.md)
+- [All documentation](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/README.md)
+- [API reference](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/api-reference.md)

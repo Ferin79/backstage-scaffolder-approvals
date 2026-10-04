@@ -32,12 +32,12 @@ import { validateValues } from './validateValues';
  * checks a real submission goes through.
  */
 function readmeTemplate(): Entity {
-  // The plugin guide, which holds the worked example.
+  // The template authors' guide, which holds the worked example.
   const readme = readFileSync(
-    resolve(__dirname, '../../../../docs/README.md'),
+    resolve(__dirname, '../../../../docs/writing-gated-templates.md'),
     'utf8',
   );
-  const start = readme.indexOf('## A worked example');
+  const start = readme.indexOf('## The smallest gated template');
   expect(start).toBeGreaterThan(-1);
 
   const open = readme.indexOf('```yaml', start);

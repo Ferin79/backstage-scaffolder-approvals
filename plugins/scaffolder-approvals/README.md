@@ -1,23 +1,34 @@
 # @ferin79/backstage-plugin-scaffolder-approvals
 
-The approvals inbox, your own requests, and one request in detail.
+The frontend for [Scaffolder Approvals](https://github.com/Ferin79/backstage-scaffolder-approvals): approval gates for Backstage software templates.
 
-This is the canonical view of a gated run — not the scaffolder's task page. A gated template is launched by the approvals backend's service principal, so the task records this plugin as its author rather than the person who asked for it. Who asked and who agreed lives here.
+It gives requesters and approvers an approvals inbox, a list of their own requests, a page per request, a home-page card, and the scaffolder pieces that let a gated template end in **Request approval** instead of **Create**.
+
+![A request page](https://raw.githubusercontent.com/Ferin79/backstage-scaffolder-approvals/main/docs/images/request-completed.png)
+
+This package needs the backend packages too. The [getting started guide](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/getting-started.md) installs everything in order.
+
+## Features
+
+| Feature             | Export                               | Where it appears                                                                    |
+| ------------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| Approvals page      | `ApprovalsIndexPage`                 | `/scaffolder-approvals`: **Waiting on you**, **Your requests**, and `/requests/:id` |
+| Gated review step   | `GatedReviewStep`                    | The scaffolder wizard's last step, for gated templates                              |
+| Gated template card | `GatedTemplateCard`                  | The **Create…** page, naming each gated template's approvers                        |
+| Home-page card      | `PendingApprovalsHomePageCard`       | The home page: how many requests are waiting on you                                 |
+| Standalone card     | `PendingApprovalsCard`               | Anywhere else you want the same card                                                |
+| Status badge        | `StatusPill`                         | Your own components                                                                 |
+| API client          | `approvalsApiRef`, `ApprovalsClient` | Your own components                                                                 |
 
 ## Installation
 
-The plugin dual-ships, so install it whichever way your app is wired.
-
-### New frontend system
-
-```ts
-// packages/app/src/App.tsx
-import approvalsPlugin from '@ferin79/backstage-plugin-scaffolder-approvals/alpha';
-
-export const app = createApp({ features: [approvalsPlugin] });
+```sh
+yarn --cwd packages/app add @ferin79/backstage-plugin-scaffolder-approvals
 ```
 
 ### Legacy frontend system
+
+**1. Mount the page** at `/scaffolder-approvals`. Notification links assume this path.
 
 ```tsx
 // packages/app/src/App.tsx
@@ -26,28 +37,122 @@ import { ApprovalsIndexPage } from '@ferin79/backstage-plugin-scaffolder-approva
 <Route path="/scaffolder-approvals" element={<ApprovalsIndexPage />} />;
 ```
 
-Add a sidebar link to `/scaffolder-approvals` so approvers can find their inbox.
+**2. Add a sidebar item:**
 
-Both entrypoints mount the same components; only the wiring differs.
+```tsx
+// packages/app/src/components/Root/Root.tsx
+import ApprovalsIcon from '@material-ui/icons/AssignmentTurnedIn';
 
-## What you get
+<SidebarItem icon={ApprovalsIcon} to="scaffolder-approvals" text="Approvals" />;
+```
 
-| Page                                                   | What it answers                                        |
-| ------------------------------------------------------ | ------------------------------------------------------ |
-| **Waiting on you** — `/scaffolder-approvals`           | Which requests can I decide on right now?              |
-| **Your requests** — `/scaffolder-approvals/mine`       | What happened to the things I asked for?               |
-| **One request** — `/scaffolder-approvals/requests/:id` | Who asked, what for, who has agreed, and what I can do |
+**3. Install the review step and template card** on the scaffolder page. `ReviewStep` is a complete review step wrapped in `GatedReviewStep`; copy it from the [getting started guide](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/getting-started.md#33-let-requesters-submit-from-the-scaffolder).
 
-The inbox lists only pending requests — somebody looking for work does not want a history of everything they ever approved. Your own requests list every status, because "it failed" is often the answer you need.
+```tsx
+// packages/app/src/App.tsx
+import { GatedTemplateCard } from '@ferin79/backstage-plugin-scaffolder-approvals';
+import { ReviewStep } from './components/scaffolder/ReviewStep';
 
-The pages are built from [Backstage UI](https://ui.backstage.io): BUI's plugin header names the plugin and carries the two lists as tabs. A request page puts where it stands — and the approve, deny, withdraw or resubmit buttons — in one panel at the top, with its activity under it and its details and parameters beside it; on a narrow screen the details and parameters come straight after the panel. The plugin draws that header itself in both frontend systems, so the new-system page is registered with `noHeader`.
+<Route
+  path="/create"
+  element={
+    <ScaffolderPage
+      components={{
+        ReviewStepComponent: ReviewStep,
+        TemplateCardComponent: GatedTemplateCard,
+      }}
+    />
+  }
+/>;
+```
 
-## Notes
+**4. Add the home-page card** (optional):
 
-- **The decide buttons and the backend agree by construction.** Both use `checkDecisionEligibility` from the common package, so a disabled control and a server refusal give the same reason: you are not an approver, you cannot approve your own request, you have already decided, or it has already been decided.
-- **A redacted request renders as an explanation, not a blank.** After the retention window the submitted values and summary are gone, but the request and its decision history remain — that is the audit trail the feature exists to produce.
-- **Status labels are written for people, not for the state machine.** `approved` shows as "Starting", because it is a transient state and a requester seeing "Approved" with nothing happening would reasonably be confused.
-- **The status pill is BUI's `Badge`, tinted.** `Badge` has no colour variants, so the pill adds a tint from BUI's status colour variables, which is also what makes it correct in both themes. It carries a dot as well as colour, so status does not depend on colour alone.
+```tsx
+import { PendingApprovalsHomePageCard } from '@ferin79/backstage-plugin-scaffolder-approvals';
+
+<PendingApprovalsHomePageCard />;
+```
+
+**5. Load Backstage UI's stylesheet**, if your app does not already:
+
+```tsx
+// packages/app/src/index.tsx
+import '@backstage/ui/css/styles.css';
+```
+
+### New frontend system
+
+```ts
+// packages/app/src/App.tsx
+import approvalsPlugin from '@ferin79/backstage-plugin-scaffolder-approvals/alpha';
+
+export default createApp({ features: [approvalsPlugin] });
+```
+
+This adds the approvals page with its own **Approvals** nav item, and an **Approvals** home-page widget. The gated review step and template card are not available in the new frontend system, because its scaffolder page has no slot for a custom review step (Backstage 1.55). Requesters there get a failed task telling them the template needs approval; the gate itself still holds.
+
+## Components
+
+### `GatedReviewStep`
+
+Replaces the wizard's last step for gated templates: it shows who will be asked and submits an approval request. For every other template it renders its `children` untouched.
+
+| Prop          | Type              | Description                                                                                                                     |
+| ------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `...props`    | `ReviewStepProps` | The props the scaffolder passes to a review step                                                                                |
+| `children`    | `ReactNode`       | **Required.** Your complete review step (values table plus Back and Create), used for ungated templates                         |
+| `templateRef` | `string`          | The template being reviewed. Read from the scaffolder's route when omitted; pass it if you mount the wizard at a different path |
+
+![The gated review step](https://raw.githubusercontent.com/Ferin79/backstage-scaffolder-approvals/main/docs/images/wizard-review-step.png)
+
+### `GatedTemplateCard`
+
+The scaffolder's own template card, plus an "Approver: …" link per approver on gated templates. Use it as `TemplateCardComponent`.
+
+| Prop              | Type                                                   | Description                              |
+| ----------------- | ------------------------------------------------------ | ---------------------------------------- |
+| `template`        | `TemplateEntityV1beta3`                                | The template to show                     |
+| `additionalLinks` | `{ icon: IconComponent; text: string; url: string }[]` | Extra links, such as "View TechDocs"     |
+| `onSelected`      | `(template: TemplateEntityV1beta3) => void`            | Called when someone chooses the template |
+
+A template whose gate the backend would refuse shows **Needs approval** without approvers, and the review step explains what is wrong.
+
+### `PendingApprovalsHomePageCard` and `PendingApprovalsCard`
+
+How many requests are waiting on the signed-in user, with a link to the inbox. `PendingApprovalsHomePageCard` is a [home plugin](https://backstage.io/docs/getting-started/homepage) card extension; `PendingApprovalsCard` is the same card as a plain component.
+
+![The home-page card](https://raw.githubusercontent.com/Ferin79/backstage-scaffolder-approvals/main/docs/images/home-page-card.png)
+
+### `StatusPill`
+
+A request status as a coloured badge with a dot, labelled for people: `pending` shows as "Awaiting approval", `approved` as "Starting", `rejected` as "Denied", `cancelled` as "Withdrawn".
+
+| Prop     | Type                    |
+| -------- | ----------------------- |
+| `status` | `ApprovalRequestStatus` |
+
+### `approvalsApiRef`
+
+A client for the approvals backend, registered by the plugin:
+
+```ts
+const approvals = useApi(approvalsApiRef);
+const inbox = await approvals.listRequests({
+  role: 'approver',
+  actionable: true,
+});
+```
+
+Methods: `listRequests`, `getRequest`, `submitRequest`, `decide`, `cancel`. See the [API reference](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/api-reference.md).
+
+### Routes
+
+`rootRouteRef` (the approvals page) and `requestRouteRef` (one request, with a `requestId` parameter) are exported for linking from other plugins. `Router` is exported for apps that mount the page themselves.
+
+## Live updates
+
+With the [signals plugin](https://backstage.io/docs/notifications/#optional-add-signals) installed, the request page, the inbox and the home-page card refresh themselves when anything changes. Without it, they show what they loaded until reloaded.
 
 ## Development
 
@@ -55,10 +160,11 @@ The pages are built from [Backstage UI](https://ui.backstage.io): BUI's plugin h
 yarn start
 ```
 
-The dev harness serves the plugin against a mock API with a part-way-approved request, one to deny, one of your own to withdraw, a running one, and a redacted one — the states that are otherwise awkward to eyeball.
+Serves the plugin against a mock API with a part-approved request, one to deny, one of your own to withdraw, a running one and a redacted one. No backend needed.
 
 ## Documentation
 
-- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Plugin guide](../../docs/README.md)
+- [Getting started](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/getting-started.md)
+- [User guide](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/user-guide.md)
+- [Troubleshooting](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/troubleshooting.md)
+- [All documentation](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/README.md)

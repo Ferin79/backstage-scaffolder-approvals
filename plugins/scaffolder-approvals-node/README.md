@@ -1,26 +1,65 @@
 # @ferin79/backstage-plugin-scaffolder-approvals-node
 
-Node-side building blocks shared by the scaffolder-approvals backend and its two modules. Not something an app installs directly — it is a dependency of those packages.
+Backend building blocks shared by the [Scaffolder Approvals](https://github.com/Ferin79/backstage-scaffolder-approvals) backend plugin and its two modules.
 
-## What is in it
+You do not install it yourself: the backend packages depend on it. Import from it when you write a **permission policy** with conditions on approval requests.
 
-| Export                                                      | Used by                 | Purpose                                                                                                                                                   |
-| ----------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computeValuesHash`                                         | backend, gate action    | SHA-256 of the canonical JSON of a template's parameters. Computed at submit and again inside the running task; the two must agree for a grant to redeem. |
-| `generateGrantToken`, `hashGrantToken`                      | backend                 | A 256-bit single-use token, and the hash that is the only form ever stored.                                                                               |
-| `formatGrant`, `parseGrant`                                 | backend                 | The `<requestId>.<token>` string handed to a task as a secret.                                                                                            |
-| `findGateStep`, `isGated`                                   | backend, catalog module | One definition of "this template is gated", so the service and the derived annotation cannot disagree.                                                    |
-| `approvalRequestResourceRef` and the three permission rules | backend                 | `IS_DESIGNATED_APPROVER`, `IS_NOT_REQUESTER`, `HAS_TEMPLATE_REF`, for RBAC policies.                                                                      |
-| `assertSha256Hex`, `isSha256Hex`, `sha256Hex`               | backend                 | Guards on the store boundary, so a raw token can never be persisted where a hash belongs.                                                                 |
+```sh
+yarn --cwd packages/backend add @ferin79/backstage-plugin-scaffolder-approvals-node
+```
 
-`findGateStep` rejects a gate that is not the first step and a template with more than one gate. `isGated` is deliberately laxer: a template with a malformed gate still counts as gated, because reading it as ungated would make it freely runnable.
+## Permission rules
+
+| Export                 | Rule name                | Parameters               | Matches a request when…                        |
+| ---------------------- | ------------------------ | ------------------------ | ---------------------------------------------- |
+| `isDesignatedApprover` | `IS_DESIGNATED_APPROVER` | `userRefs: string[]`     | any of the refs is one of the gate's approvers |
+| `isNotRequester`       | `IS_NOT_REQUESTER`       | `userRef: string`        | that user did not submit it                    |
+| `hasTemplateRef`       | `HAS_TEMPLATE_REF`       | `templateRefs: string[]` | it is for one of these templates               |
+
+`approvalRequestResourceRef` is the resource ref they apply to, and `scaffolderApprovalsPermissionRules` lists all three. Build conditions with `createConditionExports` from `@backstage/plugin-permission-node`:
+
+```ts
+import { createConditionExports } from '@backstage/plugin-permission-node';
+import {
+  approvalRequestResourceRef,
+  hasTemplateRef,
+  isDesignatedApprover,
+  isNotRequester,
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
+
+const { conditions, createConditionalDecision } = createConditionExports({
+  resourceRef: approvalRequestResourceRef,
+  rules: { hasTemplateRef, isDesignatedApprover, isNotRequester },
+});
+
+// In a policy, for scaffolderApprovals.request.decide:
+return createConditionalDecision(request.permission, {
+  not: conditions.hasTemplateRef({
+    templateRefs: ['template:default/provision-service'],
+  }),
+});
+```
+
+Conditions work for deciding, withdrawing and reading one request. Give listing (`scaffolderApprovals.request.read`) a plain allow or deny. A complete policy is in [Security model and permissions](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md#example-policy).
+
+## Other exports
+
+These are used inside the plugin; they are public so the backend and both modules share one definition.
+
+| Export                                        | Used by                 | Purpose                                                                                                                                                               |
+| --------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `findGateStep`, `isGated`                     | Backend, catalog module | One definition of "this template is gated". `findGateStep` rejects broken shapes; `isGated` still counts a broken gate as gated, so it never reads as freely runnable |
+| `computeValuesHash`                           | Backend, gate action    | SHA-256 of the canonical JSON of a template's parameters. Computed at submit and inside the task; they must match for a grant to redeem                               |
+| `generateGrantToken`, `hashGrantToken`        | Backend                 | A 256-bit single-use token, and the hash that is the only form stored                                                                                                 |
+| `formatGrant`, `parseGrant`                   | Backend, gate action    | The `<requestId>.<token>` string handed to a task as a secret                                                                                                         |
+| `computeTemplateStepsHash`, `compareTemplate` | Backend                 | Detecting that a template changed while a request waited                                                                                                              |
+| `sha256Hex`, `isSha256Hex`, `assertSha256Hex` | Backend                 | Guards that keep a raw token from ever being stored where a hash belongs                                                                                              |
 
 ## A note on BEP-0016
 
-Core Backstage may eventually gain a suspend/resume primitive for scaffolder tasks ([BEP-0016](https://github.com/backstage/backstage/pull/34966)), which would let a gate park a running task instead of refusing to start it. Adopting that would change how an approved request is launched. **That logic currently lives in `ApprovalService.launch` in the backend package, not behind an interface here** — so the migration would touch the backend, not only this package.
+Backstage core may gain a way to pause and resume scaffolder tasks ([BEP-0016](https://github.com/backstage/backstage/pull/34966)), which would let a gate pause a running task instead of refusing to start it. Adopting it would change how approved requests are launched. That logic is in `ApprovalService.launch` in the backend package, not behind an interface here, so the change would touch the backend.
 
 ## Documentation
 
-- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Plugin guide](../../docs/README.md)
+- [Security model and permissions](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md)
+- [All documentation](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/README.md)

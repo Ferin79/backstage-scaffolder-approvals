@@ -1,51 +1,72 @@
 # @ferin79/backstage-plugin-catalog-backend-module-approvals
 
-Derives the `scaffolder-approvals.backstage.io/gated` annotation on Template entities.
+A catalog backend module, part of [Scaffolder Approvals](https://github.com/Ferin79/backstage-scaffolder-approvals), that marks gated templates and warns about gates that cannot work.
 
-A template is marked as gated because it carries an `approval:gate` step — not because anyone wrote an annotation. Template authors declare the step and nothing else, so there is no second place to keep in sync and the annotation cannot drift away from the gate it describes.
+A template counts as gated because it has an `approval:gate` step, not because someone wrote an annotation. This module derives the annotation from the step, so the two cannot get out of step:
+
+```yaml
+metadata:
+  annotations:
+    scaffolder-approvals.backstage.io/gated: 'true'
+```
+
+The frontend uses this annotation to show approvers on the Create page and to turn the wizard's last step into **Request approval**.
 
 ## Installation
 
+Install it in the **same backend as the catalog**:
+
+```sh
+yarn --cwd packages/backend add @ferin79/backstage-plugin-catalog-backend-module-approvals
+```
+
 ```ts
 // packages/backend/src/index.ts
+backend.add(import('@backstage/plugin-catalog-backend'));
+backend.add(
+  import('@backstage/plugin-catalog-backend-module-scaffolder-entity-model'),
+);
 backend.add(
   import('@ferin79/backstage-plugin-catalog-backend-module-approvals'),
 );
 ```
 
-The catalog also needs `@backstage/plugin-catalog-backend-module-scaffolder-entity-model`, which most apps with a scaffolder already have. Without it the catalog does not recognise the `Template` kind and drops those entities **silently**. Nothing reaches this processor, and nothing reports an error either.
+The catalog also needs `@backstage/plugin-catalog-backend-module-scaffolder-entity-model`, which most apps with a scaffolder already have. Without it the catalog does not recognise the `Template` kind and drops templates **silently**.
 
-This module is optional. Without it, gated templates are still gated — the gate step is what enforces that — but the UI cannot tell which templates need an approval, so it will offer to launch them directly and people will meet the gate as a failure rather than as a form.
+Without this module, gated templates are still gated (the step enforces that), but the UI cannot tell which templates need approval, so people meet the gate as a failed task instead of a request form.
 
 ## What it does
 
-- **Stamps** `gated: 'true'` on any Template with an `approval:gate` step.
-- **Strips** the annotation from a Template without one, including a hand-written one. Only adding it would leave the mismatch that matters open: an annotated-but-ungated template would send people through an approval flow for something they could simply run.
-- **Leaves everything else alone.** Non-Template kinds and ungated templates come back as the exact same object, so a refresh cycle does no work.
+- **Adds** `scaffolder-approvals.backstage.io/gated: 'true'` to any Template with an `approval:gate` step.
+- **Removes** it from any Template without one, including a hand-written one, so a template can never look gated without being gated.
+- **Leaves everything else alone.** Other kinds, and ungated templates without the annotation, are returned unchanged.
 
-A template with a _malformed_ gate — one that is not the first step, or a second gate — still counts as gated. A template trying to be gated and failing must not read as freely runnable.
+A template with a broken gate (not the first step, or two gates) still counts as gated: a template trying to be gated must never look freely runnable.
 
-## What the annotation is not
-
-It is not what enforces anything. It tells the UI which templates to route through the approvals page. The enforcement is the gate step itself, and a template that somehow lost its annotation but kept its step is still gated.
+The annotation does not enforce anything. The gate step does.
 
 ## Warnings
 
-The processor logs, and never blocks ingestion, when a gated template looks wrong:
+The module logs a warning, and never blocks ingestion, when a gated template will not work as intended:
 
-| Warning                                      | Why it matters                                                                                                                                                                           |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Gate is not the first step                   | Steps before it run before anyone has approved, while the template looks gated                                                                                                           |
-| More than one gate                           | Which policy applies is ambiguous, and the second grant could never be satisfied                                                                                                         |
-| Gate's `values` is not `${{ parameters }}`   | The gate cannot check the run against what was approved, so it refuses every run. The backend refuses such a template at submit, and the scaffolder page says it cannot be requested yet |
-| A later step uses `secrets.USER_OAUTH_TOKEN` | That token belongs to the requester and expires long before a multi-day approval finishes                                                                                                |
+| Warning                                                                                 | Why it matters                                                                         |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `has an unusable gate:` the gate is not first, or there are two                         | Steps before the gate would run before anyone approved                                 |
+| `has an unusable gate:` about `values`                                                  | The gate cannot check the run against the approval, so it can never pass               |
+| `has an unusable gate:` about `if:`, `each:`, `always()`/`failure()` or permission tags | The scaffolder could run steps without the gate passing                                |
+| `has an unusable gate policy:`                                                          | `approvers`, `quorum`, `selfApprove` or `timeout` is invalid                           |
+| `is gated but declares secret-typed parameter(s)`                                       | Secrets cannot survive the wait; requests are refused                                  |
+| `is gated but a later step uses secrets.USER_OAUTH_TOKEN`                               | The requester's token will have expired by the time the run starts                     |
+| `is gated but a later step reads '${{ user.* }}'`                                       | Approved runs have no user, so those render empty. Use `steps.gate.output.requestedBy` |
 
-These are warnings on purpose. An error that kept a template out of the catalog would make _deleting the gate_ the way to make it appear again, which is the wrong incentive for the one step that enforces anything.
+They are warnings on purpose. An error that kept a template out of the catalog would make _deleting the gate_ the way to get it back, which is the wrong incentive.
 
-> **Accepted risk.** Nothing here prevents a template owner from removing a gate; there is no allowlist of templates that must be gated. Mitigate with CODEOWNERS on gated template files, and by alerting when the derived annotation disappears from an entity. This was a deliberate decision — see the design record before adding enforcement.
+## Accepted risk
+
+Nothing here stops a template's owners from removing its gate, and there is no list of templates that must be gated. Protect gated templates with CODEOWNERS, alert when the annotation disappears from a template, and deny high-risk actions to users with a permission policy. See [Security model](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md#accepted-risks).
 
 ## Documentation
 
-- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Plugin guide](../../docs/README.md)
+- [Writing gated templates](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/writing-gated-templates.md)
+- [Troubleshooting](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/troubleshooting.md#templates)
+- [All documentation](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/README.md)

@@ -1,87 +1,121 @@
 # @ferin79/backstage-plugin-scaffolder-approvals-backend
 
-Stores approval requests, decisions and grants; exposes the REST API the frontend and the `approval:gate` action talk to; and runs the scheduled sweeps that reconcile task status, time out stale requests and redact old request payloads.
+The backend for [Scaffolder Approvals](https://github.com/Ferin79/backstage-scaffolder-approvals): approval gates for Backstage software templates.
+
+It stores approval requests and decisions, mints the single-use grant that lets an approved template run, starts approved templates, and serves the REST API used by the frontend and by the `approval:gate` action. Scheduled jobs keep request status in step with the scaffolder, expire requests nobody decided on, and redact old submitted values.
 
 ## Installation
+
+This plugin works together with two backend modules. Install all three:
+
+```sh
+yarn --cwd packages/backend add \
+  @ferin79/backstage-plugin-scaffolder-approvals-backend \
+  @ferin79/backstage-plugin-scaffolder-backend-module-approvals \
+  @ferin79/backstage-plugin-catalog-backend-module-approvals
+```
 
 ```ts
 // packages/backend/src/index.ts
 backend.add(import('@ferin79/backstage-plugin-scaffolder-approvals-backend'));
-```
 
-Pair it with the gate action, which belongs in whichever backend runs the scaffolder:
-
-```ts
+// In the backend that runs the scaffolder:
 backend.add(
   import('@ferin79/backstage-plugin-scaffolder-backend-module-approvals'),
 );
+
+// In the backend that runs the catalog:
+backend.add(
+  import('@ferin79/backstage-plugin-catalog-backend-module-approvals'),
+);
 ```
+
+Requirements: the new backend system, the scaffolder and catalog backends, and `@backstage/plugin-catalog-backend-module-scaffolder-entity-model`. The plugin creates and migrates its own database tables on start-up.
+
+### Optional integrations
+
+The plugin starts and works without these; each one improves the experience:
+
+| Plugin                                    | Adds                                                                                           |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `@backstage/plugin-notifications-backend` | Notifications to approvers and requesters                                                      |
+| `@backstage/plugin-signals-backend`       | Live-updating request pages, inbox and home-page card                                          |
+| `@backstage/plugin-events-backend`        | Immediate task status, and approval events on the `scaffolder-approvals` topic for other tools |
 
 ## Configuration
 
+Everything is optional. The defaults:
+
 ```yaml
 scaffolderApprovals:
-  # How long an approval grant stays redeemable after a request is approved.
-  # Short by design: it is a single-use capability that only has to survive the
-  # launch. Default: 1 hour. '1h' and 'PT1H' work too.
+  # How long an approval stays usable once granted. Also '1h' or 'PT1H'.
   grantTtl: { hours: 1 }
-
   retention:
-    # How long submitted values and the rendered summary are kept before being
-    # redacted. Default: 180 days.
+    # How long submitted values and the summary are kept after a request
+    # settles, before being redacted. The request and its decisions are kept.
     redactAfter: { days: 180 }
+  # Service principals allowed to redeem grants. Widen only for split deployments.
+  grantConsumers: ['plugin:scaffolder']
 ```
 
-Both durations are checked at start-up: a misspelt unit, a bare number or zero stops the backend with an error naming the key, instead of being read as zero. Redaction cannot be switched off; set a long window to keep values longer.
+Durations are checked at start-up; an invalid one stops the backend with an error naming the key.
 
-That is the entire config surface. **Gate policy — who approves, how many, self-approval, timeout — is declared per template** in the `approval:gate` step, never here, so the people who own a template own its gate.
+**Gate policy is not configured here.** Who approves, how many, self-approval and timeout are set in each template's `approval:gate` step, so the people who own a template own its gate.
 
-## API
+See [Configuration](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/configuration.md) for details.
 
-| Route                         | Who                         | Notes                                                                                                                                                                                  |
-| ----------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /requests`              | Any signed-in user          | `{ templateRef, values }`. 201, or 200 when an identical pending request was returned instead. `templateRef` may leave out the kind and namespace; `values` may nest at most 64 levels |
-| `GET /requests`               | Any signed-in user          | `status`, `role`, `templateRef`, `requesterRef`, `limit`, `offset`. Refs match however they are spelled: `requester` finds `user:default/requester`                                    |
-| `GET /requests/:id`           | Any signed-in user          | The request plus its decision history                                                                                                                                                  |
-| `POST /requests/:id/decision` | A designated approver       | `{ decision, comment? }`                                                                                                                                                               |
-| `POST /requests/:id/cancel`   | The requester               | Pending requests only, and not once the timeout has passed                                                                                                                             |
-| `POST /grants/consume`        | **Service principals only** | The gate action redeems a grant here                                                                                                                                                   |
+## REST API
 
-Reads are open to any signed-in user, matching the scaffolder's own task list. A deployment that configures a _conditional_ read policy gets a clear 403 rather than having the condition silently ignored.
+Mounted at `/api/scaffolder-approvals`.
 
-## Sweeps
+| Route                         | Who                   | Purpose                                                                                                     |
+| ----------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `POST /requests`              | Any signed-in user    | Submit a request: `{ templateRef, values }`                                                                 |
+| `GET /requests`               | Any signed-in user    | List requests, filtered by `status`, `role`, `actionable`, `templateRef`, `requesterRef`, `limit`, `offset` |
+| `GET /requests/:id`           | Any signed-in user    | One request, its decisions, and any template drift                                                          |
+| `POST /requests/:id/decision` | A designated approver | Approve or deny: `{ decision, comment? }`                                                                   |
+| `POST /requests/:id/cancel`   | The requester         | Withdraw a pending request                                                                                  |
+| `POST /grants/consume`        | The scaffolder only   | Redeem a grant, from the `approval:gate` action                                                             |
 
-Three scheduled jobs, each capped per tick so a backlog built up during an outage drains steadily instead of arriving at the scaffolder all at once.
+Full request and response shapes are in the [API reference](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/api-reference.md).
 
-| Job            | Every | What it does                                                                                                                                 |
-| -------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reconciliation | 2 min | Retries a launch that never happened, recovers a task id that was lost, fails a request whose grant expired unused, and syncs finished tasks |
-| Timeouts       | 5 min | Expires pending requests nobody decided in time                                                                                              |
-| Retention      | 6 h   | Redacts the values and summary of long-settled requests                                                                                      |
+## Scheduled jobs
 
-Scaffolder task events are the fast path for status; the reconciliation sweep is the backstop. A dropped event costs a request one sweep interval of staleness, not correctness.
+| Job id                           | Every     | What it does                                                                                          |
+| -------------------------------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| `scaffolder-approvals-reconcile` | 2 minutes | Retries launches that did not happen, fails requests whose grant expired unused, syncs finished tasks |
+| `scaffolder-approvals-timeouts`  | 5 minutes | Expires pending requests past their gate's timeout                                                    |
+| `scaffolder-approvals-retention` | 6 hours   | Redacts the values and summary of long-settled requests                                               |
 
-**Retention redacts, never deletes.** What goes is the submitted values and the rendered summary, which can carry personal data such as an access justification. The request row and every decision on it are kept indefinitely — that audit trail is what this feature exists to produce. The values hash stays too, so a grant could still be checked.
+Each run handles a capped batch, so a backlog built up during an outage drains steadily. Scaffolder task events are the fast path for status; the reconciliation job is the backstop.
 
-## Optional integrations
+**Retention redacts, never deletes.** The request, who asked, every decision and the values hash are kept indefinitely: that is the audit trail.
 
-Notifications and signals are soft dependencies: the backend starts and works with neither installed. What you lose is the notifications themselves and live-updating request pages. Delivery failures are logged and never undo a state change that has already been committed.
+## Notifications
 
-Four notifications are sent, each deep-linking to the request:
+| Notification               | Sent to                                   |
+| -------------------------- | ----------------------------------------- |
+| Approval requested         | Approvers                                 |
+| Request approved / denied  | Requester                                 |
+| Approved request failed    | Requester and approvers                   |
+| Approval request expired   | Requester and approvers                   |
+| Approval request withdrawn | Approvers (replaces "Approval requested") |
 
-| Event     | Who hears about it      |
-| --------- | ----------------------- |
-| Submitted | Approvers               |
-| Decided   | Requester               |
-| Failed    | Requester and approvers |
-| Expired   | Requester and approvers |
+Each links to `<app.baseUrl>/scaffolder-approvals/requests/<id>`. See [Notifications, events and signals](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/notifications-and-events.md).
 
 ## Permissions
 
-Four permissions, and three rules an RBAC policy can build conditions from: `IS_DESIGNATED_APPROVER`, `IS_NOT_REQUESTER` and `HAS_TEMPLATE_REF`. The permission check on a decision runs _in addition to_ the gate's own terms — either can refuse.
+Four permissions, registered with the permission framework: `scaffolderApprovals.request.create`, `.read`, `.decide` and `.cancel`, on the resource type `scaffolder-approval-request`, with the rules `IS_DESIGNATED_APPROVER`, `IS_NOT_REQUESTER` and `HAS_TEMPLATE_REF`. A policy can narrow who may decide, but never adds approvers: the gate's own terms always apply as well.
+
+See [Security model and permissions](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md) for an example policy.
+
+## Audit events
+
+Through the Backstage auditor service: `request-submit`, `request-decide`, `request-cancel` and `grant-consume`.
 
 ## Documentation
 
-- [Design and decision record](../../docs/GATED_SCAFFOLDER_WORKFLOWS.md)
-- [Implementation guide](../../docs/GATED_SCAFFOLDER_IMPLEMENTATION.md)
-- [Plugin guide](../../docs/README.md)
+- [Getting started](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/getting-started.md)
+- [Configuration](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/configuration.md)
+- [Security model and permissions](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/security-model.md)
+- [All documentation](https://github.com/Ferin79/backstage-scaffolder-approvals/blob/main/docs/README.md)
