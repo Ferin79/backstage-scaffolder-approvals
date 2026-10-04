@@ -244,6 +244,50 @@ describe('createRouter', () => {
         expect(response.status).toBe(400);
       });
 
+      it('reads a templateRef without a kind as a template, in any case', async () => {
+        const response = await request(app)
+          .post('/requests')
+          .set('authorization', as(REQUESTER))
+          .send({ templateRef: 'Request-GitHub-Admin', values: VALUES });
+
+        expect(response.status).toBe(201);
+        const stored = await request(app)
+          .get(`/requests/${response.body.id}`)
+          .set('authorization', as(REQUESTER));
+        expect(stored.body.templateRef).toBe(TEMPLATE_REF);
+      });
+
+      // M1 in the browser review: each of these was a 500.
+      it.each(['template:default/', '::::', '   '])(
+        'answers 400, not 500, for the templateRef %j',
+        async templateRef => {
+          const response = await request(app)
+            .post('/requests')
+            .set('authorization', as(REQUESTER))
+            .send({ templateRef, values: VALUES });
+
+          expect(response.status).toBe(400);
+          expect(response.body.error.message).toMatch(/^Invalid templateRef: /);
+        },
+      );
+
+      it('answers 400 for values nested past the limit, without overflowing', async () => {
+        let deep: Record<string, unknown> = { leaf: true };
+        for (let level = 0; level < 3000; level++) {
+          deep = { a: deep };
+        }
+
+        const response = await request(app)
+          .post('/requests')
+          .set('authorization', as(REQUESTER))
+          .send({ templateRef: TEMPLATE_REF, values: deep });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(
+          /nested more than 64 levels deep/,
+        );
+      });
+
       it('refuses an unauthenticated caller', async () => {
         const response = await request(app)
           .post('/requests')
@@ -276,6 +320,54 @@ describe('createRouter', () => {
         expect(response.body.totalItems).toBe(1);
         expect(response.body.items[0].requesterRef).toBe(REQUESTER);
       });
+
+      // M5 in the browser review: submit normalised the refs it stored, and the
+      // filters compared them as typed, so these all found nothing.
+      it.each([
+        ['templateRef', 'Template:Default/Request-GitHub-Admin'],
+        ['templateRef', 'request-github-admin'],
+        ['requesterRef', 'User:Default/Requester'],
+        ['requesterRef', 'requester'],
+      ])('filters by %s spelled %j', async (field, value) => {
+        await submit();
+
+        const response = await request(app)
+          .get('/requests')
+          .query({ [field]: value })
+          .set('authorization', as(REQUESTER));
+
+        expect(response.status).toBe(200);
+        expect(response.body.totalItems).toBe(1);
+      });
+
+      it('still finds nothing for a ref that names something else', async () => {
+        await submit();
+
+        const response = await request(app)
+          .get('/requests')
+          .query({ requesterRef: 'alice' })
+          .set('authorization', as(REQUESTER));
+
+        expect(response.body.totalItems).toBe(0);
+      });
+
+      it.each([
+        ['templateRef', 'template:default/'],
+        ['requesterRef', '::::'],
+      ])(
+        'answers 400 for a %s filter that is not a ref',
+        async (field, value) => {
+          const response = await request(app)
+            .get('/requests')
+            .query({ [field]: value })
+            .set('authorization', as(REQUESTER));
+
+          expect(response.status).toBe(400);
+          expect(response.body.error.message).toMatch(
+            new RegExp(`^Invalid ${field}: `),
+          );
+        },
+      );
 
       it('reports a total independent of the page size', async () => {
         for (const justification of ['one', 'two', 'three']) {

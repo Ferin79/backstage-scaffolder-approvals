@@ -58,6 +58,7 @@ import { durationToMilliseconds, type HumanDuration } from '@backstage/types';
 import type { JsonObject, JsonValue } from '@backstage/types';
 import type { ApprovalStore } from '../database';
 import { describeLaunchRefusal } from './launchRefusal';
+import { assertValuesDepth, readEntityRef } from './requestInput';
 import { validateValues } from './validateValues';
 
 /**
@@ -201,7 +202,19 @@ export class ApprovalService {
    * refs, and the catalog resolves them at decision time.
    */
   async submit(options: SubmitOptions): Promise<SubmitApprovalRequestResponse> {
-    const { templateRef, values, credentials } = options;
+    const { values, credentials } = options;
+
+    // Read in one spelling before anything else uses it, and refused as a
+    // client error when it does not parse. Stored in that spelling too:
+    // `Template:Default/Gated` and `template:default/gated` are the same
+    // template, and storing them as written created two requests where Q13
+    // wants one, and let a grant approved for one spelling be refused for the
+    // other now that consuming checks the template too.
+    const templateRef = readEntityRef(options.templateRef, {
+      defaultKind: 'template',
+      field: 'templateRef',
+    });
+    assertValuesDepth(values);
 
     const requesterRef = await this.callerRef(credentials);
 
@@ -247,12 +260,7 @@ export class ApprovalService {
       : undefined;
 
     const created = await this.store.createOrCollapse({
-      // Stored in one spelling, not as sent. `Template:Default/Gated` and
-      // `template:default/gated` are the same template, and storing them as
-      // written created two requests where Q13 wants one — and let a grant
-      // approved for one spelling be refused for the other now that consuming
-      // checks the template too.
-      templateRef: normaliseEntityRef(templateRef),
+      templateRef,
       values,
       valuesHash: computeValuesHash(values),
       requesterRef,
@@ -476,6 +484,11 @@ export class ApprovalService {
    *
    * Only the requester may withdraw, and only before a decision — that is what
    * `cancelled` means, as distinct from `rejected`.
+   *
+   * Nor after the timeout. A request is dead the moment its deadline passes,
+   * not when the sweep notices, exactly as for a decision; withdrawing it in
+   * that window recorded a timeout as a withdrawal and told the approvers so
+   * (M2 in the browser review).
    */
   async cancel(options: {
     requestId: string;
@@ -492,9 +505,23 @@ export class ApprovalService {
       throw new NotAllowedError('Only the requester may cancel a request');
     }
 
+    const now = this.now();
+    if (
+      request.status === 'pending' &&
+      request.expiresAt &&
+      new Date(request.expiresAt) <= now
+    ) {
+      throw new ConflictError(
+        'This request timed out before anyone decided, so there is nothing left to withdraw',
+      );
+    }
+
     if (
       !(await this.store.transition(options.requestId, 'pending', 'cancelled', {
-        decidedAt: this.now(),
+        decidedAt: now,
+        // The same guard as a decision's, so a withdrawal and the timeout
+        // sweep landing together produce exactly one outcome.
+        notExpired: true,
       }))
     ) {
       throw new ConflictError(
