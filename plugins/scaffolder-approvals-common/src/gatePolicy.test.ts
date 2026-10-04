@@ -97,6 +97,18 @@ describe('readGatePolicy', () => {
     );
   });
 
+  it('explains why approvers cannot come from the form', () => {
+    // What a template author tries first, and what the probe template in the
+    // browser test did: the error used to call it "not a valid entity ref".
+    expect(() =>
+      readGatePolicy({
+        approvers: ['group:default/devx-team', '${{ parameters.owner }}'],
+      }),
+    ).toThrow(
+      /approvers\[1\] is a template expression \(\$\{\{ parameters\.owner \}\}\)\. Approvers are read from the catalog before anyone fills in the form/,
+    );
+  });
+
   it('rejects approver kinds that cannot hold members', () => {
     // A Component cannot approve anything; catching it here beats a request
     // that can never reach quorum.

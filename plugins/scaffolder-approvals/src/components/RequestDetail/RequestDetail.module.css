@@ -1,0 +1,468 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Layout for the request page, around BUI's cards. Every colour is one of
+ * BUI's variables, so the page follows the viewer's theme.
+ */
+
+/*
+ * BUI's header keeps its title to one line and cuts it off. A request's title
+ * is its summary, which is the thing people came to read, so it wraps instead
+ * — on a phone a summary of any length was otherwise reduced to "Admin on…".
+ */
+.header :global(.bui-HeaderTitleStack) {
+  height: auto;
+  overflow: visible;
+}
+
+.header :global(.bui-HeaderBreadcrumbs) {
+  position: static;
+  transform: none;
+}
+
+.header :global(.bui-HeaderTitle) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The page's grid. Named areas rather than BUI's Grid, because the order has
+ * to differ by width: on a wide screen the details and parameters sit beside
+ * the decision and its history; on a narrow one they come straight after the
+ * decision, ahead of the history, so what is being decided is read before
+ * scrolling through who said what. 1024px is BUI's `md` breakpoint.
+ */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'decision'
+    'aside'
+    'activity';
+  gap: var(--bui-space-4);
+  align-items: start;
+}
+
+.decision {
+  grid-area: decision;
+  min-width: 0;
+}
+
+.aside {
+  grid-area: aside;
+  min-width: 0;
+}
+
+.activity {
+  grid-area: activity;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .layout {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    /* The side column spans both rows; the flexible second row takes any
+       height it adds, so the history still starts right under the panel. */
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'decision aside'
+      'activity aside';
+  }
+}
+
+/* The decision panel: tinted by where the request stands. */
+
+.panel {
+  --tone-fg: var(--bui-fg-secondary);
+  --tone-bg: var(--bui-border-1);
+  --tone-on-bg: var(--bui-fg-secondary);
+
+  box-shadow: inset 3px 0 0 var(--tone-fg);
+}
+
+.panel[data-tone='warning'] {
+  --tone-fg: var(--bui-fg-warning);
+  --tone-bg: var(--bui-bg-warning);
+  --tone-on-bg: var(--bui-fg-warning-on-bg);
+}
+
+.panel[data-tone='info'] {
+  --tone-fg: var(--bui-fg-info);
+  --tone-bg: var(--bui-bg-info);
+  --tone-on-bg: var(--bui-fg-info-on-bg);
+}
+
+.panel[data-tone='success'] {
+  --tone-fg: var(--bui-fg-success);
+  --tone-bg: var(--bui-bg-success);
+  --tone-on-bg: var(--bui-fg-success-on-bg);
+}
+
+.panel[data-tone='danger'] {
+  --tone-fg: var(--bui-fg-danger);
+  --tone-bg: var(--bui-bg-danger);
+  --tone-on-bg: var(--bui-fg-danger-on-bg);
+}
+
+.panelIcon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--bui-radius-3);
+  background-color: var(--tone-bg);
+  color: var(--tone-on-bg);
+}
+
+.panelIcon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.panelFooter {
+  margin-top: var(--bui-space-3);
+  border-top: 1px solid var(--bui-border-1);
+}
+
+.inlineIcon {
+  display: flex;
+  flex: none;
+  color: var(--bui-fg-secondary);
+}
+
+.inlineIcon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.meter {
+  display: flex;
+  gap: 4px;
+  height: 6px;
+  margin-top: var(--bui-space-1);
+  max-width: 360px;
+  border-radius: var(--bui-radius-full);
+  overflow: hidden;
+  background-color: transparent;
+}
+
+.segment {
+  flex: 1;
+  border-radius: var(--bui-radius-full);
+  /* A border colour, not a neutral background: BUI's neutral levels
+     alternate, and on a card the third one is the card's own white. */
+  background-color: var(--bui-border-1);
+}
+
+.segment[data-filled] {
+  background-color: var(--bui-fg-success);
+}
+
+.meterFill {
+  border-radius: var(--bui-radius-full);
+  background-color: var(--bui-fg-success);
+}
+
+/* Parameters: each name over its value, as Details lays out its facts. The
+   card sits in the narrow side column, which has no room for two. */
+
+.values {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.valueRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-1);
+  padding-block: var(--bui-space-2);
+  border-top: 1px solid var(--bui-border-1);
+}
+
+.valueRow:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.valueRow dt,
+.valueRow dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.key {
+  font-family: var(--bui-font-monospace);
+  color: var(--bui-fg-secondary);
+  overflow-wrap: anywhere;
+}
+
+.valueText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A short value beside its label rather than under it. */
+.valueRowInline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--bui-space-3);
+}
+
+.valueRowInline dd {
+  text-align: right;
+}
+
+/* Values set apart: hidden by the form, or never asked for. */
+.parameterGroup {
+  padding-top: var(--bui-space-3);
+  border-top: 1px dashed var(--bui-border-2);
+}
+
+/* A list of names or values, one chip each. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bui-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  padding: 1px var(--bui-space-2);
+  border-radius: var(--bui-radius-full);
+  background-color: var(--bui-border-1);
+  color: var(--bui-fg-primary);
+  font-size: var(--bui-font-size-2);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* An object's fields, label beside value, inside the parameter they belong to. */
+.nested {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.nestedRow {
+  display: grid;
+  grid-template-columns: minmax(72px, 40%) minmax(0, 1fr);
+  gap: var(--bui-space-2);
+  align-items: baseline;
+}
+
+.nestedRow dt,
+.nestedRow dd {
+  margin: 0;
+  min-width: 0;
+}
+
+/* A list of objects: one small block per item. */
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: var(--bui-space-2) var(--bui-space-3);
+  border: 1px solid var(--bui-border-1);
+  border-radius: var(--bui-radius-2);
+}
+
+.code {
+  margin: 0;
+  padding: var(--bui-space-2) var(--bui-space-3);
+  border-radius: var(--bui-radius-2);
+  background-color: var(--bui-bg-neutral-2);
+  color: var(--bui-fg-primary);
+  font-family: var(--bui-font-monospace);
+  font-size: var(--bui-font-size-2);
+  overflow-x: auto;
+}
+
+.inlineCode {
+  padding: 1px var(--bui-space-1);
+  border-radius: var(--bui-radius-1);
+  background-color: var(--bui-bg-neutral-2);
+  color: var(--bui-fg-primary);
+  font-family: var(--bui-font-monospace);
+  font-size: var(--bui-font-size-2);
+}
+
+/* Activity: a vertical timeline, one person per event. */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event {
+  position: relative;
+  display: flex;
+  gap: var(--bui-space-3);
+  padding-bottom: var(--bui-space-5);
+}
+
+.event:last-child {
+  padding-bottom: 0;
+}
+
+/* The line joining one event to the next. */
+.event:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 32px;
+  bottom: 6px;
+  left: 11px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--bui-border-1);
+}
+
+.marker {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* A tick or a cross on the approver's avatar. */
+.markerBadge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--bui-bg-neutral-1);
+  border-radius: var(--bui-radius-full);
+  color: var(--bui-bg-app);
+}
+
+.markerBadge[data-tone='success'] {
+  background-color: var(--bui-fg-success);
+}
+
+.markerBadge[data-tone='danger'] {
+  background-color: var(--bui-fg-danger);
+}
+
+.markerBadge svg {
+  width: 10px;
+  height: 10px;
+}
+
+.markerEmpty {
+  width: 24px;
+  height: 24px;
+  border: 2px dashed var(--bui-border-2);
+  border-radius: var(--bui-radius-full);
+}
+
+.eventBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.comment {
+  margin: var(--bui-space-2) 0 0;
+  padding: var(--bui-space-2) var(--bui-space-3);
+  border-radius: var(--bui-radius-3);
+  background-color: var(--bui-bg-neutral-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Details: label over value, down the side. */
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-4);
+  margin: 0;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bui-space-1);
+}
+
+.detail dt,
+.detail dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.taskLink {
+  font-family: var(--bui-font-monospace);
+  font-size: var(--bui-font-size-2);
+  word-break: break-all;
+}
+
+/* A link that leads nowhere. */
+
+.notFound {
+  text-align: center;
+}
+
+.notFoundIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--bui-border-1);
+  border-radius: var(--bui-radius-full);
+  background-color: var(--bui-bg-neutral-1);
+  color: var(--bui-fg-secondary);
+}
+
+.notFoundIcon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.notFoundText {
+  max-width: 48ch;
+}

@@ -64,6 +64,18 @@ function readApprovers(raw: unknown): string[] {
       );
     }
 
+    // "Approved by whoever owns what is being created" is the first thing a
+    // template author tries. It cannot work: the policy is read from the
+    // catalog before anyone has filled in the form, so there is nothing to
+    // template. Saying that beats "not a valid entity ref".
+    if (entry.includes('${{')) {
+      throw new GatePolicyError(
+        `approvers[${index}] is a template expression (${entry.trim()}). ` +
+          'Approvers are read from the catalog before anyone fills in the ' +
+          'form, so they must be fixed group or user refs',
+      );
+    }
+
     let normalised: string;
     try {
       // Normalised through the same helper the approver check uses, so the two

@@ -16,10 +16,10 @@
 
 import type { ApprovalRequestWithDecisions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
-import { entityRouteRef } from '@backstage/plugin-catalog-react';
+import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { signalApiRef } from '@backstage/plugin-signals-react';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
@@ -131,14 +131,28 @@ describe('RequestDetail', () => {
 
   it('puts the status in a labelled header item', async () => {
     // B14: as a bare child of the header's spaced grid, the pill slid over
-    // the subtitle on a narrow screen. A `HeaderLabel` is a grid item, and
-    // names what the pill is.
+    // the subtitle on a narrow screen. A labelled metadata item wraps under
+    // the title instead, and names what the pill is.
     await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
 
     await screen.findByText('Admin on backstage');
-    const header = screen.getByRole('banner');
-    expect(header).toHaveTextContent('Status');
-    expect(header).toHaveTextContent('Awaiting approval');
+    const label = screen
+      .getAllByRole('term')
+      .find(term => term.textContent === 'Status');
+    expect(label?.nextElementSibling).toHaveTextContent('Awaiting approval');
+  });
+
+  it('leaves the list tabs out, and links back through the plugin name', async () => {
+    // A request belongs to neither list, and two tabs with neither selected
+    // read as a choice to make.
+    await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
+
+    await screen.findByText('Admin on backstage');
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Approvals' })).toHaveAttribute(
+      'href',
+      '/scaffolder-approvals',
+    );
   });
 
   it('approves through a confirmation step', async () => {
@@ -473,6 +487,143 @@ describe('RequestDetail', () => {
       await screen.findByText('Admin on backstage');
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
+
+    it.each(['completed', 'failed', 'rejected', 'cancelled'] as const)(
+      'says nothing once a request is %s',
+      async status => {
+        // Found in the browser: a request that had already run said "the
+        // edited steps are the ones that will run" after its template
+        // changed. Its run was over; nothing was going to run.
+        await render({
+          getRequest: async () => ({
+            ...REQUEST,
+            status,
+            templateDrift: { changed: true, reasons: ['steps'] },
+          }),
+        });
+
+        await screen.findByText('Admin on backstage');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      },
+    );
+  });
+
+  describe('parameters from a complex form', () => {
+    // What the browser test of the provision-service example found: thirty
+    // parameters under their keys, as pretty-printed JSON, with values the
+    // form had hidden mixed in among the rest.
+    const TEMPLATE = {
+      apiVersion: 'scaffolder.backstage.io/v1beta3',
+      kind: 'Template',
+      metadata: { name: 'request-github-admin', namespace: 'default' },
+      spec: {
+        parameters: [
+          {
+            properties: {
+              language: { title: 'Language', enum: ['typescript', 'go'] },
+              oncall: {
+                title: 'On-call',
+                properties: {
+                  primaryContact: { title: 'Primary contact' },
+                  pagerEnabled: { title: 'Page out of hours' },
+                },
+              },
+              regions: { title: 'Regions', type: 'array' },
+            },
+            dependencies: {
+              language: {
+                oneOf: [
+                  {
+                    properties: {
+                      language: { const: 'typescript' },
+                      nodeVersion: { title: 'Node.js version' },
+                    },
+                  },
+                  {
+                    properties: {
+                      language: { const: 'go' },
+                      goVersion: { title: 'Go version' },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    async function renderComplex() {
+      await renderInTestApp(
+        <TestApiProvider
+          apis={[
+            [
+              approvalsApiRef,
+              {
+                getRequest: async () => ({
+                  ...REQUEST,
+                  values: {
+                    language: 'go',
+                    goVersion: '1.24',
+                    nodeVersion: '22',
+                    regions: ['eu-west-1', 'us-east-1'],
+                    oncall: {
+                      primaryContact: 'sre@example.com',
+                      pagerEnabled: false,
+                    },
+                    sneaky: 'value',
+                  },
+                }),
+              } as Partial<ApprovalsApi> as ApprovalsApi,
+            ],
+            [identityApiRef, APPROVER as any],
+            [alertApiRef, { post: jest.fn(), alert$: jest.fn() } as any],
+            [catalogApiRef, { getEntityByRef: async () => TEMPLATE } as any],
+          ]}
+        >
+          <RequestDetail requestId={REQUEST.id} />
+        </TestApiProvider>,
+        {
+          mountedRoutes: {
+            '/scaffolder-approvals': rootRouteRef,
+            '/catalog/:namespace/:kind/:name': entityRouteRef,
+          },
+        },
+      );
+      await screen.findByText('Primary contact');
+    }
+
+    it('names them as the form did, and lays out lists and objects', async () => {
+      await renderComplex();
+
+      expect(screen.getByText('Go version')).toBeInTheDocument();
+      // The key stays one hover away.
+      expect(screen.getByText('Go version')).toHaveAttribute(
+        'title',
+        'goVersion',
+      );
+      expect(screen.getByText('sre@example.com')).toBeInTheDocument();
+      expect(screen.getByText('No')).toBeInTheDocument();
+      expect(screen.getByText('eu-west-1')).toBeInTheDocument();
+      expect(screen.getByText('us-east-1')).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent('"primaryContact"');
+    });
+
+    it('sets apart what the form hid and what it never asked for', async () => {
+      await renderComplex();
+
+      const hidden = screen
+        .getByText('Hidden by the form for these answers')
+        .closest('section')!;
+      expect(hidden).toHaveTextContent('Node.js version');
+      expect(hidden).toHaveTextContent('22');
+      expect(hidden).not.toHaveTextContent('Go version');
+
+      const undeclared = screen
+        .getByText("Not in the template's form")
+        .closest('section')!;
+      expect(undeclared).toHaveTextContent('sneaky');
+    });
   });
 
   it('explains a redacted request rather than rendering a blank', async () => {
@@ -503,8 +654,8 @@ describe('RequestDetail', () => {
     // row at all.
     expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
     // With no summary, the template's name stands in as the title: not its
-    // raw ref (B16).
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+    // raw ref (B16). The page's title, under the plugin header's "Approvals".
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
       /^request-github-admin$/,
     );
   });
@@ -639,11 +790,8 @@ describe('RequestDetail', () => {
       }),
     );
     // The requester is named in the header, where the raw ref used to be, as
-    // one piece of text: the header styles a string subtitle for the banner,
-    // and left a link there black on purple.
-    expect(
-      within(screen.getByRole('banner')).getByText('Requested by requester'),
-    ).toBeInTheDocument();
+    // one piece of text: the header's description is a string.
+    expect(screen.getByText('Requested by requester')).toBeInTheDocument();
     // And no raw ref is left anywhere a person reads.
     expect(document.body).not.toHaveTextContent(
       /(user|group|template):default\//,

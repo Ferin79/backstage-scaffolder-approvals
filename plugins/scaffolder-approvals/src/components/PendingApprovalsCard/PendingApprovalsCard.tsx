@@ -14,14 +14,27 @@
  * limitations under the License.
  */
 
-import { InfoCard, Progress } from '@backstage/core-components';
 import { useApi, useRouteRef } from '@backstage/core-plugin-api';
-import { ButtonLink, Flex, Link, Text } from '@backstage/ui';
+import {
+  Alert,
+  ButtonLink,
+  Card,
+  CardBody,
+  CardFooter,
+  CardHeader,
+  Flex,
+  Link,
+  Skeleton,
+  Text,
+} from '@backstage/ui';
+import { RiArrowRightLine } from '@remixicon/react';
 import { useState } from 'react';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { ApprovalsIcon } from '../ApprovalsIcon';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
+import styles from './PendingApprovalsCard.module.css';
 
 /**
  * How many requests are waiting on you, on the home page.
@@ -42,9 +55,21 @@ import { useOnApprovalsChange } from '../useOnApprovalsChange';
  */
 export function PendingApprovalsCard() {
   return (
-    <InfoCard title="Approvals" actions={<PendingApprovalsActions />}>
-      <PendingApprovalsContent />
-    </InfoCard>
+    <Card>
+      <CardHeader>
+        <Text as="h2" variant="title-small">
+          Approvals
+        </Text>
+      </CardHeader>
+      <CardBody>
+        <PendingApprovalsContent />
+      </CardBody>
+      <CardFooter>
+        <Flex justify="end">
+          <PendingApprovalsActions />
+        </Flex>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -64,7 +89,11 @@ export function PendingApprovalsActions() {
   const rootPath = useRouteRef(rootRouteRef);
 
   return (
-    <ButtonLink href={rootPath()} variant="tertiary">
+    <ButtonLink
+      href={rootPath()}
+      variant="tertiary"
+      iconEnd={<RiArrowRightLine aria-hidden />}
+    >
       Open approvals
     </ButtonLink>
   );
@@ -99,35 +128,62 @@ export function PendingApprovalsContent() {
     [api, version],
   );
 
-  return (
-    <>
-      {/* The first load only; a refresh keeps the old number until the new one
-          arrives rather than flashing a spinner on the home page. */}
-      {state.loading && !state.value && <Progress />}
-
-      {/* A home card that cannot reach its backend says so and stays out of
-          the way. Throwing here would take the whole home page with it. */}
-      {state.error && (
-        <Text>Could not load your approvals: {state.error.message}</Text>
-      )}
-
-      {state.value && (
-        <Flex direction="column" gap="2">
-          <Text variant="title-medium">{state.value.totalItems}</Text>
-          {/* `body-large`, the size of the body text in the MUI cards a home
-              page puts beside this one (B19). */}
-          <Text variant="body-large">
-            {state.value.totalItems === 0
-              ? 'Nothing is waiting on you.'
-              : `${
-                  state.value.totalItems === 1 ? 'request is' : 'requests are'
-                } waiting on your decision.`}
-          </Text>
-          {state.value.totalItems > 0 && (
-            <Link href={rootPath()}>Review them</Link>
-          )}
+  // The first load only; a refresh keeps the old number until the new one
+  // arrives rather than flashing a placeholder on the home page.
+  if (state.loading && !state.value) {
+    return (
+      <Flex align="center" gap="3" aria-busy="true">
+        <Skeleton width={48} height={48} />
+        <Flex direction="column" gap="2" grow>
+          <Skeleton width={40} height={28} />
+          <Skeleton width="70%" height={16} />
         </Flex>
-      )}
-    </>
+      </Flex>
+    );
+  }
+
+  // A home card that cannot reach its backend says so and stays out of the
+  // way. Throwing here would take the whole home page with it.
+  if (state.error) {
+    return (
+      <Alert
+        status="warning"
+        icon
+        title={`Could not load your approvals: ${state.error.message}`}
+      />
+    );
+  }
+
+  const count = state.value?.totalItems ?? 0;
+
+  return (
+    <Flex align="center" gap="4">
+      <span
+        className={styles.badge}
+        data-waiting={count > 0 || undefined}
+        aria-hidden="true"
+      >
+        <ApprovalsIcon fontSize="inherit" />
+      </span>
+      <Flex direction="column" gap="1">
+        <Text variant="title-large" className={styles.count}>
+          {count}
+        </Text>
+        {/* `body-large`, the size of the body text in the MUI cards a home
+            page puts beside this one (B19). */}
+        <Text variant="body-large" color="secondary">
+          {count === 0
+            ? 'Nothing is waiting on you.'
+            : `${
+                count === 1 ? 'request is' : 'requests are'
+              } waiting on your decision.`}
+        </Text>
+        {count > 0 && (
+          <Link href={rootPath()} weight="bold">
+            Review them
+          </Link>
+        )}
+      </Flex>
+    </Flex>
   );
 }

@@ -27,6 +27,8 @@ export interface PolicySummaryProps {
    * throw away everything filled in so far.
    */
   linkTarget?: '_blank';
+  /** Secondary where the sentence explains a heading above it. */
+  color?: 'primary' | 'secondary';
 }
 
 /**
@@ -46,11 +48,11 @@ export interface PolicySummaryProps {
  * @internal
  */
 export function PolicySummary(props: PolicySummaryProps) {
-  const { policy, linkTarget } = props;
+  const { policy, linkTarget, color } = props;
   const { approvers, quorum, selfApprove } = policy;
 
   return (
-    <Text>
+    <Text color={color}>
       Needs {quorum === 1 ? 'one approval' : `${quorum} approvals`} from{' '}
       {approvers.map((approver, index) => (
         <Fragment key={approver}>

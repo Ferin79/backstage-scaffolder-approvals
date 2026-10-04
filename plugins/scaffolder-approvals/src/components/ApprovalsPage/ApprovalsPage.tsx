@@ -14,42 +14,48 @@
  * limitations under the License.
  */
 
-import { Content, Header, Page } from '@backstage/core-components';
 import { useApi } from '@backstage/core-plugin-api';
-import { Tabs, TabList, Tab, TabPanel } from '@backstage/ui';
+import { Container, Header } from '@backstage/ui';
 import { approvalsApiRef } from '../../api';
+import { ApprovalsLayout } from '../ApprovalsLayout';
 import { RequestsTable } from './RequestsTable';
+
+/** @public */
+export interface ApprovalsPageProps {
+  /**
+   * Which list to show: what is waiting on you, or what you asked for.
+   * Defaults to the inbox.
+   */
+  view?: 'inbox' | 'mine';
+}
 
 /**
  * The approvals page: what is waiting on you, and what you asked for.
  *
- * Two tabs rather than one filtered table, because they answer different
+ * Two lists rather than one filtered table, because they answer different
  * questions and belong to different people. An approver opens this to find work
- * to do; a requester opens it to find out what happened.
- *
- * Page chrome comes from core-components (Q24) so this sits inside Backstage
- * the way every other page does, while the contents are BUI (Q15).
+ * to do; a requester opens it to find out what happened. Each is a tab in the
+ * plugin header, with an address of its own.
  *
  * @public
  */
-export function ApprovalsPage() {
+export function ApprovalsPage(props: ApprovalsPageProps) {
+  const { view = 'inbox' } = props;
   const api = useApi(approvalsApiRef);
 
   return (
-    <Page themeId="tool">
-      <Header
-        title="Approvals"
-        subtitle="Requests to run templates that need a decision"
-      />
-      <Content>
-        <Tabs>
-          <TabList>
-            <Tab id="inbox">Waiting on you</Tab>
-            <Tab id="mine">Your requests</Tab>
-          </TabList>
-
-          <TabPanel id="inbox">
+    <ApprovalsLayout title={view === 'inbox' ? 'Approvals' : 'Your requests'}>
+      {view === 'inbox' ? (
+        <>
+          <Header
+            title="Waiting on you"
+            description="Requests to run a template that you can approve or deny. A template runs only once enough approvers agree."
+          />
+          <Container>
             <RequestsTable
+              // Keyed, so switching tabs starts the table over rather than
+              // carrying one list's page and sort into the other.
+              key="inbox"
               api={api}
               viewAs="approver"
               // Only what still needs a decision from *this* person: not what
@@ -61,10 +67,17 @@ export function ApprovalsPage() {
               emptyTitle="Nothing is waiting on you"
               emptyDescription="Requests you can decide on will appear here."
             />
-          </TabPanel>
-
-          <TabPanel id="mine">
+          </Container>
+        </>
+      ) : (
+        <>
+          <Header
+            title="Your requests"
+            description="Gated templates you have submitted, and what happened to each of them."
+          />
+          <Container>
             <RequestsTable
+              key="mine"
               api={api}
               viewAs="requester"
               // Everything, because "what happened to the thing I asked for" is
@@ -72,9 +85,9 @@ export function ApprovalsPage() {
               emptyTitle="You have not asked for anything yet"
               emptyDescription="Gated templates you submit will appear here with their progress."
             />
-          </TabPanel>
-        </Tabs>
-      </Content>
-    </Page>
+          </Container>
+        </>
+      )}
+    </ApprovalsLayout>
   );
 }

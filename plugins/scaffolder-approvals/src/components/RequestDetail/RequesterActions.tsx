@@ -17,6 +17,7 @@
 import type { ApprovalRequestWithDecisions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { Button, Flex, Text } from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
+import { RiArrowGoBackLine, RiRefreshLine } from '@remixicon/react';
 
 /** @public */
 export interface RequesterActionsProps {
@@ -56,11 +57,17 @@ export function RequesterActions(props: RequesterActionsProps) {
 
   if (request.status === 'pending') {
     return (
-      <Flex gap="2" align="center">
-        <Button variant="secondary" isDisabled={busy} onClick={onWithdraw}>
+      <Flex gap="3" align="center" style={{ flexWrap: 'wrap' }}>
+        <Button
+          variant="secondary"
+          destructive
+          isDisabled={busy}
+          onClick={onWithdraw}
+          iconStart={<RiArrowGoBackLine aria-hidden />}
+        >
           Withdraw
         </Button>
-        <Text variant="body-small">
+        <Text variant="body-small" color="secondary">
           Withdrawing stops the request. Nobody is asked to decide on it.
         </Text>
       </Flex>
@@ -72,7 +79,7 @@ export function RequesterActions(props: RequesterActionsProps) {
     // nothing to pre-fill from once it has.
     if (request.values === null) {
       return (
-        <Text variant="body-small">
+        <Text variant="body-small" color="secondary">
           This request can no longer be resubmitted: its parameters were removed
           by the retention policy.
         </Text>
@@ -81,15 +88,16 @@ export function RequesterActions(props: RequesterActionsProps) {
 
     const { templateRef, values } = request;
     return (
-      <Flex gap="2" align="center">
+      <Flex gap="3" align="center" style={{ flexWrap: 'wrap' }}>
         <Button
-          variant="secondary"
+          variant="primary"
           isDisabled={busy}
           onClick={() => onResubmit(templateRef, values)}
+          iconStart={<RiRefreshLine aria-hidden />}
         >
           Resubmit
         </Button>
-        <Text variant="body-small">
+        <Text variant="body-small" color="secondary">
           Starts a new request with the same parameters. The approval this run
           used is spent, so it has to be asked for again.
         </Text>

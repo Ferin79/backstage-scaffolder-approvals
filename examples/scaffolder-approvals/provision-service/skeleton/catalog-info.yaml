@@ -1,0 +1,26 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  title: ${{ values.displayName | dump }}
+  description: ${{ values.description | dump }}
+  tags: ${{ values.tags | dump }}
+  annotations:
+    example.com/approval-request: ${{ values.approvalRequest }}
+    example.com/data-classification: ${{ values.dataClassification }}
+{%- if values.includeDocs %}
+    backstage.io/techdocs-ref: dir:.
+{%- endif %}
+spec:
+  type: service
+  lifecycle: ${{ values.lifecycle }}
+  owner: ${{ values.owner }}
+{%- if values.system %}
+  system: ${{ values.system }}
+{%- endif %}
+{%- if values.dependsOn | length %}
+  dependsOn: ${{ values.dependsOn | dump }}
+{%- endif %}
+{%- if values.providesApis | length %}
+  providesApis: ${{ values.providesApis | dump }}
+{%- endif %}

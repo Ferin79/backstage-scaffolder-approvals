@@ -18,7 +18,6 @@ import {
   DEFAULT_NAMESPACE,
   stringifyEntityRef,
 } from '@backstage/catalog-model';
-import { Progress } from '@backstage/core-components';
 import { alertApiRef, useApi, useRouteRef } from '@backstage/core-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
@@ -28,14 +27,25 @@ import {
 } from '@backstage/plugin-scaffolder-react/alpha';
 import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import type { JsonObject } from '@backstage/types';
-import { Button, Flex, Text } from '@backstage/ui';
+import {
+  Alert,
+  Button,
+  Card,
+  CardBody,
+  Flex,
+  Skeleton,
+  Text,
+} from '@backstage/ui';
+import { RiArrowLeftLine, RiSendPlaneLine } from '@remixicon/react';
 import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
+import { ApprovalsIcon } from '../ApprovalsIcon';
 import { PolicySummary } from '../PolicySummary';
 import { readGate } from '../readGate';
+import styles from './GatedReviewStep.module.css';
 
 /** @public */
 export interface GatedReviewStepProps extends ReviewStepProps {
@@ -157,7 +167,12 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
   }, [alertApi, approvalsApi, formData, navigate, rootPath, templateRef]);
 
   if (state.loading) {
-    return <Progress />;
+    return (
+      <Flex direction="column" gap="3" aria-busy="true">
+        <Skeleton height={96} />
+        <Skeleton height={88} />
+      </Flex>
+    );
   }
 
   // Not gated, or the catalog could not say. Either way this is an ordinary
@@ -169,7 +184,7 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
   }
 
   return (
-    <Flex direction="column" gap="3">
+    <Flex direction="column" gap="4">
       {/* What is being asked for, before who is being asked. Replacing the
           review step had dropped this table, so a requester submitted values
           they could no longer see — and those values are exactly what the
@@ -183,37 +198,52 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
 
       {check.usable ? (
         <>
-          {/* A column, because `Text` is inline: in a plain box the heading
-              and the sentence after it run together on one line. */}
-          <Flex direction="column" gap="1">
-            <Text variant="title-small">This template needs approval</Text>
-            <Text>
-              Submitting does not run it. It creates a request, and the template
-              runs on its own once the approvers below agree.
-            </Text>
-          </Flex>
+          <Card className={styles.notice}>
+            <CardBody>
+              <Flex gap="3" align="start">
+                <span className={styles.icon} aria-hidden="true">
+                  <ApprovalsIcon fontSize="inherit" />
+                </span>
+                {/* A column, because `Text` is inline: in a plain box the
+                    heading and the sentences after it run together. */}
+                <Flex direction="column" gap="2">
+                  <Text as="h3" variant="body-large" weight="bold">
+                    This template needs approval
+                  </Text>
+                  <Text color="secondary">
+                    Submitting does not run it. It creates a request, and the
+                    template runs on its own once the approvers below agree.
+                  </Text>
+                  {/* Who will be asked, from the policy the request will
+                      freeze: "who sees this" is the question people have at
+                      this point, and a gate naming a group nobody is in is
+                      worth noticing before waiting three days for it. */}
+                  <PolicySummary policy={check.policy} linkTarget="_blank" />
+                </Flex>
+              </Flex>
+            </CardBody>
+          </Card>
 
-          {/* Who will be asked, from the policy the request will freeze:
-              "who sees this" is the question people have at this point, and
-              a gate naming a group nobody is in is worth noticing before
-              waiting three days for it. */}
-          <PolicySummary policy={check.policy} linkTarget="_blank" />
-
-          <Flex gap="2">
+          {/* Back, then the step's own action at the far end, where the
+              scaffolder's review step puts Create. */}
+          <Flex gap="2" justify="end">
+            <Button
+              variant="tertiary"
+              isDisabled={busy}
+              onClick={props.handleBack}
+              iconStart={<RiArrowLeftLine aria-hidden />}
+            >
+              Back
+            </Button>
             <Button
               variant="primary"
               isDisabled={busy}
+              isPending={busy}
               onClick={submit}
               data-testid="request-approval"
+              iconStart={<RiSendPlaneLine aria-hidden />}
             >
               Request approval
-            </Button>
-            <Button
-              variant="secondary"
-              isDisabled={busy}
-              onClick={props.handleBack}
-            >
-              Back
             </Button>
           </Flex>
         </>
@@ -222,19 +252,28 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
           {/* Said here rather than after the click: the backend would refuse
               it whatever was filled in, and the problem is the template's,
               which the requester cannot fix by editing the form. */}
-          <Flex direction="column" gap="1" role="alert">
-            <Text variant="title-small">
-              This template cannot be requested yet
-            </Text>
-            <Text>{check.problem}</Text>
-            <Text>
-              The problem is in the template, not in what you filled in. Its
-              owner needs to fix it before anyone can ask for it.
-            </Text>
-          </Flex>
+          <Alert
+            role="alert"
+            status="danger"
+            icon
+            title="This template cannot be requested yet"
+            description={
+              <Flex direction="column" gap="1">
+                <Text variant="body-small">{check.problem}</Text>
+                <Text variant="body-small">
+                  The problem is in the template, not in what you filled in. Its
+                  owner needs to fix it before anyone can ask for it.
+                </Text>
+              </Flex>
+            }
+          />
 
-          <Flex gap="2">
-            <Button variant="secondary" onClick={props.handleBack}>
+          <Flex gap="2" justify="end">
+            <Button
+              variant="tertiary"
+              onClick={props.handleBack}
+              iconStart={<RiArrowLeftLine aria-hidden />}
+            >
               Back
             </Button>
           </Flex>

@@ -15,6 +15,7 @@
  */
 
 import { Route, Routes, useParams } from 'react-router-dom';
+import { YOUR_REQUESTS_PATH } from './ApprovalsLayout';
 import { ApprovalsPage } from './ApprovalsPage';
 import { RequestDetail } from './RequestDetail';
 
@@ -34,7 +35,11 @@ function RequestDetailRoute() {
 export function Router() {
   return (
     <Routes>
-      <Route path="/" element={<ApprovalsPage />} />
+      <Route path="/" element={<ApprovalsPage view="inbox" />} />
+      <Route
+        path={YOUR_REQUESTS_PATH}
+        element={<ApprovalsPage view="mine" />}
+      />
       <Route path="/requests/:requestId" element={<RequestDetailRoute />} />
     </Routes>
   );
