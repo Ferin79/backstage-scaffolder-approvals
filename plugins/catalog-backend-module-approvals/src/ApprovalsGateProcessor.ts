@@ -15,6 +15,7 @@
  */
 
 import {
+  findGateValuesProblem,
   findSecretParameters,
   GATE_ACTION_ID,
   GATED_ANNOTATION,
@@ -50,15 +51,6 @@ const USER_TOKEN_PATTERN =
  * the task carries no user and every `${{ user.* }}` renders empty.
  */
 const USER_CONTEXT_PATTERN = /\{\{[^}]*\buser\s*\./;
-
-/**
- * What the gate has to be handed so it can check the run against the approval.
- *
- * Anything narrower hashes to something the approved request never matched, so
- * the gate refuses every run — a template that is gated in the sense that it
- * can never run at all.
- */
-const REQUIRED_VALUES_EXPRESSION = /^\s*\$\{\{\s*parameters\s*\}\}\s*$/;
 
 /** Cache key holding the notices last reported for an entity. */
 const NOTICES_CACHE_KEY = 'scaffolder-approvals/notices';
@@ -230,30 +222,16 @@ export class ApprovalsGateProcessor implements CatalogProcessor {
     }
 
     if (gateStep) {
-      // Without the parameters, the gate cannot check that the run matches
-      // what was approved, so the action refuses rather than running
-      // unchecked. Catching it at ingestion beats catching it when somebody
-      // finally tries to use the template.
-      const values = gateStep.input?.values;
-      if (values === undefined || values === null) {
+      // Without the whole parameters, the gate cannot check that the run
+      // matches what was approved, so it refuses every run — and the approvals
+      // backend refuses to accept a request for the template. Saying so at
+      // ingestion beats an author hearing it from a requester. The same check
+      // the backend runs, so the two cannot disagree.
+      const valuesProblem = findGateValuesProblem(gateStep);
+      if (valuesProblem) {
         notices.push({
           level: 'warn',
-          message:
-            `${ref} has an '${GATE_ACTION_ID}' step with no 'values' input. Add ` +
-            "'values: ${{ parameters }}' so the approval can be checked against " +
-            'what actually runs; without it the gate will refuse every run.',
-        });
-      } else if (
-        typeof values !== 'string' ||
-        !REQUIRED_VALUES_EXPRESSION.test(values)
-      ) {
-        notices.push({
-          level: 'warn',
-          message:
-            `${ref} passes something other than '\${{ parameters }}' to its ` +
-            `'${GATE_ACTION_ID}' step. The gate hashes what it is handed and ` +
-            'compares it with what was approved, so anything narrower refuses ' +
-            'every run.',
+          message: `${ref} has an unusable gate: ${valuesProblem}`,
         });
       }
 

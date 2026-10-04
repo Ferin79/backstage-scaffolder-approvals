@@ -77,7 +77,8 @@ const TEMPLATE: Entity = {
         input: {
           approvers: ['group:default/devx-team'],
           summary: 'Admin on backstage',
-          values: VALUES,
+          // As the catalog holds it; the scaffolder resolves it per task.
+          values: '${{ parameters }}',
         },
       },
       { id: 'grant', action: 'github:admin:grant' },

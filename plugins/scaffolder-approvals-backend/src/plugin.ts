@@ -34,6 +34,7 @@ import { notificationService } from '@backstage/plugin-notifications-node';
 import { scaffolderServiceRef } from '@backstage/plugin-scaffolder-node';
 import { signalsServiceRef } from '@backstage/plugin-signals-node';
 import type { HumanDuration } from '@backstage/types';
+import { readApprovalsConfig } from './config';
 import { initApprovalStore } from './database';
 import {
   ApprovalNotifier,
@@ -42,12 +43,6 @@ import {
   createRouter,
   subscribeToTaskEvents,
 } from './service';
-
-/** Applied when `scaffolderApprovals.grantTtl` is not configured (Q7). */
-const DEFAULT_GRANT_TTL: HumanDuration = { hours: 1 };
-
-/** Applied when `scaffolderApprovals.retention.redactAfter` is absent (Q6). */
-const DEFAULT_RETENTION: HumanDuration = { days: 180 };
 
 /**
  * Often enough that a stuck launch is noticed quickly, rarely enough that the
@@ -107,15 +102,12 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
         notifications,
         signals,
       }) {
-        const store = await initApprovalStore(database);
+        // Read before anything else, so a mistyped duration stops the backend
+        // with the key's name rather than misbehaving at the first approval.
+        const { grantTtl, retention, grantConsumers } =
+          readApprovalsConfig(config);
 
-        const grantTtl =
-          config.getOptional<HumanDuration>('scaffolderApprovals.grantTtl') ??
-          DEFAULT_GRANT_TTL;
-        const retention =
-          config.getOptional<HumanDuration>(
-            'scaffolderApprovals.retention.redactAfter',
-          ) ?? DEFAULT_RETENTION;
+        const store = await initApprovalStore(database);
 
         // `getResources` is what lets the permission framework load a request
         // by id, so a conditional policy's rules can be applied to it. Without
@@ -165,9 +157,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
             permissions,
             logger,
             auditor,
-            grantConsumers: config.getOptionalStringArray(
-              'scaffolderApprovals.grantConsumers',
-            ),
+            grantConsumers,
           }),
         );
 

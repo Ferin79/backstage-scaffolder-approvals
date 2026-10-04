@@ -60,6 +60,7 @@ function template(
           input: options.gate ?? {
             approvers: ['group:default/devx-team', 'user:default/lead'],
             quorum: 2,
+            values: '${{ parameters }}',
           },
         },
       ],
@@ -167,6 +168,18 @@ describe('GatedTemplateCard', () => {
     expect(cardLinks()).toEqual(
       expect.arrayContaining([['Needs approval', '/scaffolder-approvals']]),
     );
+  });
+
+  it('says a template needs approval when its gate lacks the values', async () => {
+    // Approvers are named, but the gate could never pass: no approver links.
+    await render({
+      template: template({
+        gate: { approvers: ['group:default/devx-team'] },
+      }),
+    });
+
+    expect(await screen.findByText('Needs approval')).toBeInTheDocument();
+    expect(screen.queryByText(/Approver:/)).not.toBeInTheDocument();
   });
 
   it("keeps the app's own links, after the approvers", async () => {

@@ -56,7 +56,10 @@ const TEMPLATE: Entity = {
       {
         id: 'gate',
         action: GATE_ACTION_ID,
-        input: { approvers: ['group:default/devx-team'] },
+        input: {
+          approvers: ['group:default/devx-team'],
+          values: '${{ parameters }}',
+        },
       },
     ],
   },
@@ -257,6 +260,10 @@ describe('ApprovalSweeps', () => {
 
         const failed = await store.getRequest(id);
         expect(failed?.status).toBe('failed');
+        // The page says why, not only that it failed (H3).
+        expect(failed?.failureReason).toMatch(
+          /grant expired before the template could start/,
+        );
         // Terminal: the approval is spent and a fresh one is needed (Q5).
         expect(notifier.onFailed).toHaveBeenCalledWith(
           expect.objectContaining({ id }),
@@ -306,6 +313,18 @@ describe('ApprovalSweeps', () => {
         await sweeps.reconcile();
 
         expect((await store.getRequest(id))?.status).toBe(expected);
+      });
+
+      it.each([
+        ['failed', 'the task failed'],
+        ['cancelled', 'the task was cancelled'],
+        ['completed', undefined],
+      ])('records why a %s task ended the request', async (task, reason) => {
+        const id = await approved();
+        getTask.mockResolvedValue({ id: 'task-1', status: task });
+        await sweeps.reconcile();
+
+        expect((await store.getRequest(id))?.failureReason).toBe(reason);
       });
 
       it('leaves a task that is still going alone', async () => {
@@ -495,6 +514,7 @@ describe('ApprovalSweeps', () => {
                 input: {
                   approvers: ['group:default/devx-team'],
                   timeout: { hours: 2 },
+                  values: '${{ parameters }}',
                 },
               },
             ],

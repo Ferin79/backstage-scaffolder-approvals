@@ -57,6 +57,7 @@ import type { ScaffolderService } from '@backstage/plugin-scaffolder-node';
 import { durationToMilliseconds, type HumanDuration } from '@backstage/types';
 import type { JsonObject, JsonValue } from '@backstage/types';
 import type { ApprovalStore } from '../database';
+import { describeLaunchRefusal } from './launchRefusal';
 import { validateValues } from './validateValues';
 
 /**
@@ -95,6 +96,14 @@ export interface ApprovalObserver {
    * and no signal, so a page open on the request never updated (B10).
    */
   onWithdrawn?(request: ApprovalRequest): Promise<void>;
+  /**
+   * The approved request will not run: the scaffolder refused to start the
+   * template, so no task exists and none would on a retry.
+   *
+   * Optional, like the others the sweeps raise; `reason` is the sentence
+   * recorded on the request.
+   */
+  onFailed?(request: ApprovalRequest, reason: string): Promise<void>;
 }
 
 /** Options for {@link ApprovalService.submit}. */
@@ -283,21 +292,55 @@ export class ApprovalService {
     request: ApprovalRequest,
     credentials: BackstageCredentials,
   ): Promise<TemplateDrift | undefined> {
+    let template: TemplateEntityV1beta3 | undefined;
     try {
-      const template = await this.catalog.getEntityByRef(request.templateRef, {
+      template = (await this.catalog.getEntityByRef(request.templateRef, {
         credentials,
-      });
-      return compareTemplate({
-        template,
-        submittedUid: request.templateUid,
-        submittedStepsHash: request.templateStepsHash,
-      });
+      })) as TemplateEntityV1beta3 | undefined;
     } catch (error) {
       this.logger.warn(
         `Could not check ${request.templateRef} for drift`,
         error instanceof Error ? error : undefined,
       );
       return undefined;
+    }
+
+    const drift = compareTemplate({
+      template,
+      submittedUid: request.templateUid,
+      submittedStepsHash: request.templateStepsHash,
+    });
+
+    // The steps hash cannot see a change to the parameters, and that is the
+    // change that stops a request from ever running: the scaffolder validates
+    // the values again when it starts the task, and refuses values that no
+    // longer fit. Checked only while the request can still launch, which is
+    // when an approver can do something about it.
+    if (
+      template &&
+      request.values !== null &&
+      (request.status === 'pending' || request.status === 'approved') &&
+      !this.valuesStillFit(template, request.values)
+    ) {
+      return { changed: true, reasons: [...drift.reasons, 'parameters'] };
+    }
+
+    return drift;
+  }
+
+  /** Whether submitted values still satisfy a template's parameters now. */
+  private valuesStillFit(
+    template: TemplateEntityV1beta3,
+    values: JsonObject,
+  ): boolean {
+    try {
+      validateValues(template, values);
+      return true;
+    } catch (error) {
+      if (error instanceof InputError) {
+        return false;
+      }
+      throw error;
     }
   }
 
@@ -575,7 +618,7 @@ export class ApprovalService {
     }
 
     const token = generateGrantToken();
-    await this.store.createGrant({
+    const grantId = await this.store.createGrant({
       requestId,
       tokenHash: hashGrantToken(token),
       valuesHash: request.valuesHash,
@@ -620,15 +663,26 @@ export class ApprovalService {
       );
       taskId = response.taskId;
     } catch (error) {
-      // Q9: a launch failure is not a task failure, so the request stays
-      // `approved` and the next sweep retries it.
+      // The scaffolder answered, and refused: the values no longer fit the
+      // template's parameters, or the template is gone. No task was created,
+      // and asking again would get the same answer, so retrying until the
+      // grant lapsed only kept the request at "Starting" for an hour and then
+      // blamed the lapse. End it now, with the scaffolder's own reason.
+      const refusal = describeLaunchRefusal(error);
+      if (refusal) {
+        await this.failRefusedLaunch(requestId, grantId, refusal);
+        return;
+      }
+
+      // Q9: otherwise a launch failure is not a task failure, so the request
+      // stays `approved` and the next sweep retries it.
       //
       // The grant is deliberately left live rather than revoked here. The
       // error does not say whether a task was created: `ScaffolderClient`
-      // throws a plain `Error` for a non-2xx answer as well as for a timeout,
-      // and a task that exists is on its way to the gate holding this grant.
-      // Waiting out the grace period costs at most one sweep interval, while
-      // guessing wrong would fail a run that was about to succeed.
+      // throws a plain `Error` for a timeout or a 5xx as well, and a task that
+      // exists is on its way to the gate holding this grant. Waiting out the
+      // grace period costs at most one sweep interval, while guessing wrong
+      // would fail a run that was about to succeed.
       this.logger.warn(
         `Failed to launch approval request ${requestId}; the next sweep will retry it until ${deadline.toISOString()}`,
         error instanceof Error ? error : undefined,
@@ -645,6 +699,40 @@ export class ApprovalService {
       this.logger.warn(
         `Launched task ${taskId} for approval request ${requestId}, but the request had already left 'approved'`,
       );
+    }
+  }
+
+  /**
+   * End a request whose launch the scaffolder refused outright.
+   *
+   * The grant is withdrawn first, so nothing can redeem it once the request
+   * says it failed. Revoking is compare-and-set and loses to a task that has
+   * redeemed the grant; a refusal means no such task exists, but if one ever
+   * did, its id is recovered rather than the request being failed underneath a
+   * running template.
+   */
+  private async failRefusedLaunch(
+    requestId: string,
+    grantId: string,
+    reason: string,
+  ): Promise<void> {
+    if (!(await this.store.revokeGrant(grantId))) {
+      await this.recoverStartedTask(requestId);
+      return;
+    }
+
+    if (
+      !(await this.store.transition(requestId, 'approved', 'failed', {
+        failureReason: reason,
+      }))
+    ) {
+      return;
+    }
+
+    this.logger.warn(`Approval request ${requestId} failed: ${reason}`);
+    const failed = await this.store.getRequest(requestId);
+    if (failed) {
+      await this.notify(() => this.observer?.onFailed?.(failed, reason));
     }
   }
 

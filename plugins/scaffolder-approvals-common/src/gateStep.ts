@@ -194,6 +194,45 @@ export function findGateStep(entity: Entity): GateStepLookup {
   return { step, index };
 }
 
+/** The only `values` input a gate can check a run against: all of them. */
+const WHOLE_PARAMETERS = /^\s*\$\{\{\s*parameters\s*\}\}\s*$/;
+
+/**
+ * Why a gate step's `values` input cannot work, or undefined when it can.
+ *
+ * The gate hashes the `values` it is handed and compares the hash with the one
+ * taken of everything the requester submitted. Without `values` it refuses the
+ * run outright; with anything narrower than `${{ parameters }}` the two hashes
+ * never match. Either way the template can be asked for and approved, and then
+ * every run fails at the gate — an approval spent on a request that could never
+ * run, which is what checking a template at submit exists to prevent (Q3).
+ *
+ * Kept with {@link findGateStep} rather than folded into it, so the catalog
+ * processor can report it in its own words.
+ *
+ * @public
+ */
+export function findGateValuesProblem(
+  step: TemplateEntityStepV1beta3,
+): string | undefined {
+  const values = step?.input?.values;
+  if (values === undefined || values === null) {
+    return (
+      `'${GATE_ACTION_ID}' has no 'values' input. Add 'values: \${{ parameters }}' ` +
+      'so the approval can be checked against what actually runs; without it ' +
+      'the gate refuses every run'
+    );
+  }
+  if (typeof values !== 'string' || !WHOLE_PARAMETERS.test(values)) {
+    return (
+      `'${GATE_ACTION_ID}' passes something other than '\${{ parameters }}' as its ` +
+      "'values'. The gate hashes what it is handed and compares it with what " +
+      'was approved, so anything narrower refuses every run'
+    );
+  }
+  return undefined;
+}
+
 /**
  * Whether a template carries a usable gate.
  *

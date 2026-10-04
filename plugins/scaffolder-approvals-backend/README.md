@@ -23,7 +23,7 @@ backend.add(
 scaffolderApprovals:
   # How long an approval grant stays redeemable after a request is approved.
   # Short by design: it is a single-use capability that only has to survive the
-  # launch. Default: 1 hour.
+  # launch. Default: 1 hour. '1h' and 'PT1H' work too.
   grantTtl: { hours: 1 }
 
   retention:
@@ -31,6 +31,8 @@ scaffolderApprovals:
     # redacted. Default: 180 days.
     redactAfter: { days: 180 }
 ```
+
+Both durations are checked at start-up: a misspelt unit, a bare number or zero stops the backend with an error naming the key, instead of being read as zero. Redaction cannot be switched off; set a long window to keep values longer.
 
 That is the entire config surface. **Gate policy — who approves, how many, self-approval, timeout — is declared per template** in the `approval:gate` step, never here, so the people who own a template own its gate.
 

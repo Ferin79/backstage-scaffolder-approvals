@@ -147,8 +147,9 @@ spec:
         selfApprove: false
         timeout: { hours: 72 }
         summary: 'Admin on ${{ parameters.repository }}'
-        # Required. This is what lets the gate check that the run matches what
-        # was approved. Without it the gate refuses every run.
+        # Required, and exactly this: it is what lets the gate check that the
+        # run matches what was approved. Without it, or with anything narrower,
+        # the gate could never pass, so the request is refused at submit.
         values: ${{ parameters }}
 
     # Runs only after approval. Check the input schema of whichever action you
@@ -175,6 +176,8 @@ What happens next:
 2. The approvers are notified. Each approves or denies, optionally with a comment. The requester cannot approve their own request, even though they are in the group.
 3. When two have approved, the template starts. A single denial rejects the request outright, whatever the approval count.
 4. The request moves to `running`, then `completed` or `failed`. Nobody deciding within 72 hours moves it to `expired`.
+
+A failed request says why on its page and in the notification: the task failed, the task was cancelled, the approval lapsed before the template could start, or the scaffolder refused to start it. The last one is final at once. A scaffolder that answers 400, 403, 404 or 422 has created no task and would refuse the same request again, so the request fails there and then, with the scaffolder's own words, instead of retrying until the grant runs out. An answer that says nothing about whether a task exists (a 5xx, a 401, a dropped connection) is still retried.
 
 The request page is the canonical view throughout, and links to the task log once there is a task. With the signals plugin installed it updates itself: somebody else's vote, the template starting and its task finishing all appear without a reload, and so do the inbox and the home-page card.
 
@@ -214,6 +217,8 @@ The request page warns an approver when this has happened. Two things are record
 The hash covers the steps only. A template repo takes commits for all sorts of reasons, and a warning that fired on an owner or description edit is one people would learn to click past.
 
 Drift is **shown, not enforced**. Failing every in-flight request whenever its template took an unrelated commit would make the feature unusable, so an approver is told and decides. A drifted launch is also logged by the backend, so the run can be tied to the template it actually ran.
+
+One change is different in kind. When the template's **parameters** change so that the submitted values no longer fit them (a field became required, an enum lost the option that was chosen), the scaffolder will refuse to start the template however the approvers vote. The request page says so before anyone approves: approving will fail, and the requester needs to submit again. Parameter edits the values still satisfy raise no warning.
 
 ### A secret cannot survive the wait
 
@@ -393,6 +398,7 @@ Gate policy lives in each template. The global configuration is only this:
 ```yaml
 scaffolderApprovals:
   # How long an approval stays redeemable once granted. Default: 1 hour.
+  # Also accepted: '1h', 'PT1H'.
   grantTtl: { hours: 1 }
   retention:
     # How long submitted values are kept before being redacted. The request and
@@ -404,19 +410,21 @@ scaffolderApprovals:
   grantConsumers: ['plugin:scaffolder']
 ```
 
+Both durations take Backstage's usual forms: an object of units (`{ hours: 1 }`), a string such as `'1h'` or `'90 days'`, or an ISO 8601 duration such as `'PT1H'`. They are checked when the backend starts. A misspelt unit (`{ hour: 1 }`), a bare number, or a duration of zero stops start-up with an error naming the key, rather than being read as zero, which used to stop every launch (a zero grant) or redact every request at once (a zero retention window) without a word in the log. Redaction cannot be switched off; to keep values for longer, set a long window.
+
 ### Events and signals
 
 If the events backend is installed, every state change is published on the `scaffolder-approvals` topic. The payload always carries `action`, `requestId`, `templateRef`, `requesterRef` and `status`, plus a little more for some actions:
 
-| `action`    | When                                    | Notification | Also carries              |
-| ----------- | --------------------------------------- | ------------ | ------------------------- |
-| `requested` | A request is submitted                  | Approvers    | —                         |
-| `decided`   | An approver approves or denies          | Requester¹   | `decision`, `approverRef` |
-| `launched`  | The template starts                     | None         | `taskId`                  |
-| `completed` | The task finished successfully          | None         | `taskId`                  |
-| `failed`    | The task failed, or the approval lapsed | Both         | `reason`                  |
-| `expired`   | Nobody decided in time                  | Both         | —                         |
-| `withdrawn` | The requester withdrew it               | Approvers²   | —                         |
+| `action`    | When                                                   | Notification | Also carries              |
+| ----------- | ------------------------------------------------------ | ------------ | ------------------------- |
+| `requested` | A request is submitted                                 | Approvers    | —                         |
+| `decided`   | An approver approves or denies                         | Requester¹   | `decision`, `approverRef` |
+| `launched`  | The template starts                                    | None         | `taskId`                  |
+| `completed` | The task finished successfully                         | None         | `taskId`                  |
+| `failed`    | The task failed or was refused, or the approval lapsed | Both         | `reason`                  |
+| `expired`   | Nobody decided in time                                 | Both         | —                         |
+| `withdrawn` | The requester withdrew it                              | Approvers²   | —                         |
 
 ¹ Only when the vote settles the request — a denial, or the approval that meets the quorum. A vote that leaves it pending is still published, with `status: pending`, so a subscriber sees every vote; it notifies nobody, because "Request approved" with an approval still missing would be untrue.
 

@@ -75,6 +75,8 @@ export interface TransitionFields {
   taskId?: string | null;
   decidedAt?: Date | null;
   expiresAt?: Date | null;
+  /** Why the request failed, for a transition to `failed`. */
+  failureReason?: string | null;
   /** Also require the request's timeout not to have passed (C4). */
   notExpired?: boolean;
 }
@@ -433,6 +435,9 @@ export class ApprovalStore {
     }
     if (fields.expiresAt !== undefined) {
       patch.expires_at = fields.expiresAt;
+    }
+    if (fields.failureReason !== undefined) {
+      patch.failure_reason = fields.failureReason;
     }
 
     let query = this.db<ApprovalRequestRow>(TABLE_REQUESTS).where({

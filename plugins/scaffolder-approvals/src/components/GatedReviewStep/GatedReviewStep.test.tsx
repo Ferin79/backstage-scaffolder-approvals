@@ -49,6 +49,7 @@ function template(gated: boolean) {
           input: {
             approvers: ['group:default/devx-team', 'user:default/lead'],
             quorum: 2,
+            values: '${{ parameters }}',
           },
         },
       ],
@@ -194,6 +195,7 @@ describe('GatedReviewStep', () => {
     entity.spec.steps[0].input = {
       approvers: ['group:default/devx-team'],
       quorum: 1,
+      values: '${{ parameters }}',
     } as (typeof entity.spec.steps)[0]['input'];
     await render({ entity });
 
@@ -235,6 +237,30 @@ describe('GatedReviewStep', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Back' }));
       expect(REVIEW_PROPS.handleBack).toHaveBeenCalled();
+      expect(submitRequest).not.toHaveBeenCalled();
+    });
+
+    // H1: without the whole parameters to compare, the gate refuses every run,
+    // so the request must not be offered only to fail after approval.
+    it.each([
+      ['no values', undefined],
+      ['only some of the values', '${{ parameters.repository }}'],
+    ])('refuses a gate handed %s', async (_, values) => {
+      const entity = template(true);
+      entity.spec.steps[0].input = {
+        approvers: ['group:default/devx-team'],
+        ...(values === undefined ? {} : { values }),
+      } as (typeof entity.spec.steps)[0]['input'];
+      const submitRequest = jest.fn();
+      await render({ entity, api: { submitRequest } });
+
+      expect(
+        await screen.findByText('This template cannot be requested yet'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/request-github-admin has an unusable gate:.*values/),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('request-approval')).not.toBeInTheDocument();
       expect(submitRequest).not.toHaveBeenCalled();
     });
 

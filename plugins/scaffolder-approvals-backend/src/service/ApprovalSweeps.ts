@@ -213,9 +213,16 @@ export class ApprovalSweeps {
     request: ApprovalRequest,
     reason: string,
   ): Promise<void> {
-    if (await this.store.transition(request.id, 'running', 'failed')) {
+    if (
+      await this.store.transition(request.id, 'running', 'failed', {
+        failureReason: reason,
+      })
+    ) {
       this.logger.warn(`Approval request ${request.id} failed: ${reason}`);
-      await this.notifier?.onFailed({ ...request, status: 'failed' }, reason);
+      await this.notifier?.onFailed(
+        { ...request, status: 'failed', failureReason: reason },
+        reason,
+      );
     }
   }
 
@@ -236,7 +243,17 @@ export class ApprovalSweeps {
       return;
     }
 
-    const moved = await this.store.transition(request.id, 'running', next);
+    let failureReason: string | undefined;
+    if (next === 'failed') {
+      failureReason =
+        taskStatus === 'cancelled'
+          ? 'the task was cancelled'
+          : 'the task failed';
+    }
+
+    const moved = await this.store.transition(request.id, 'running', next, {
+      failureReason,
+    });
     if (!moved) {
       return;
     }
@@ -245,12 +262,10 @@ export class ApprovalSweeps {
       `Approval request ${request.id} is ${next}; its task ${request.taskId} ${taskStatus}`,
     );
 
-    if (next === 'failed') {
+    if (failureReason) {
       await this.notifier?.onFailed(
-        { ...request, status: next },
-        taskStatus === 'cancelled'
-          ? 'the task was cancelled'
-          : 'the task failed',
+        { ...request, status: 'failed', failureReason },
+        failureReason,
       );
     } else {
       // No notification, by Q20 — but an external subscriber needs the end of
@@ -316,10 +331,14 @@ export class ApprovalSweeps {
       request.id,
       'approved',
       'failed',
+      { failureReason: reason },
     );
     if (failed) {
       this.logger.warn(`Approval request ${request.id} failed: ${reason}`);
-      await this.notifier?.onFailed({ ...request, status: 'failed' }, reason);
+      await this.notifier?.onFailed(
+        { ...request, status: 'failed', failureReason: reason },
+        reason,
+      );
     }
   }
 }

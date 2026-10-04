@@ -47,6 +47,7 @@ export interface ApprovalRequest {
   createdAt: string;
   decidedAt?: string;
   expiresAt?: string;
+  failureReason?: string;
   // (undocumented)
   id: string;
   policySnapshot: GatePolicy;
@@ -185,6 +186,11 @@ export const DEFAULT_SELF_APPROVE = false;
 
 // @public
 export function findGateStep(entity: Entity): GateStepLookup;
+
+// @public
+export function findGateValuesProblem(
+  step: TemplateEntityStepV1beta3,
+): string | undefined;
 
 // @public
 export function findSecretParameters(parameters: unknown): string[];
@@ -331,7 +337,12 @@ export interface TemplateDrift {
 }
 
 // @public
-export type TemplateDriftReason = 'missing' | 'replaced' | 'steps' | 'unknown';
+export type TemplateDriftReason =
+  | 'missing'
+  | 'replaced'
+  | 'steps'
+  | 'parameters'
+  | 'unknown';
 
 // @public
 export const TERMINAL_APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[];
