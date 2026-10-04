@@ -14,8 +14,12 @@
  * limitations under the License.
  */
 
-import type { ApprovalDecisionOutcome } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import type {
+  ApprovalDecisionOutcome,
+  TemplateDrift,
+} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
+  Alert,
   Button,
   Dialog,
   DialogBody,
@@ -27,12 +31,19 @@ import {
 } from '@backstage/ui';
 import { RiCheckLine, RiCloseLine } from '@remixicon/react';
 import { type ReactNode, useState } from 'react';
+import { driftBlocksLaunch, explainDrift } from './DriftNotice';
 
 /** @public */
 export interface DecisionDialogProps {
   decision: ApprovalDecisionOutcome;
   /** What the request is called: its summary, or its template's name. */
   summary: ReactNode;
+  /**
+   * How the template has changed since the request was submitted. Repeated
+   * here because the dialog covers the page's own warning (L19 in the browser
+   * review).
+   */
+  drift?: TemplateDrift;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (comment?: string) => void;
@@ -45,13 +56,28 @@ export interface DecisionDialogProps {
  * hard to take back: an approval starts the template immediately, and a denial
  * is terminal — the requester has to start over.
  *
+ * Approving a template that has changed says so again, and when the launch is
+ * bound to fail it says that rather than promising the template will start.
+ *
  * @public
  */
 export function DecisionDialog(props: DecisionDialogProps) {
-  const { decision, summary, busy, onCancel, onConfirm } = props;
+  const { decision, summary, drift, busy, onCancel, onConfirm } = props;
   const [comment, setComment] = useState('');
 
   const denying = decision === 'deny';
+  // Denying is the same whatever happened to the template.
+  const driftWarnings = denying ? [] : explainDrift(drift);
+  const launchWillFail = !denying && driftBlocksLaunch(drift);
+
+  // "Anyway" once the dialog has said why not: a plain "Approve" under a
+  // warning reads as if the warning did not apply.
+  let confirmLabel = 'Approve';
+  if (denying) {
+    confirmLabel = 'Deny';
+  } else if (driftWarnings.length > 0) {
+    confirmLabel = 'Approve anyway';
+  }
 
   return (
     // `Dialog` extends `ModalOverlayProps`, so it is the overlay itself and
@@ -82,11 +108,30 @@ export function DecisionDialog(props: DecisionDialogProps) {
             ) : (
               <>
                 Approving counts towards the quorum for{' '}
-                <strong>{summary}</strong>. Once the quorum is met the template
-                starts straight away.
+                <strong>{summary}</strong>.{' '}
+                {launchWillFail
+                  ? 'Once the quorum is met the template is launched, but as things stand the launch will fail.'
+                  : 'Once the quorum is met the template starts straight away.'}
               </>
             )}
           </Text>
+
+          {driftWarnings.length > 0 && (
+            <Alert
+              status={launchWillFail ? 'danger' : 'warning'}
+              icon
+              title="The template has changed"
+              description={
+                <Flex direction="column" gap="1">
+                  {driftWarnings.map(warning => (
+                    <Text key={warning} variant="body-small">
+                      {warning}
+                    </Text>
+                  ))}
+                </Flex>
+              }
+            />
+          )}
 
           <TextAreaField
             label="Comment"
@@ -118,7 +163,7 @@ export function DecisionDialog(props: DecisionDialogProps) {
             denying ? <RiCloseLine aria-hidden /> : <RiCheckLine aria-hidden />
           }
         >
-          {denying ? 'Deny' : 'Approve'}
+          {confirmLabel}
         </Button>
       </DialogFooter>
     </Dialog>

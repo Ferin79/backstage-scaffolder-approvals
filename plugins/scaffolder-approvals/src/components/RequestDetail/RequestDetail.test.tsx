@@ -19,8 +19,9 @@ import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { signalApiRef } from '@backstage/plugin-signals-react';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useLocation } from 'react-router-dom';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { RequestDetail } from './RequestDetail';
@@ -87,6 +88,21 @@ function fakeSignals() {
   };
 }
 
+/** Where the page has navigated to, for the tests that follow a link. */
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <span data-testid="location" hidden>
+      {location.pathname + location.search}
+    </span>
+  );
+}
+
+/** A refusal from the backend, as the client throws it. */
+function refusal(statusCode: number, message: string) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
 function render(
   api: Partial<ApprovalsApi>,
   identity: ReturnType<typeof identityOf> = APPROVER,
@@ -103,6 +119,7 @@ function render(
       ]}
     >
       <RequestDetail requestId={REQUEST.id} />
+      <LocationProbe />
     </TestApiProvider>,
     {
       // Only the root ref: `mountedRoutes` takes route refs, not sub route
@@ -242,9 +259,185 @@ describe('RequestDetail', () => {
         }),
       ),
     );
+    // Not a conflict, so it may be worth another try.
+    expect(screen.getByText('Approve this request?')).toBeInTheDocument();
+  });
+
+  describe('a dialog left open while the request moves on', () => {
+    // M6 in the browser review: the page behind updated to Denied, and the
+    // dialog went on offering Approve.
+    it('closes the decide dialog, and says nothing was sent', async () => {
+      const signals = fakeSignals();
+      const decide = jest.fn();
+      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const getRequest = jest
+        .fn()
+        .mockResolvedValueOnce(REQUEST)
+        .mockResolvedValue({ ...REQUEST, status: 'rejected' as const });
+      await render({ getRequest, decide }, APPROVER, alertApi, signals);
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Approve' }),
+      );
+      expect(
+        await screen.findByText('Approve this request?'),
+      ).toBeInTheDocument();
+
+      await signals.publish('scaffolder-approvals', {
+        action: 'decided',
+        requestId: REQUEST.id,
+        status: 'rejected',
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Approve this request?'),
+        ).not.toBeInTheDocument(),
+      );
+      expect(alertApi.post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            'Nothing was sent: this request was settled while the dialog was open.',
+          severity: 'info',
+        }),
+      );
+      expect(decide).not.toHaveBeenCalled();
+    });
+
+    it('keeps it open when another vote lands that does not settle it', async () => {
+      const signals = fakeSignals();
+      const getRequest = jest
+        .fn()
+        .mockResolvedValueOnce(REQUEST)
+        .mockResolvedValue({
+          ...REQUEST,
+          decisions: [
+            {
+              id: 'd-1',
+              requestId: REQUEST.id,
+              approverRef: 'user:default/bob',
+              decision: 'approve' as const,
+              createdAt: '2026-09-13T11:00:00.000Z',
+            },
+          ],
+        });
+      await render({ getRequest }, APPROVER, undefined, signals);
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Approve' }),
+      );
+      await screen.findByText('Approve this request?');
+
+      await signals.publish('scaffolder-approvals', {
+        action: 'decided',
+        requestId: REQUEST.id,
+        status: 'pending',
+      });
+
+      await waitFor(() => expect(getRequest).toHaveBeenCalledTimes(2));
+      expect(screen.getByText('Approve this request?')).toBeInTheDocument();
+    });
+
+    it('closes on a conflict, and shows where the request stands', async () => {
+      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const getRequest = jest
+        .fn()
+        .mockResolvedValueOnce(REQUEST)
+        .mockResolvedValue({ ...REQUEST, status: 'rejected' as const });
+      await render(
+        {
+          getRequest,
+          decide: jest
+            .fn()
+            .mockRejectedValue(
+              refusal(409, 'This request has already been decided'),
+            ),
+        },
+        APPROVER,
+        alertApi,
+      );
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Approve' }),
+      );
+      await userEvent.click(
+        screen.getAllByRole('button', { name: 'Approve' }).at(-1)!,
+      );
+
+      expect(
+        await screen.findByText(
+          'Denied. A single denial rejects a request outright.',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText('Approve this request?'),
+      ).not.toBeInTheDocument();
+      expect(alertApi.post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('already been decided'),
+          severity: 'error',
+        }),
+      );
+    });
+
+    it('closes the withdraw dialog once the request is settled', async () => {
+      const signals = fakeSignals();
+      const cancel = jest.fn();
+      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const getRequest = jest
+        .fn()
+        .mockResolvedValueOnce(REQUEST)
+        .mockResolvedValue({ ...REQUEST, status: 'running' as const });
+      await render(
+        { getRequest, cancel },
+        identityOf('user:default/requester'),
+        alertApi,
+        signals,
+      );
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Withdraw' }),
+      );
+      await screen.findByText('Withdraw this request?');
+
+      await signals.publish('scaffolder-approvals', {
+        action: 'launched',
+        requestId: REQUEST.id,
+        status: 'running',
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText('Withdraw this request?'),
+        ).not.toBeInTheDocument(),
+      );
+      expect(alertApi.post).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            'Nothing was withdrawn: this request is no longer waiting for a decision.',
+        }),
+      );
+      expect(cancel).not.toHaveBeenCalled();
+    });
   });
 
   describe('when you cannot decide', () => {
+    it('tells a requester outside every approver group that it is their request', async () => {
+      // L8 in the browser review: "You are not an approver for this request"
+      // is true, and beside the point on your own request.
+      await render(
+        { getRequest: async () => REQUEST },
+        identityOf('user:default/requester'),
+      );
+
+      expect(
+        await screen.findByText(
+          'This is your request. The approvers named above decide on it.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/not an approver/)).not.toBeInTheDocument();
+    });
+
     it('explains that you are not an approver', async () => {
       await render(
         { getRequest: jest.fn().mockResolvedValue(REQUEST) },
@@ -384,6 +577,81 @@ describe('RequestDetail', () => {
       });
     });
 
+    describe('when the template no longer takes the values', () => {
+      // L18 in the browser review: after the template gained a required
+      // field, Resubmit posted the old values again and was refused again.
+      it('opens its form with the values filled in', async () => {
+        const alertApi = { post: jest.fn(), alert$: jest.fn() };
+        await render(
+          {
+            getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
+            submitRequest: jest
+              .fn()
+              .mockRejectedValue(
+                refusal(
+                  400,
+                  "Submitted values do not match the template's parameters: (root) must have required property 'ticket'",
+                ),
+              ),
+          },
+          REQUESTER,
+          alertApi,
+        );
+
+        await userEvent.click(
+          await screen.findByRole('button', { name: 'Resubmit' }),
+        );
+
+        await waitFor(() =>
+          expect(screen.getByTestId('location')).toHaveTextContent(
+            '/create/templates/default/request-github-admin?formData=',
+          ),
+        );
+        const search = screen
+          .getByTestId('location')
+          .textContent!.split('?')[1];
+        expect(
+          JSON.parse(new URLSearchParams(search).get('formData')!),
+        ).toEqual(REQUEST.values);
+        expect(alertApi.post).toHaveBeenCalledWith(
+          expect.objectContaining({
+            severity: 'info',
+            message: expect.stringMatching(
+              /^Could not resubmit as it was: .*'ticket'\. The values are filled in on the template's form/,
+            ),
+          }),
+        );
+      });
+
+      it('stays put and says so for any other failure', async () => {
+        const alertApi = { post: jest.fn(), alert$: jest.fn() };
+        await render(
+          {
+            getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
+            submitRequest: jest
+              .fn()
+              .mockRejectedValue(refusal(503, 'Service Unavailable')),
+          },
+          REQUESTER,
+          alertApi,
+        );
+
+        await userEvent.click(
+          await screen.findByRole('button', { name: 'Resubmit' }),
+        );
+
+        await waitFor(() =>
+          expect(alertApi.post).toHaveBeenCalledWith(
+            expect.objectContaining({
+              message: 'Could not resubmit: Service Unavailable',
+              severity: 'error',
+            }),
+          ),
+        );
+        expect(screen.getByTestId('location').textContent).toBe('/');
+      });
+    });
+
     it('cannot resubmit a request whose parameters were redacted', async () => {
       await render(
         {
@@ -466,6 +734,69 @@ describe('RequestDetail', () => {
       const notice = await screen.findByRole('alert');
       expect(notice).toHaveTextContent(/submitted values no longer fit them/);
       expect(notice).toHaveTextContent(/approving will fail/);
+    });
+
+    // L19 in the browser review: the dialog covers the page's warning, and
+    // went on saying the template "starts straight away".
+    it('repeats the warning in the approve dialog, and asks to approve anyway', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: true, reasons: ['steps'] },
+        }),
+      });
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Approve' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+
+      expect(dialog).toHaveTextContent(
+        /edited steps are the ones that will run/,
+      );
+      expect(dialog).toHaveTextContent(/starts straight away/);
+      expect(
+        within(dialog).getByRole('button', { name: 'Approve anyway' }),
+      ).toBeInTheDocument();
+    });
+
+    it('says the launch will fail when the values no longer fit', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: true, reasons: ['parameters'] },
+        }),
+      });
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Approve' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+
+      expect(dialog).toHaveTextContent(/as things stand the launch will fail/);
+      expect(dialog).not.toHaveTextContent(/starts straight away/);
+      expect(
+        within(dialog).getByRole('button', { name: 'Approve anyway' }),
+      ).toBeInTheDocument();
+    });
+
+    it('leaves the deny dialog as it was', async () => {
+      await render({
+        getRequest: async () => ({
+          ...REQUEST,
+          templateDrift: { changed: true, reasons: ['parameters'] },
+        }),
+      });
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Deny' }),
+      );
+      const dialog = await screen.findByRole('dialog');
+
+      expect(dialog).not.toHaveTextContent(/The template has changed/);
+      expect(
+        within(dialog).getByRole('button', { name: 'Deny' }),
+      ).toBeInTheDocument();
     });
 
     it('explains a template that has left the catalog', async () => {

@@ -67,6 +67,21 @@ const WHY_NOT: Record<DecisionIneligibility, string> = {
 };
 
 /**
+ * Why the viewer cannot decide, said to the person it is about.
+ *
+ * Somebody outside every approver group, looking at their own request, was
+ * told "You are not an approver for this request" (L8 in the browser review):
+ * true, and beside the point. It is their request; the approvers named above
+ * decide on it.
+ */
+function whyNot(reason: DecisionIneligibility, isRequester: boolean): string {
+  if (isRequester && reason === 'not-an-approver') {
+    return 'This is your request. The approvers named above decide on it.';
+  }
+  return WHY_NOT[reason];
+}
+
+/**
  * What happened to a request that is no longer waiting, by its status.
  *
  * Not "this request has already been decided": a withdrawn or expired request
@@ -256,7 +271,9 @@ export function DecisionPanel(props: DecisionPanelProps) {
                   <span className={styles.inlineIcon}>
                     <RiInformationLine aria-hidden />
                   </span>
-                  <Text color="secondary">{WHY_NOT[eligibility.reason]}</Text>
+                  <Text color="secondary">
+                    {whyNot(eligibility.reason, isRequester)}
+                  </Text>
                 </Flex>
               ))}
 

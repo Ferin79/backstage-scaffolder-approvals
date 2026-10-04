@@ -234,6 +234,12 @@ Pass whatever the step needs from the deployment's own integration credentials i
 
 The design (Q11) asked for a catalog lookup to close that window. It is not built. What it would buy is a few hours in an unusual case; what it costs is a catalog read on the decision path and a cache whose staleness is its own source of surprise. Every other Backstage plugin reads group membership the same way, and an approver who cannot see a request can sign out and back in. If that window matters to you, the request page is the place to add the lookup.
 
+### Approvers must be members of the named group, not of a group inside it
+
+A person qualifies as an approver when their own ref, or a group in their sign-in token, is in `approvers`. Backstage's own sign-in resolvers put a user's **direct** groups in that token, not the groups those belong to. So with `approvers: [group:default/platform]`, a member of `platform`'s child group `devx-team` is **not** an approver: they see "Needs one approval from Platform" and get "You are not an approver" when they try.
+
+Name the groups whose members should decide, or add a custom sign-in resolver that puts parent groups in the token. Either way, the request page says who can approve, so a gate naming the wrong level shows up on its first request.
+
 ### Break-glass cannot be granted by a permission policy
 
 A `scaffolderApprovals.request.decide` policy can only **narrow** who may decide. The service always applies the gate's own terms as well, so a policy cannot make somebody an approver for a request whose template did not name them.
