@@ -39,6 +39,33 @@ const EXPLANATIONS: Record<TemplateDriftReason, string> = {
   unknown: '',
 };
 
+/**
+ * What a drift means, one sentence per reason, in the order the backend gave
+ * them. Empty when there is nothing worth saying, which includes a check the
+ * backend could not make (`unknown`).
+ */
+export function explainDrift(drift?: TemplateDrift): string[] {
+  if (!drift?.changed) {
+    return [];
+  }
+  return drift.reasons
+    .map(reason => EXPLANATIONS[reason])
+    .filter(explanation => explanation);
+}
+
+/**
+ * Whether approving is bound to fail: the template is gone, or the submitted
+ * values no longer fit it, so the scaffolder will refuse to start it.
+ */
+export function driftBlocksLaunch(drift?: TemplateDrift): boolean {
+  return Boolean(
+    drift?.changed &&
+      drift.reasons.some(
+        reason => reason === 'missing' || reason === 'parameters',
+      ),
+  );
+}
+
 /** @public */
 export interface DriftNoticeProps {
   drift?: TemplateDrift;
@@ -60,10 +87,8 @@ export interface DriftNoticeProps {
  * @public
  */
 export function DriftNotice(props: DriftNoticeProps) {
-  const { drift } = props;
-
-  const reasons = (drift?.reasons ?? []).filter(reason => EXPLANATIONS[reason]);
-  if (!drift?.changed || reasons.length === 0) {
+  const explanations = explainDrift(props.drift);
+  if (explanations.length === 0) {
     return null;
   }
 
@@ -77,9 +102,9 @@ export function DriftNotice(props: DriftNoticeProps) {
       title="The template has changed"
       description={
         <Flex direction="column" gap="1">
-          {reasons.map(reason => (
-            <Text key={reason} variant="body-small">
-              {EXPLANATIONS[reason]}
+          {explanations.map(explanation => (
+            <Text key={explanation} variant="body-small">
+              {explanation}
             </Text>
           ))}
         </Flex>

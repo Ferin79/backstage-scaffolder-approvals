@@ -20,7 +20,9 @@ import {
   type ApprovalRequestStatus,
   checkDecisionEligibility,
   computeQuorumProgress,
+  type DecisionIneligibility,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import { parseEntityRef } from '@backstage/catalog-model';
 import {
   alertApiRef,
   identityApiRef,
@@ -42,7 +44,7 @@ import {
 } from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
 import { RiArrowLeftLine, RiQuestionLine } from '@remixicon/react';
-import { type ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
@@ -112,6 +114,39 @@ function RequestHeader(props: {
   );
 }
 
+/** The HTTP status of a backend refusal, when the error carries one. */
+function statusOf(error: unknown): number | undefined {
+  const statusCode = (error as { statusCode?: unknown } | undefined)
+    ?.statusCode;
+  return typeof statusCode === 'number' ? statusCode : undefined;
+}
+
+/**
+ * The scaffolder's form for a template, filled in with `values`.
+ *
+ * The scaffolder pre-fills its wizard from a `formData` query parameter. It is
+ * assumed to be mounted at `/create`, as the task links on this page already
+ * assume (L13 in the browser review).
+ */
+function prefilledTemplateForm(templateRef: string, values: JsonObject) {
+  const { namespace, name } = parseEntityRef(templateRef);
+  const query = new URLSearchParams({ formData: JSON.stringify(values) });
+  return `/create/templates/${encodeURIComponent(
+    namespace,
+  )}/${encodeURIComponent(name)}?${query}`;
+}
+
+/**
+ * Why a decision dialog closed by itself, once the request moved on under it.
+ */
+const MOVED_ON: Record<DecisionIneligibility, string> = {
+  'not-pending': 'this request was settled while the dialog was open.',
+  expired: 'this request timed out while the dialog was open.',
+  'already-voted': 'you have already decided on this request elsewhere.',
+  'not-an-approver': 'you are no longer an approver for this request.',
+  'self-approval': 'you cannot approve your own request.',
+};
+
 /** @public */
 export interface RequestDetailProps {
   requestId: string;
@@ -176,6 +211,15 @@ export function RequestDetail(props: RequestDetailProps) {
           }`,
           severity: 'error',
         });
+        // A conflict means the request moved on under the dialog: somebody
+        // else settled it, it timed out, or this approver voted from another
+        // tab. There is nothing left to confirm, so close the dialog and show
+        // where the request stands now (M6 in the browser review). Anything
+        // else keeps it open, to try again.
+        if (statusOf(error) === 409) {
+          setDeciding(undefined);
+          setReload(value => value + 1);
+        }
       } finally {
         setBusy(false);
       }
@@ -200,6 +244,10 @@ export function RequestDetail(props: RequestDetailProps) {
         }`,
         severity: 'error',
       });
+      // Settled or timed out under the dialog: show what it became.
+      if (statusOf(error) === 409) {
+        setReload(value => value + 1);
+      }
     } finally {
       setBusy(false);
       setConfirmingWithdraw(false);
@@ -223,10 +271,22 @@ export function RequestDetail(props: RequestDetailProps) {
         });
         navigate(`${rootPath()}/requests/${created.id}`);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (statusOf(error) === 400) {
+          // The template no longer takes these values as they are: a field
+          // became required, an option went away. Posting them again can only
+          // be refused again, which made Resubmit a dead end after exactly
+          // the failure it exists for (L18 in the browser review). The form
+          // can take them, pre-filled, for the requester to put right.
+          alertApi.post({
+            message: `Could not resubmit as it was: ${message}. The values are filled in on the template's form instead, to correct and submit again.`,
+            severity: 'info',
+          });
+          navigate(prefilledTemplateForm(templateRef, values));
+          return;
+        }
         alertApi.post({
-          message: `Could not resubmit: ${
-            error instanceof Error ? error.message : error
-          }`,
+          message: `Could not resubmit: ${message}`,
           severity: 'error',
         });
       } finally {
@@ -235,6 +295,44 @@ export function RequestDetail(props: RequestDetailProps) {
     },
     [api, alertApi, navigate, rootPath],
   );
+
+  // The page updates itself, and a dialog left open over it went on offering
+  // a decision that could no longer be made (M6 in the browser review). Close
+  // it once the request moves on, and say why. Not while busy: then the change
+  // is this viewer's own decision landing, which closes the dialog anyway.
+  useEffect(() => {
+    if (busy || !state.value) {
+      return;
+    }
+    const { request, identity } = state.value;
+    if (deciding) {
+      const eligibility = checkDecisionEligibility(
+        request,
+        {
+          userEntityRef: identity.userEntityRef,
+          ownershipEntityRefs: identity.ownershipEntityRefs,
+        },
+        request.decisions,
+      );
+      if (!eligibility.allowed) {
+        setDeciding(undefined);
+        alertApi.post({
+          message: `Nothing was sent: ${MOVED_ON[eligibility.reason]}`,
+          severity: 'info',
+          display: 'transient',
+        });
+      }
+    }
+    if (confirmingWithdraw && effectiveStatus(request) !== 'pending') {
+      setConfirmingWithdraw(false);
+      alertApi.post({
+        message:
+          'Nothing was withdrawn: this request is no longer waiting for a decision.',
+        severity: 'info',
+        display: 'transient',
+      });
+    }
+  }, [state.value, busy, deciding, confirmingWithdraw, alertApi]);
 
   // Only the first load shows a placeholder. A reload — after a decision, or
   // prompted by a signal — keeps the request on screen until the new copy
@@ -315,6 +413,7 @@ export function RequestDetail(props: RequestDetailProps) {
           <DecisionDialog
             decision={deciding}
             summary={<RequestTitle request={request} />}
+            drift={request.templateDrift}
             busy={busy}
             onCancel={() => setDeciding(undefined)}
             onConfirm={comment => decide(deciding, comment)}

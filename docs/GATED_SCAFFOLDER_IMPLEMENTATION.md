@@ -881,7 +881,9 @@ documented outcome anyway.
 
 **Approver matching uses `UserInfoService.ownershipEntityRefs`, not group expansion.** The catalog
 already computes transitive membership, so one call replaces walking group relations, and it is the
-same data the permission framework uses. This is also what makes "adding someone to an approver group
+same data the permission framework uses. _Correction (browser review, M4): it is not transitive. The
+default sign-in resolvers put only a user's direct groups in the token, so members of an approver
+group's child groups do not qualify. The README's "Things to know" now says so._ This is also what makes "adding someone to an approver group
 takes effect immediately" true rather than aspirational.
 
 **Eligibility is one shared function returning a reason.** `checkDecisionEligibility` gives back

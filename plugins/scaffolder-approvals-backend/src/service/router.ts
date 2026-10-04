@@ -390,10 +390,12 @@ export async function createRouter(
     let actionableBy: string | undefined;
 
     if (query.role) {
-      // `ownershipEntityRefs` is the user's own ref plus every group they
-      // belong to, transitively, resolved by the catalog rather than expanded
-      // here. It comes from the caller's token, so a group added to somebody's
-      // membership shows up in their inbox from their next sign-in.
+      // `ownershipEntityRefs` is the user's own ref plus the groups the
+      // sign-in resolver put in their token. With Backstage's own resolvers
+      // those are the groups they are a direct member of, not those groups'
+      // parents (M4 in the browser review). It comes from the token, so a
+      // group added to somebody's membership shows up in their inbox from
+      // their next sign-in.
       const caller = await userInfo.getUserInfo(credentials);
       if (query.role === 'requester') {
         requesterRef = caller.userEntityRef;

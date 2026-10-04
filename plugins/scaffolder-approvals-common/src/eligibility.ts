@@ -21,9 +21,12 @@ import type { ApprovalDecision, ApprovalRequest, GatePolicy } from './types';
  * Who is asking, in the terms the catalog describes them.
  *
  * `ownershipEntityRefs` is what `UserInfoService` returns: the user's own ref
- * plus every group they belong to, transitively. Group membership is therefore
- * resolved by the catalog rather than expanded here — the deliberate exception
- * to the policy being a frozen snapshot.
+ * plus the groups the sign-in resolver put in their token. Backstage's own
+ * resolvers put in the groups the user is a *direct* member of, not those
+ * groups' parents, so an approver group's child groups do not qualify unless
+ * the deployment's resolver adds them. Group membership is resolved at sign-in
+ * rather than expanded here — the deliberate exception to the policy being a
+ * frozen snapshot.
  *
  * It is resolved at *sign-in*, not at decision time: these refs arrive in the
  * caller's token. Somebody added to an approver group can decide from their
