@@ -46,6 +46,7 @@ import Router from 'express-promise-router';
 import { z, ZodError, type ZodType } from 'zod';
 import type { ApprovalStore } from '../database';
 import type { ApprovalService } from './ApprovalService';
+import { readEntityRef } from './requestInput';
 
 /** Construction options for {@link createRouter}. */
 export interface RouterOptions {
@@ -368,7 +369,23 @@ export async function createRouter(
       );
     }
 
-    let requesterRef = query.requesterRef;
+    // Compared against the stored spelling, so read the way submit stores
+    // them: `Template:Default/Request-GitHub-Admin` or a bare `requester` now
+    // find what they name instead of nothing (M5 in the browser review).
+    const templateRef =
+      query.templateRef === undefined
+        ? undefined
+        : readEntityRef(query.templateRef, {
+            defaultKind: 'template',
+            field: 'templateRef',
+          });
+    let requesterRef =
+      query.requesterRef === undefined
+        ? undefined
+        : readEntityRef(query.requesterRef, {
+            defaultKind: 'user',
+            field: 'requesterRef',
+          });
     let approverRefs: string[] | undefined;
     let actionableBy: string | undefined;
 
@@ -394,7 +411,7 @@ export async function createRouter(
     res.json(
       await store.listRequests({
         status: statuses,
-        templateRef: query.templateRef,
+        templateRef,
         requesterRef,
         approverRefs,
         actionableBy,

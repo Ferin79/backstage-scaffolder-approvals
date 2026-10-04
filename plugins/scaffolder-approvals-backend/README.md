@@ -38,14 +38,14 @@ That is the entire config surface. **Gate policy — who approves, how many, sel
 
 ## API
 
-| Route                         | Who                         | Notes                                                                                         |
-| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------- |
-| `POST /requests`              | Any signed-in user          | `{ templateRef, values }`. 201, or 200 when an identical pending request was returned instead |
-| `GET /requests`               | Any signed-in user          | `status`, `role`, `templateRef`, `requesterRef`, `limit`, `offset`                            |
-| `GET /requests/:id`           | Any signed-in user          | The request plus its decision history                                                         |
-| `POST /requests/:id/decision` | A designated approver       | `{ decision, comment? }`                                                                      |
-| `POST /requests/:id/cancel`   | The requester               | Pending requests only                                                                         |
-| `POST /grants/consume`        | **Service principals only** | The gate action redeems a grant here                                                          |
+| Route                         | Who                         | Notes                                                                                                                                                                                  |
+| ----------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /requests`              | Any signed-in user          | `{ templateRef, values }`. 201, or 200 when an identical pending request was returned instead. `templateRef` may leave out the kind and namespace; `values` may nest at most 64 levels |
+| `GET /requests`               | Any signed-in user          | `status`, `role`, `templateRef`, `requesterRef`, `limit`, `offset`. Refs match however they are spelled: `requester` finds `user:default/requester`                                    |
+| `GET /requests/:id`           | Any signed-in user          | The request plus its decision history                                                                                                                                                  |
+| `POST /requests/:id/decision` | A designated approver       | `{ decision, comment? }`                                                                                                                                                               |
+| `POST /requests/:id/cancel`   | The requester               | Pending requests only, and not once the timeout has passed                                                                                                                             |
+| `POST /grants/consume`        | **Service principals only** | The gate action redeems a grant here                                                                                                                                                   |
 
 Reads are open to any signed-in user, matching the scaffolder's own task list. A deployment that configures a _conditional_ read policy gets a clear 403 rather than having the condition silently ignored.
 

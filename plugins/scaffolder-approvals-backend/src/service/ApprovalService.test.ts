@@ -1260,6 +1260,55 @@ describe('ApprovalService', () => {
           service.cancel({ requestId: id, credentials: requester.credentials }),
         ).rejects.toThrow(/no longer pending/);
       });
+
+      describe('once the timeout has passed', () => {
+        // M2: past the deadline but before the sweep, approving was refused
+        // and withdrawing was not, so a timeout ended as a withdrawal.
+        beforeEach(() => {
+          entity = gatedTemplate({
+            approvers: ['group:default/devx-team'],
+            timeout: { hours: 2 },
+          });
+        });
+
+        it('refuses to withdraw, and leaves the request for the sweep', async () => {
+          const { id } = await submit();
+          clock = new Date('2026-09-12T12:00:01.000Z');
+
+          await expect(
+            service.cancel({
+              requestId: id,
+              credentials: requester.credentials,
+            }),
+          ).rejects.toThrow(/timed out before anyone decided/);
+
+          expect((await store.getRequest(id))?.status).toBe('pending');
+          expect(observer.onWithdrawn).not.toHaveBeenCalled();
+        });
+
+        it('lets the sweep and a withdrawal race to exactly one outcome', async () => {
+          const { id } = await submit();
+          clock = new Date('2026-09-12T12:00:01.000Z');
+
+          expect(
+            await store.transition(id, 'pending', 'cancelled', {
+              notExpired: true,
+            }),
+          ).toBe(false);
+          expect(await store.transition(id, 'pending', 'expired')).toBe(true);
+        });
+
+        it('still withdraws a request inside the timeout', async () => {
+          const { id } = await submit();
+          clock = new Date('2026-09-12T11:59:59.000Z');
+
+          const cancelled = await service.cancel({
+            requestId: id,
+            credentials: requester.credentials,
+          });
+          expect(cancelled.status).toBe('cancelled');
+        });
+      });
     });
   });
 });
