@@ -126,6 +126,27 @@ const routes = (
 > [!IMPORTANT]
 > Use the path `/scaffolder-approvals`. Links in notifications are built as `<app.baseUrl>/scaffolder-approvals/requests/<id>`, so a page mounted anywhere else works but every notification link points at a 404.
 
+Then point the plugin's links at the scaffolder's pages, in the `bindRoutes` you pass to `createApp`. A request then links to its task log, and **Resubmit** can reopen a template's form with the submitted values:
+
+```tsx
+// packages/app/src/App.tsx
+import { scaffolderPlugin } from '@backstage/plugin-scaffolder';
+import { scaffolderApprovalsPlugin } from '@ferin79/backstage-plugin-scaffolder-approvals';
+
+const app = createApp({
+  // ...
+  bindRoutes({ bind }) {
+    // ...other bindings
+    bind(scaffolderApprovalsPlugin.externalRoutes, {
+      scaffolderTask: scaffolderPlugin.routes.ongoingTask,
+      scaffolderTemplate: scaffolderPlugin.routes.selectedTemplate,
+    });
+  },
+});
+```
+
+Both are optional. Without them the request page shows the task id without a link, and Resubmit explains why a request was refused instead of opening the form.
+
 ### 3.2 Add a sidebar item
 
 So that approvers can find their inbox:
@@ -304,6 +325,8 @@ You get:
 
 - the approvals page at `/scaffolder-approvals`, with its own sidebar entry, **Approvals**;
 - the home-page widget, listed in the widget catalogue as **Approvals**.
+
+The links to the scaffolder's task and template pages are bound by default.
 
 You do **not** get the gated review step or the template card. In Backstage 1.55, the new frontend system's scaffolder page takes field extensions and layouts but no review-step component, so there is nowhere to install `GatedReviewStep`. A requester who presses **Create** on a gated template gets a failed task explaining that the template needs approval. The gate still holds; only the convenient way in is missing. This is why this repository's own app uses the legacy frontend system.
 

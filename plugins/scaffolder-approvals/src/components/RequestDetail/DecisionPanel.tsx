@@ -33,7 +33,7 @@ import {
 } from '@remixicon/react';
 import type { ReactElement } from 'react';
 import { PolicySummary } from '../PolicySummary';
-import { scaffolderTaskPath } from '../scaffolderPaths';
+import { useScaffolderTaskLink } from '../scaffolderLinks';
 import { STATUS_TONE } from '../StatusPill';
 import { RequesterActions } from './RequesterActions';
 import styles from './RequestDetail.module.css';
@@ -163,6 +163,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
 
   const pending = status === 'pending';
   const tone = STATUS_TONE[status];
+  const taskLink = useScaffolderTaskLink(request.taskId);
 
   const requesterActions = (
     <RequesterActions
@@ -210,7 +211,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
         </Flex>
       </CardBody>
 
-      {(pending || hasRequesterActions || request.taskId) && (
+      {(pending || hasRequesterActions || taskLink) && (
         <CardFooter className={styles.panelFooter}>
           <Flex direction="column" gap="3">
             {pending &&
@@ -250,10 +251,10 @@ export function DecisionPanel(props: DecisionPanelProps) {
 
             {requesterActions}
 
-            {request.taskId && (
+            {taskLink && (
               <Flex>
                 <ButtonLink
-                  href={scaffolderTaskPath(request.taskId)}
+                  href={taskLink}
                   target="_blank"
                   variant="secondary"
                   iconEnd={<RiExternalLinkLine aria-hidden />}

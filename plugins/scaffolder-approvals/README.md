@@ -37,6 +37,16 @@ import { ApprovalsIndexPage } from '@ferin79/backstage-plugin-scaffolder-approva
 <Route path="/scaffolder-approvals" element={<ApprovalsIndexPage />} />;
 ```
 
+Then bind its links to the scaffolder's pages, so a request links to its task log and **Resubmit** can reopen a template's form:
+
+```tsx
+// packages/app/src/App.tsx, in createApp({ bindRoutes })
+bind(scaffolderApprovalsPlugin.externalRoutes, {
+  scaffolderTask: scaffolderPlugin.routes.ongoingTask,
+  scaffolderTemplate: scaffolderPlugin.routes.selectedTemplate,
+});
+```
+
 **2. Add a sidebar item:**
 
 ```tsx
@@ -90,7 +100,7 @@ import approvalsPlugin from '@ferin79/backstage-plugin-scaffolder-approvals/alph
 export default createApp({ features: [approvalsPlugin] });
 ```
 
-This adds the approvals page with its own **Approvals** nav item, and an **Approvals** home-page widget. The gated review step and template card are not available in the new frontend system, because its scaffolder page has no slot for a custom review step (Backstage 1.55). Requesters there get a failed task telling them the template needs approval; the gate itself still holds.
+This adds the approvals page with its own **Approvals** nav item, and an **Approvals** home-page widget. Its links to the scaffolder are bound to the scaffolder's pages by default. The gated review step and template card are not available in the new frontend system, because its scaffolder page has no slot for a custom review step (Backstage 1.55). Requesters there get a failed task telling them the template needs approval; the gate itself still holds.
 
 ## Components
 
@@ -149,6 +159,8 @@ Methods: `listRequests`, `getRequest`, `submitRequest`, `decide`, `cancel`. See 
 ### Routes
 
 `rootRouteRef` (the approvals page) and `requestRouteRef` (one request, with a `requestId` parameter) are exported for linking from other plugins. `Router` is exported for apps that mount the page themselves.
+
+Two optional external routes point into the scaffolder: `scaffolderTask` (`taskId`) and `scaffolderTemplate` (`namespace`, `templateName`). Left unbound, a request names its task without linking it, and **Resubmit** explains a refusal instead of opening the template's form.
 
 ## Live updates
 

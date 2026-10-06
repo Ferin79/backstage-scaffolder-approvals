@@ -6,7 +6,12 @@ import {
   PendingApprovalsHomePageCard,
   scaffolderApprovalsPlugin,
 } from './plugin';
-import { requestRouteRef, rootRouteRef } from './routes';
+import {
+  requestRouteRef,
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from './routes';
 
 /**
  * The package dual-ships, so both entrypoints have to construct. The
@@ -20,6 +25,11 @@ describe('dual-shipped plugin definitions', () => {
       expect(scaffolderApprovalsPlugin.routes).toEqual({
         root: rootRouteRef,
         request: requestRouteRef,
+      });
+      // The links into the scaffolder, which an app binds to its pages.
+      expect(scaffolderApprovalsPlugin.externalRoutes).toEqual({
+        scaffolderTask: scaffolderTaskRouteRef,
+        scaffolderTemplate: scaffolderTemplateRouteRef,
       });
     });
 
@@ -86,6 +96,9 @@ describe('dual-shipped plugin definitions', () => {
     // disagreeing would break deep links for half of all installations.
     expect(Object.keys(alphaPlugin.routes).sort()).toEqual(
       Object.keys(scaffolderApprovalsPlugin.routes).sort(),
+    );
+    expect(Object.keys(alphaPlugin.externalRoutes).sort()).toEqual(
+      Object.keys(scaffolderApprovalsPlugin.externalRoutes).sort(),
     );
   });
 });

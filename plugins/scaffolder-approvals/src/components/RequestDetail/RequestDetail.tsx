@@ -38,7 +38,7 @@ import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsLayout, DocumentTitle } from '../ApprovalsLayout';
 import { httpStatusOf, messageOf } from '../errors';
-import { scaffolderTemplateFormPath } from '../scaffolderPaths';
+import { useTemplateFormLink } from '../scaffolderLinks';
 import { StatusPill } from '../StatusPill';
 import { effectiveStatus } from '../StatusPill/effectiveStatus';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
@@ -145,6 +145,7 @@ export function RequestDetail(props: RequestDetailProps) {
   const identityApi = useApi(identityApiRef);
   const navigate = useNavigate();
   const submitRequest = useSubmitApprovalRequest();
+  const templateForm = useTemplateFormLink();
 
   const [reload, setReload] = useState(0);
   const refresh = useCallback(() => setReload(value => value + 1), []);
@@ -229,7 +230,7 @@ export function RequestDetail(props: RequestDetailProps) {
         // spent twice, so resubmitting starts the whole thing over.
         await submitRequest({ templateRef, values }, 'Request submitted');
       } catch (error) {
-        if (httpStatusOf(error) === 400) {
+        if (httpStatusOf(error) === 400 && templateForm) {
           // The template no longer takes these values as they are: a field
           // became required, an option went away. Posting them again can only
           // be refused again, so hand them to the template's form, pre-filled,
@@ -240,7 +241,7 @@ export function RequestDetail(props: RequestDetailProps) {
             )}. The values are filled in on the template's form instead, to correct and submit again.`,
             status: 'info',
           });
-          navigate(scaffolderTemplateFormPath(templateRef, values));
+          navigate(templateForm(templateRef, values));
           return;
         }
         toastApi.post({
@@ -251,7 +252,7 @@ export function RequestDetail(props: RequestDetailProps) {
         setBusy(false);
       }
     },
-    [toastApi, navigate, submitRequest],
+    [toastApi, navigate, submitRequest, templateForm],
   );
 
   // The page updates itself, so a dialog left open over it could go on

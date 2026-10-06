@@ -8,7 +8,11 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLocation } from 'react-router-dom';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
-import { rootRouteRef } from '../../routes';
+import {
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from '../../routes';
 import { RequestDetail } from './RequestDetail';
 
 const REQUEST: ApprovalRequestWithDecisions = {
@@ -93,6 +97,7 @@ function render(
   identity: ReturnType<typeof identityOf> = APPROVER,
   toastApi = { post: jest.fn() },
   signals?: ReturnType<typeof fakeSignals>,
+  scaffolderBound = true,
 ) {
   return renderInTestApp(
     <TestApiProvider
@@ -113,6 +118,12 @@ function render(
       mountedRoutes: {
         '/scaffolder-approvals': rootRouteRef,
         '/catalog/:namespace/:kind/:name': entityRouteRef,
+        // The scaffolder's pages, bound as an app binds them.
+        ...(scaffolderBound && {
+          '/create/tasks/:taskId': scaffolderTaskRouteRef,
+          '/create/templates/:namespace/:templateName':
+            scaffolderTemplateRouteRef,
+        }),
       },
     },
   );
@@ -635,6 +646,38 @@ describe('RequestDetail', () => {
         );
         expect(screen.getByTestId('location').textContent).toBe('/');
       });
+
+      it("says why and stays put when the app has not bound the scaffolder's form", async () => {
+        const toastApi = { post: jest.fn() };
+        await render(
+          {
+            getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
+            submitRequest: jest
+              .fn()
+              .mockRejectedValue(
+                refusal(400, "(root) must have required property 'ticket'"),
+              ),
+          },
+          REQUESTER,
+          toastApi,
+          undefined,
+          false,
+        );
+
+        await userEvent.click(
+          await screen.findByRole('button', { name: 'Resubmit' }),
+        );
+
+        await waitFor(() =>
+          expect(toastApi.post).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: expect.stringContaining("required property 'ticket'"),
+              status: 'danger',
+            }),
+          ),
+        );
+        expect(screen.getByTestId('location').textContent).toBe('/');
+      });
     });
 
     it('cannot resubmit a request whose parameters were redacted', async () => {
@@ -685,6 +728,30 @@ describe('RequestDetail', () => {
       expect(
         await screen.findByRole('link', { name: 'task-42' }),
       ).toHaveAttribute('href', '/create/tasks/task-42');
+    });
+
+    it('names the task without linking it when the app has not bound the scaffolder', async () => {
+      await render(
+        {
+          getRequest: async () => ({
+            ...REQUEST,
+            status: 'running' as const,
+            taskId: 'task-42',
+          }),
+        },
+        APPROVER,
+        undefined,
+        undefined,
+        false,
+      );
+
+      expect(await screen.findByText('task-42')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'task-42' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: /View task log/ }),
+      ).not.toBeInTheDocument();
     });
   });
 

@@ -9,7 +9,12 @@ import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@ferin79/backstage-plugin-scaffo
 import { createCardExtension } from '@backstage/plugin-home-react';
 import { ApprovalsClient, approvalsApiRef } from './api';
 import { loadPendingApprovalsCard } from './homePageCard';
-import { requestRouteRef, rootRouteRef } from './routes';
+import {
+  requestRouteRef,
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from './routes';
 
 /**
  * The scaffolder-approvals frontend plugin, for the legacy frontend system.
@@ -21,6 +26,10 @@ export const scaffolderApprovalsPlugin = createPlugin({
   routes: {
     root: rootRouteRef,
     request: requestRouteRef,
+  },
+  externalRoutes: {
+    scaffolderTask: scaffolderTaskRouteRef,
+    scaffolderTemplate: scaffolderTemplateRouteRef,
   },
   apis: [
     createApiFactory({

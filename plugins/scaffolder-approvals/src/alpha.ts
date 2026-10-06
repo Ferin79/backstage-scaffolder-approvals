@@ -20,7 +20,12 @@ import { createElement } from 'react';
 import { ApprovalsClient, approvalsApiRef } from './api';
 import { ApprovalsIcon } from './components/ApprovalsIcon';
 import { loadPendingApprovalsCard } from './homePageCard';
-import { requestRouteRef, rootRouteRef } from './routes';
+import {
+  requestRouteRef,
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from './routes';
 
 const approvalsApi = ApiBlueprint.make({
   name: 'approvals',
@@ -75,5 +80,10 @@ export default createFrontendPlugin({
   routes: {
     root: convertLegacyRouteRef(rootRouteRef),
     request: convertLegacyRouteRef(requestRouteRef),
+  },
+  // Bound to the scaffolder's pages by default.
+  externalRoutes: {
+    scaffolderTask: convertLegacyRouteRef(scaffolderTaskRouteRef),
+    scaffolderTemplate: convertLegacyRouteRef(scaffolderTemplateRouteRef),
   },
 });

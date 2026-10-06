@@ -7,7 +7,7 @@ import { Card, CardBody, CardHeader, Flex, Link, Text } from '@backstage/ui';
 import { RiCheckLine, RiCloseLine } from '@remixicon/react';
 import type { ReactNode } from 'react';
 import { PersonAvatar } from '../PersonAvatar';
-import { scaffolderTaskPath } from '../scaffolderPaths';
+import { useScaffolderTaskLink } from '../scaffolderLinks';
 import { formatDateTime, Timestamp } from '../Timestamp';
 import {
   type ParameterStanding,
@@ -422,6 +422,7 @@ export function RequestDetails(props: {
   status: ApprovalRequestStatus;
 }) {
   const { request, status } = props;
+  const taskLink = useScaffolderTaskLink(request.taskId);
 
   return (
     <Card>
@@ -454,13 +455,17 @@ export function RequestDetails(props: {
           )}
           {request.taskId && (
             <Detail label="Task">
-              <Link
-                href={scaffolderTaskPath(request.taskId)}
-                target="_blank"
-                className={styles.taskLink}
-              >
-                {request.taskId}
-              </Link>
+              {taskLink ? (
+                <Link
+                  href={taskLink}
+                  target="_blank"
+                  className={styles.taskLink}
+                >
+                  {request.taskId}
+                </Link>
+              ) : (
+                <Text className={styles.taskLink}>{request.taskId}</Text>
+              )}
             </Detail>
           )}
         </dl>
