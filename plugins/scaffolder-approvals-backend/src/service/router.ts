@@ -1,30 +1,16 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
-  APPROVAL_REQUEST_STATUSES,
   approvalRequestCancelPermission,
   approvalRequestCreatePermission,
   approvalRequestDecidePermission,
   approvalRequestReadPermission,
   type ApprovalRequestStatus,
   type ConsumeGrantRequest,
-  type ConsumeGrantResponse,
+  isApprovalRequestStatus,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { parseGrant } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
+import {
+  isSha256Hex,
+  parseGrant,
+} from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type {
   AuditorService,
   BackstageCredentials,
@@ -57,19 +43,16 @@ export interface RouterOptions {
   permissions: PermissionsService;
   logger: LoggerService;
   /**
-   * Where decisions are recorded for audit (P4).
+   * Where submissions, decisions and redemptions are recorded for audit.
    *
-   * Optional, because the plugin has to work in a deployment that does not
-   * wire one — but note that the approvals tables are themselves the audit
-   * trail of who approved what. This is what puts the same events into
-   * whatever the deployment already collects.
+   * Optional, because the approvals tables are themselves the audit trail of
+   * who approved what; this puts the same events into whatever the deployment
+   * already collects.
    */
   auditor?: AuditorService;
   /**
-   * Service principal subjects allowed to redeem a grant (S3).
-   *
-   * Defaults to the scaffolder alone. See `assertGrantConsumer` for why this is
-   * configurable rather than a hard-coded equality.
+   * Service principal subjects allowed to redeem a grant. Defaults to the
+   * scaffolder alone; see `assertGrantConsumer`.
    */
   grantConsumers?: string[];
 }
@@ -78,14 +61,12 @@ export interface RouterOptions {
 export const DEFAULT_GRANT_CONSUMERS = ['plugin:scaffolder'];
 
 /**
- * Request ids are uuids, and every route that takes one has to say so.
+ * Request ids are uuids, and every route that takes one checks so first.
  *
  * Postgres types the column as `uuid` and rejects anything malformed at the
- * driver, so `GET /requests/not-a-uuid` came back as a 500 there while SQLite
- * and MySQL answered 404 — the same request, three different answers, and the
- * one that looks like a server fault is the one an operator pages on. Checking
- * the shape first also keeps a malformed id out of the permission framework's
- * `getResources`, which would otherwise make the same trip to the database.
+ * driver, so without this a malformed id was a 500 there and a 404 elsewhere.
+ * Checking the shape first also keeps a malformed id out of the permission
+ * framework's `getResources`.
  */
 const requestId = z.string().uuid('must be a request id');
 
@@ -105,9 +86,7 @@ const consumeBody: ZodType<ConsumeGrantRequest> = z.object({
   grant: z.string().min(1),
   // Checked here so a malformed digest is a 400 rather than a TypeError from
   // the store's own guard.
-  valuesHash: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/, 'must be a hex SHA-256 digest'),
+  valuesHash: z.string().refine(isSha256Hex, 'must be a hex SHA-256 digest'),
   taskId: z.string().min(1),
   templateRef: z.string().min(1),
 });
@@ -141,8 +120,7 @@ const listQuery = z.object({
  * Validate untrusted input, reporting a failure as a client error.
  *
  * A bare `schema.parse` throws a `ZodError`, which Backstage's error middleware
- * does not recognise as a client error and therefore turns into a 500 — a
- * malformed body would be reported as a server fault.
+ * does not recognise as a client error and therefore turns into a 500.
  */
 function parseOrBadRequest<T>(
   schema: ZodType<T>,
@@ -172,10 +150,7 @@ function readStatuses(
   if (!raw) {
     return undefined;
   }
-  const invalid = raw.filter(
-    status =>
-      !(APPROVAL_REQUEST_STATUSES as readonly string[]).includes(status),
-  );
+  const invalid = raw.filter(status => !isApprovalRequestStatus(status));
   if (invalid.length) {
     throw new InputError(`Unknown status: ${invalid.join(', ')}`);
   }
@@ -208,12 +183,12 @@ export async function createRouter(
    * Record one auditable operation, whatever its outcome.
    *
    * Wrapping rather than logging after the fact, so a refusal is audited as
-   * loudly as a success: "who tried to approve what and was told no" is the
-   * half of an audit trail that gets left out when events are emitted only on
-   * the happy path.
+   * loudly as a success. An auditor that cannot record must not stop an
+   * approval: the approvals tables are the system of record, and this is a
+   * second copy for whatever the deployment already collects.
    */
   async function audited<T>(
-    options2: {
+    audit: {
       eventId: string;
       severityLevel: 'low' | 'medium' | 'high' | 'critical';
       request: express.Request;
@@ -221,31 +196,18 @@ export async function createRouter(
     },
     run: () => Promise<T>,
   ): Promise<T> {
-    // An auditor that cannot record must not stop an approval. The approvals
-    // tables are the system of record for who approved what; this is a second
-    // copy for whatever the deployment already collects, and losing the copy
-    // is not a reason to refuse the decision. Same reasoning as the notifier.
-    const event = auditor
-      ? await auditor
-          .createEvent({
-            eventId: options2.eventId,
-            severityLevel: options2.severityLevel,
-            request: options2.request,
-            meta: options2.meta,
-          })
-          .catch(error => {
-            logger.warn(
-              `Could not open an audit event for ${options2.eventId}`,
-              error instanceof Error ? error : undefined,
-            );
-            return undefined;
-          })
-      : undefined;
+    const event = await auditor?.createEvent(audit).catch(error => {
+      logger.warn(
+        `Could not open an audit event for ${audit.eventId}`,
+        error instanceof Error ? error : undefined,
+      );
+      return undefined;
+    });
 
     const record = (finish: () => Promise<void>) =>
       finish().catch(error => {
         logger.warn(
-          `Could not close the audit event for ${options2.eventId}`,
+          `Could not close the audit event for ${audit.eventId}`,
           error instanceof Error ? error : undefined,
         );
       });
@@ -271,11 +233,11 @@ export async function createRouter(
   const router = Router();
   router.use(express.json());
 
-  /** Authorize a basic (non-resource) permission. */
+  /** Authorize a basic (non-resource) permission for a signed-in user. */
   async function authorizeBasic(
     permission: BasicPermission,
     req: express.Request,
-  ): Promise<void> {
+  ): Promise<BackstageCredentials> {
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
     const [decision] = await permissions.authorize([{ permission }], {
       credentials,
@@ -283,10 +245,11 @@ export async function createRouter(
     if (decision.result !== AuthorizeResult.ALLOW) {
       throw new NotAllowedError(`Not allowed to perform '${permission.name}'`);
     }
+    return credentials;
   }
 
   /**
-   * Authorize a resource permission against one request.
+   * Authorize a resource permission against one request, for a signed-in user.
    *
    * The framework loads the request through `getResources` and runs the
    * registered rules' `apply` against it, so a conditional policy resolves to a
@@ -296,7 +259,7 @@ export async function createRouter(
     permission: ResourcePermission<string>,
     resourceRef: string,
     req: express.Request,
-  ): Promise<void> {
+  ): Promise<BackstageCredentials> {
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
     const [decision] = await permissions.authorize(
       [{ permission, resourceRef }],
@@ -307,11 +270,22 @@ export async function createRouter(
         `Not allowed to perform '${permission.name}' on ${resourceRef}`,
       );
     }
+    return credentials;
+  }
+
+  /**
+   * A request id from the path, checked before authorizing so a malformed one
+   * never reaches the permission framework's resource load or the database.
+   */
+  function readRequestId(req: express.Request): string {
+    return parseOrBadRequest(requestId, req.params.id, 'request id');
   }
 
   router.post('/requests', async (req, res) => {
-    await authorizeBasic(approvalRequestCreatePermission, req);
-    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const credentials = await authorizeBasic(
+      approvalRequestCreatePermission,
+      req,
+    );
 
     const body = parseOrBadRequest(submitBody, req.body, 'request body');
     const result = await audited(
@@ -340,13 +314,10 @@ export async function createRouter(
   router.get('/requests', async (req, res) => {
     const credentials = await httpAuth.credentials(req, { allow: ['user'] });
 
-    // Reads are open to any signed-in user (Q12), so there is no filter to
-    // push down. `authorizeConditional` is still used rather than skipping the
-    // check, so that a policy denying reads outright is honoured — and so that
-    // a policy returning a *condition* is refused loudly instead of being
-    // silently ignored, which would be a quiet hole in whatever that policy
-    // was trying to enforce. The extension point is the rules' `toQuery`
-    // together with `ListApprovalRequestRows.approverRefs`.
+    // Reads are open to any signed-in user by default, so there is no filter
+    // to push down. `authorizeConditional` is still used so that a policy
+    // denying reads outright is honoured, and a policy returning a *condition*
+    // is refused loudly instead of being silently ignored.
     const [decision] = await permissions.authorizeConditional(
       [{ permission: approvalRequestReadPermission }],
       { credentials },
@@ -370,8 +341,8 @@ export async function createRouter(
     }
 
     // Compared against the stored spelling, so read the way submit stores
-    // them: `Template:Default/Request-GitHub-Admin` or a bare `requester` now
-    // find what they name instead of nothing (M5 in the browser review).
+    // them: `Template:Default/Request-GitHub-Admin` or a bare `requester` find
+    // what they name.
     const templateRef =
       query.templateRef === undefined
         ? undefined
@@ -391,19 +362,15 @@ export async function createRouter(
 
     if (query.role) {
       // `ownershipEntityRefs` is the user's own ref plus the groups the
-      // sign-in resolver put in their token. With Backstage's own resolvers
-      // those are the groups they are a direct member of, not those groups'
-      // parents (M4 in the browser review). It comes from the token, so a
-      // group added to somebody's membership shows up in their inbox from
-      // their next sign-in.
+      // sign-in resolver put in their token.
       const caller = await userInfo.getUserInfo(credentials);
       if (query.role === 'requester') {
         requesterRef = caller.userEntityRef;
       } else {
         approverRefs = caller.ownershipEntityRefs;
-        // Named is not the same as able to act. Without this an approver's
+        // Named is not the same as able to act: without this an approver's
         // inbox keeps every request they have already voted on, and their own
-        // where self-approval is forbidden (B2 in the browser review).
+        // where self-approval is forbidden.
         if (query.actionable) {
           actionableBy = caller.userEntityRef;
         }
@@ -424,34 +391,35 @@ export async function createRouter(
   });
 
   router.get('/requests/:id', async (req, res) => {
-    // Before authorizing, so that a malformed id never reaches the
-    // permission framework's resource load or the database.
-    const id = parseOrBadRequest(requestId, req.params.id, 'request id');
-    await authorizeOn(approvalRequestReadPermission, id, req);
+    const id = readRequestId(req);
+    const credentials = await authorizeOn(
+      approvalRequestReadPermission,
+      id,
+      req,
+    );
 
     const request = await store.getRequestWithDecisions(id);
     if (!request) {
       throw new NotFoundError(`No such approval request: ${id}`);
     }
 
-    // §10.3. Only on the detail route: it costs a catalog read, and the list
-    // would pay it once per row for something nobody can act on from a table.
-    const credentials = await httpAuth.credentials(req);
+    // Only on the detail route: it costs a catalog read, and the list would pay
+    // it once per row for something nobody can act on from a table.
     const templateDrift = await service.templateDrift(request, credentials);
 
     res.json(templateDrift ? { ...request, templateDrift } : request);
   });
 
   router.post('/requests/:id/decision', async (req, res) => {
-    // Before authorizing, so that a malformed id never reaches the
-    // permission framework's resource load or the database.
-    const id = parseOrBadRequest(requestId, req.params.id, 'request id');
-
-    // The check the whole feature rests on (Q19). It runs in addition to the
-    // service's own eligibility check: this one is what an RBAC policy can see
-    // and extend, while the service enforces the gate's own terms.
-    await authorizeOn(approvalRequestDecidePermission, id, req);
-    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const id = readRequestId(req);
+    // In addition to the service's own eligibility check: this one is what an
+    // RBAC policy can see and extend, while the service enforces the gate's
+    // own terms.
+    const credentials = await authorizeOn(
+      approvalRequestDecidePermission,
+      id,
+      req,
+    );
 
     const body = parseOrBadRequest(decisionBody, req.body, 'request body');
     res.json(
@@ -475,11 +443,12 @@ export async function createRouter(
   });
 
   router.post('/requests/:id/cancel', async (req, res) => {
-    // Before authorizing, so that a malformed id never reaches the
-    // permission framework's resource load or the database.
-    const id = parseOrBadRequest(requestId, req.params.id, 'request id');
-    await authorizeOn(approvalRequestCancelPermission, id, req);
-    const credentials = await httpAuth.credentials(req, { allow: ['user'] });
+    const id = readRequestId(req);
+    const credentials = await authorizeOn(
+      approvalRequestCancelPermission,
+      id,
+      req,
+    );
 
     res.json(
       await audited(
@@ -498,17 +467,13 @@ export async function createRouter(
    * Refuse a service principal that is not the scaffolder.
    *
    * `allow: ['service']` on its own lets in every service principal, including
-   * a static `external:` token an adopter issued for something unrelated. Such
-   * a caller cannot forge a grant, but it can *spend* one it has seen: a
-   * redeemed grant is single-use, so the legitimate task then fails at its own
-   * gate. That is a denial of service against approved runs.
+   * a static `external:` token issued for something unrelated. Such a caller
+   * cannot forge a grant, but it can *spend* one it has seen, and the
+   * legitimate task then fails at its own gate.
    *
-   * The framework documents `principal.subject` as informational, so this is
-   * deliberately a configurable allow-list rather than a hard-coded equality:
-   * a split deployment, a renamed plugin id or a gateway in front of the
-   * backend can present something else, and widening it must not need a code
-   * change. The grant's own guards remain the real control; this is the outer
-   * fence.
+   * The framework documents `principal.subject` as informational, so this is a
+   * configurable allow-list rather than a hard-coded equality. The grant's own
+   * guards remain the real control; this is the outer fence.
    */
   function assertGrantConsumer(credentials: BackstageCredentials): void {
     const { subject } = credentials.principal as BackstageServicePrincipal;
@@ -528,16 +493,11 @@ export async function createRouter(
   }
 
   router.post('/grants/consume', async (req, res) => {
-    // Service principals only. The caller is the gate action running inside the
-    // scaffolder backend, and a grant is a capability to run an approved
-    // template — a user must never be able to redeem one directly, which is the
-    // difference between a gate and a suggestion.
-    //
-    // Note this trusts the caller's `valuesHash` and `templateRef` to describe
-    // the task it is actually running. Nothing else can: only the task knows
-    // what it is running. That is exactly why this route refuses user
-    // principals — and why it refuses service principals other than the
-    // scaffolder too.
+    // Service principals only: the caller is the gate action inside the
+    // scaffolder, and a user must never be able to redeem a grant directly.
+    // This trusts the caller's `valuesHash` and `templateRef` to describe the
+    // task it is running, which only the task can know — which is exactly why
+    // nothing but the scaffolder may call it.
     const credentials = await httpAuth.credentials(req, {
       allow: ['service'],
     });
@@ -549,10 +509,9 @@ export async function createRouter(
     let token: string;
     try {
       ({ requestId: grantRequestId, token } = parseGrant(body.grant));
-      // A grant carries its request id, and that half is subject to exactly
-      // the same driver-level typing as one in a URL.
+      // The id half is subject to the same driver-level typing as a URL's.
       grantRequestId = requestId.parse(grantRequestId);
-    } catch (error) {
+    } catch {
       throw new InputError('The approval grant is malformed');
     }
 
@@ -579,31 +538,18 @@ export async function createRouter(
           templateRef: body.templateRef,
         });
         if (!result) {
+          // One refusal for every reason: telling a bearer-token holder whether
+          // it was the token, the values or the expiry would be an oracle.
+          logger.warn(
+            `Refused an approval grant for request ${grantRequestId} and task ${body.taskId}`,
+          );
           throw new NotAllowedError('The approval grant is not valid');
         }
         return result;
       },
-    ).catch((error: unknown) => {
-      if (
-        error instanceof NotAllowedError &&
-        error.message === 'The approval grant is not valid'
-      ) {
-        return undefined;
-      }
-      throw error;
-    });
+    );
 
-    if (!consumed) {
-      // One refusal for every reason: telling a bearer-token holder whether it
-      // was the token, the values or the expiry that failed would be an oracle.
-      logger.warn(
-        `Refused an approval grant for request ${grantRequestId} and task ${body.taskId}`,
-      );
-      throw new NotAllowedError('The approval grant is not valid');
-    }
-
-    const consumeResponse: ConsumeGrantResponse = consumed;
-    res.json(consumeResponse);
+    res.json(consumed);
   });
 
   return router;

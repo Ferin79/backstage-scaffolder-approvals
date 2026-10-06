@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   APPROVAL_GRANT_SECRET,
   GATE_ACTION_ID,
@@ -170,7 +154,7 @@ describe('approval:gate against a real approvals backend', () => {
     action = createApprovalGateAction({
       // The gate action is a module of the scaffolder backend, so its own
       // service credentials name the scaffolder. The approvals backend only
-      // lets that principal redeem a grant (S3), and this is what makes the
+      // lets that principal redeem a grant, and this is what makes the
       // test exercise the real arrangement rather than a permissive mock.
       auth: mockServices.auth({ pluginId: 'scaffolder' }),
       // Points the action at the backend that is actually running, so the call
@@ -225,7 +209,7 @@ describe('approval:gate against a real approvals backend', () => {
   });
 
   it('refuses a grant redeemed inside a different template', async () => {
-    // S4: §3 binds a grant to (request, template, values). Two access-request
+    // A grant is bound to (request, template, values). Two access-request
     // templates sharing a parameter shape is an ordinary thing to have, and
     // without this binding a grant approved for one would unlock the other.
     const grant = await approvedGrant({ ...VALUES, justification: 'crossing' });

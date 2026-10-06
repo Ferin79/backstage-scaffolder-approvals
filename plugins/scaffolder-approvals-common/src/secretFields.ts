@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 /**
  * The scaffolder field that keeps a value out of the task's parameters.
  *
@@ -122,7 +106,7 @@ function walk(schema: unknown, path: string[], found: string[]): void {
  * There is a disclosure risk too, and it is the sharper one. If such a value
  * *were* submitted as an ordinary parameter, it would be stored in
  * `approval_requests.values` and every signed-in user can read every request
- * (Q12) — so a password typed into a gated template would be published to the
+ * by default — so a password typed into a gated template would be published to the
  * whole organisation until the retention sweep redacted it months later.
  *
  * Returns the paths of any such parameters, empty when there are none.

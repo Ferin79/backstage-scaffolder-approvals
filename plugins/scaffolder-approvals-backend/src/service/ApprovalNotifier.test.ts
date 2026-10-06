@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type {
   ApprovalDecision,
   ApprovalRequest,
@@ -90,7 +74,7 @@ describe('ApprovalNotifier', () => {
   describe('with nothing installed', () => {
     it('does nothing, quietly', async () => {
       // The plugin has to work in a deployment with neither notifications nor
-      // signals (§7.5), so absence is the normal case rather than an error.
+      // signals, so absence is the normal case rather than an error.
       const bare = notifier({
         notifications: undefined,
         signals: undefined,
@@ -133,7 +117,7 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('the words a person reads', () => {
-    // B16: every inbox read "user:default/requester is asking to run …". The
+    // Every inbox read "user:default/requester is asking to run …". The
     // event payload keeps full refs for whatever subscribes to it; the
     // sentences people read name people.
     it('names people, not their entity refs', async () => {
@@ -194,7 +178,7 @@ describe('ApprovalNotifier', () => {
   });
 
   describe('onDecided', () => {
-    // The service hands over the request as it is after the decision (C3), so
+    // The service hands over the request as it is after the decision, so
     // a denial arrives `rejected` and a final approval `approved`.
     it('tells the requester, and carries the comment', async () => {
       await notifier().onDecided(
@@ -226,7 +210,7 @@ describe('ApprovalNotifier', () => {
     });
 
     it('announces a vote that leaves it pending, without notifying anyone', async () => {
-      // B10/B12: a partial approval published nothing, so a page open on the
+      // A partial approval must still publish, so a page open on the
       // request stayed at "0 of 2". It is an event and a signal now — and not
       // a notification, because "Request approved" with an approval still
       // missing would be untrue.
@@ -314,7 +298,7 @@ describe('ApprovalNotifier', () => {
 
     it('carry nothing but the request id and its status', async () => {
       // A broadcast reaches every signed-in user, so the payload has to be
-      // something they were all entitled to see. Reads are open (Q12) and the
+      // something they were all entitled to see. Reads are open and the
       // page fetches the request itself once it is told to.
       await notifier().onDecided(REQUEST, APPROVAL);
 
@@ -329,7 +313,7 @@ describe('ApprovalNotifier', () => {
 
   describe('launched and completed', () => {
     it('publish an event and a signal but never a notification', async () => {
-      // Q20 settles on four notifications in v1, and "launched" is redundant
+      // "launched" carries no notification: it is redundant
       // with "decided" in somebody's inbox. An external subscriber still needs
       // the whole lifecycle.
       const running = { ...REQUEST, status: 'running' as const, taskId: 't-1' };
@@ -372,8 +356,8 @@ describe('ApprovalNotifier', () => {
 
   describe('withdrawn', () => {
     it("replaces the approvers' request notification instead of adding one", async () => {
-      // B11: "Approval requested" stayed unread after a withdrawal, leading to
-      // a request nobody could act on. Q20's four kinds stay four: this one
+      // "Approval requested" stayed unread after a withdrawal, leading to
+      // a request nobody could act on. The kinds of notification stay four: this one
       // takes the scope of the notification it makes obsolete.
       await notifier().onWithdrawn({
         ...REQUEST,
@@ -394,7 +378,7 @@ describe('ApprovalNotifier', () => {
     });
 
     it('publishes an event and a signal', async () => {
-      // B10: a page open on a withdrawn request never updated, because nothing
+      // A page open on a withdrawn request never updated, because nothing
       // was published.
       await notifier().onWithdrawn({
         ...REQUEST,

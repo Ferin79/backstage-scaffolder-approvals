@@ -1,26 +1,10 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { type Config, readDurationFromConfig } from '@backstage/config';
 import { durationToMilliseconds, type HumanDuration } from '@backstage/types';
 
-/** Applied when `scaffolderApprovals.grantTtl` is not configured (Q7). */
+/** Applied when `scaffolderApprovals.grantTtl` is not configured. */
 export const DEFAULT_GRANT_TTL: HumanDuration = { hours: 1 };
 
-/** Applied when `scaffolderApprovals.retention.redactAfter` is absent (Q6). */
+/** Applied when `scaffolderApprovals.retention.redactAfter` is absent. */
 export const DEFAULT_RETENTION: HumanDuration = { days: 180 };
 
 /** The plugin's whole config surface, read and checked. */
@@ -39,11 +23,8 @@ export interface ApprovalsConfig {
  *
  * `readDurationFromConfig` does the parsing: it takes `{ hours: 1 }`, `1h` and
  * `PT1H`, and refuses a misspelt unit or a bare number with the key's name in
- * the message. Before it was used here these values were read with a plain
- * `getOptional`, and `durationToMilliseconds` quietly turns `'1h'`,
- * `{ hour: 1 }` and `3600` into zero — which disabled every launch, or redacted
- * every settled request, with nothing in the log to say why. Zero itself is
- * refused for the same reason: it is never what an operator means.
+ * the message. Zero is refused too: it is never what an operator means, and it
+ * would disable every launch or redact every settled request.
  */
 function readPositiveDuration(
   config: Config,

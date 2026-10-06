@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { coreExtensionData } from '@backstage/frontend-plugin-api';
 import { createExtensionTester } from '@backstage/frontend-test-utils';
 import alphaPlugin from './alpha';
@@ -22,12 +6,17 @@ import {
   PendingApprovalsHomePageCard,
   scaffolderApprovalsPlugin,
 } from './plugin';
-import { requestRouteRef, rootRouteRef } from './routes';
+import {
+  requestRouteRef,
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from './routes';
 
 /**
- * The package dual-ships (Q14), so both entrypoints have to construct. The
+ * The package dual-ships, so both entrypoints have to construct. The
  * point of the smoke test is that the two wirings cannot drift apart unnoticed
- * — they mount the same components, and only the wiring is duplicated (Q23).
+ * — they mount the same components, and only the wiring is duplicated.
  */
 describe('dual-shipped plugin definitions', () => {
   describe('the legacy frontend system', () => {
@@ -36,6 +25,11 @@ describe('dual-shipped plugin definitions', () => {
       expect(scaffolderApprovalsPlugin.routes).toEqual({
         root: rootRouteRef,
         request: requestRouteRef,
+      });
+      // The links into the scaffolder, which an app binds to its pages.
+      expect(scaffolderApprovalsPlugin.externalRoutes).toEqual({
+        scaffolderTask: scaffolderTaskRouteRef,
+        scaffolderTemplate: scaffolderTemplateRouteRef,
       });
     });
 
@@ -49,7 +43,7 @@ describe('dual-shipped plugin definitions', () => {
       expect(ApprovalsIndexPage).toBeDefined();
     });
 
-    it('exposes the home-page card (Q22)', () => {
+    it('exposes the home-page card', () => {
       expect(PendingApprovalsHomePageCard).toBeDefined();
     });
   });
@@ -75,7 +69,7 @@ describe('dual-shipped plugin definitions', () => {
       ).toBeDefined();
     });
 
-    it('gives the page a nav title and icon (Q22)', () => {
+    it('gives the page a nav title and icon', () => {
       // There is no `NavItemBlueprint` in this Backstage version: a page
       // carries its own title and icon and the app builds the sidebar entry
       // from them. Without these the page is reachable only by URL, which for
@@ -102,6 +96,9 @@ describe('dual-shipped plugin definitions', () => {
     // disagreeing would break deep links for half of all installations.
     expect(Object.keys(alphaPlugin.routes).sort()).toEqual(
       Object.keys(scaffolderApprovalsPlugin.routes).sort(),
+    );
+    expect(Object.keys(alphaPlugin.externalRoutes).sort()).toEqual(
+      Object.keys(scaffolderApprovalsPlugin.externalRoutes).sort(),
     );
   });
 });

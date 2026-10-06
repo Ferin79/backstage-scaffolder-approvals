@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   type ApprovalDecision,
   type ApprovalDecisionOutcome,
@@ -21,8 +5,9 @@ import {
   type ApprovalRequestStatus,
   type ApprovalRequestWithDecisions,
   type GatePolicy,
-  normaliseEntityRef,
+  normaliseEntityRefs,
   TERMINAL_APPROVAL_REQUEST_STATUSES,
+  tryNormaliseEntityRef,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   assertSha256Hex,
@@ -30,7 +15,7 @@ import {
 } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import type { JsonObject } from '@backstage/types';
 import type { Knex } from 'knex';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import {
   rowToApprovalDecision,
   rowToApprovalRequest,
@@ -57,7 +42,7 @@ export interface NewApprovalRequest {
   policySnapshot: GatePolicy;
   /** When the timeout sweep should expire this. Omit for no timeout. */
   expiresAt?: Date;
-  /** `metadata.uid` of the template as it was at submit (§10.3). */
+  /** `metadata.uid` of the template as it was at submit. */
   templateUid?: string;
   /** SHA-256 of the template's `spec.steps` as they were at submit. */
   templateStepsHash?: string;
@@ -77,13 +62,14 @@ export interface TransitionFields {
   expiresAt?: Date | null;
   /** Why the request failed, for a transition to `failed`. */
   failureReason?: string | null;
-  /** Also require the request's timeout not to have passed (C4). */
+  /** Also require the request's timeout not to have passed. */
   notExpired?: boolean;
 }
 
 /** A vote to record. */
 export interface NewApprovalDecision {
   requestId: string;
+  /** The voter's user ref, normalised like every ref the store keeps. */
   approverRef: string;
   decision: ApprovalDecisionOutcome;
   comment?: string;
@@ -118,7 +104,7 @@ export interface ConsumeApprovalGrant {
   taskId: string;
   /**
    * The template the task is running, normalised; must match the one the
-   * request was raised against (§3).
+   * request was raised against.
    */
   templateRef: string;
 }
@@ -132,7 +118,8 @@ export interface ListApprovalRequestRows {
    * Restrict to requests any of these refs may decide on.
    *
    * Pass the caller's own ownership refs — their user ref plus their groups —
-   * and the join matches whichever of them the policy happens to list.
+   * and the join matches whichever of them the policy happens to list. They
+   * are normalised here, however the token spelled them.
    */
   approverRefs?: string[];
   /**
@@ -196,7 +183,7 @@ export class ApprovalStore {
   /**
    * Create a request, or return the equivalent one already awaiting a decision.
    *
-   * Collapsing (Q13) keeps an impatient requester from filling the approvers'
+   * Collapsing keeps an impatient requester from filling the approvers'
    * inbox with the same ask. Equivalence is the same requester, the same
    * template and the same values — and the existing request must still be live:
    * collapsing into one that has already timed out would hand back a request
@@ -244,7 +231,7 @@ export class ApprovalStore {
         return { id: existing.id, collapsed: true };
       }
 
-      const id = uuid();
+      const id = randomUUID();
       const pending: ApprovalRequestStatus = 'pending';
 
       await tx(TABLE_REQUESTS).insert({
@@ -351,16 +338,14 @@ export class ApprovalStore {
           'id',
           this.db<ApprovalRequestApproverRow>(TABLE_REQUEST_APPROVERS)
             .select('request_id')
-            .whereIn('approver_ref', options.approverRefs),
+            .whereIn('approver_ref', normaliseEntityRefs(options.approverRefs)),
         );
       }
       if (options.actionableBy !== undefined) {
-        // Both spellings, because the refs this is compared with are not all
-        // stored the same way: `requester_ref` is normalised at submit, while a
-        // decision stores the caller's ref as their token gave it.
-        // `checkDecisionEligibility` normalises both sides, and this has to
-        // agree with it.
-        const self = refSpellings(options.actionableBy);
+        // Requester and approver refs are stored normalised, so the caller's
+        // is too, the way `checkDecisionEligibility` compares them.
+        const self =
+          tryNormaliseEntityRef(options.actionableBy) ?? options.actionableBy;
         query
           .where('status', 'pending')
           .where(builder =>
@@ -370,12 +355,12 @@ export class ApprovalStore {
             'id',
             this.db<ApprovalDecisionRow>(TABLE_DECISIONS)
               .select('request_id')
-              .whereIn('approver_ref', self),
+              .where('approver_ref', self),
           )
           // `self_approve` is never null (see its migration), so this cannot
           // turn into an unknown that drops rows it should keep.
           .whereNot(builder =>
-            builder.whereIn('requester_ref', self).where('self_approve', false),
+            builder.where('requester_ref', self).where('self_approve', false),
           );
       }
       return query;
@@ -469,11 +454,20 @@ export class ApprovalStore {
    * won, rather than by trusting an affected-row count —
    * `onConflict().ignore()` compiles to `INSERT IGNORE` on MySQL, whose counts
    * also swallow unrelated failures.
+   *
+   * The unique index only works if one person has one spelling, so a ref that
+   * is not normalised is refused rather than stored.
    */
   async recordDecision(
     input: NewApprovalDecision,
   ): Promise<RecordDecisionResult> {
-    const id = uuid();
+    if (tryNormaliseEntityRef(input.approverRef) !== input.approverRef) {
+      throw new TypeError(
+        `approverRef must be a normalised entity ref, got ${input.approverRef}`,
+      );
+    }
+
+    const id = randomUUID();
 
     await this.db(TABLE_DECISIONS)
       .insert({
@@ -518,7 +512,7 @@ export class ApprovalStore {
     assertSha256Hex(input.tokenHash, 'tokenHash');
     assertSha256Hex(input.valuesHash, 'valuesHash');
 
-    const id = uuid();
+    const id = randomUUID();
     await this.db(TABLE_GRANTS).insert({
       id,
       request_id: input.requestId,
@@ -535,11 +529,10 @@ export class ApprovalStore {
   /**
    * Claim the right to launch a request, so that exactly one caller does.
    *
-   * Deciding a request launches it, and so does the reconciliation sweep. Both
-   * used to read the grants table and then write to it, which two replicas can
+   * Deciding a request launches it, and so does the reconciliation sweep.
+   * Reading the grants table and then writing to it would let two replicas
    * interleave: each sees no live grant, each mints one, and the template runs
-   * twice. This is the compare-and-set that §6 asks for, and it is what every
-   * launch now goes through first.
+   * twice. Every launch goes through this compare-and-set first instead.
    *
    * `staleBefore` is how the claim is also a retry window. A claim held by an
    * attempt that has not finished is honoured until it is that old; after that
@@ -622,10 +615,10 @@ export class ApprovalStore {
   /**
    * When the approval stops being redeemable, whatever happens to the launch.
    *
-   * The *first* grant's expiry, not the newest one's. Q9 retries a launch
-   * "while the grant is valid" and fails the request once it lapses; if each
-   * retry minted a grant with a fresh TTL, a scaffolder that stayed down would
-   * be retried forever and the request would never reach `failed`. Every grant
+   * The *first* grant's expiry, not the newest one's. A launch is retried while
+   * the approval is valid and the request fails once it lapses; if each retry
+   * minted a grant with a fresh TTL, a scaffolder that stayed down would be
+   * retried forever and the request would never reach `failed`. Every grant
    * after the first therefore expires when the first one would have.
    *
    * Undefined means nothing has been minted yet, so the launch has its full
@@ -650,16 +643,16 @@ export class ApprovalStore {
    *
    * - `request_id` and `token_hash` — the grant exists and belongs to this
    *   request.
-   * - `values_hash` — the task is running the values that were approved (Q10).
+   * - `values_hash` — the task is running the values that were approved.
    *   Without this, an approved request could be redeemed to run different
    *   parameters.
-   * - `template_ref` — the task is running the template that was approved
-   *   (§3). Checked with a sub-select against the request rather than a
+   * - `template_ref` — the task is running the template that was approved.
+   *   Checked with a sub-select against the request rather than a
    *   denormalised copy, so there is one source of truth and the whole check
    *   stays inside the one statement. Without it a leaked grant would redeem
    *   inside any gated template that took the same values.
    * - `consumed_at IS NULL` — single use, so a leaked token cannot be replayed.
-   * - `expires_at > now` — the grant TTL (Q7).
+   * - `expires_at > now` — the grant TTL.
    *
    * Anything else fails closed. There is deliberately no variant that reports
    * *which* guard failed: the caller is presenting a bearer token, and telling
@@ -743,16 +736,11 @@ export class ApprovalStore {
   /**
    * Requests with a task in flight, least recently checked first.
    *
-   * Ordering by `updated_at` sounds like "whatever has been waiting longest"
-   * and is not: a request whose task is still running never changes status, so
-   * nothing moves its `updated_at`, and neither does one whose `getTask` keeps
-   * failing — the case that most needs looking at. The oldest rows therefore
-   * held the batch forever, and with a batch of 50 the 51st was never examined
-   * again however long it had been finished.
-   *
-   * `last_checked_at` makes it a rotation instead: `markChecked` moves a
-   * request to the back of the queue whether or not anything changed. Nulls
-   * sort first, which is what it means to have never been looked at.
+   * Not by `updated_at`: a request whose task is still running never changes
+   * status, so its `updated_at` never moves, and the oldest rows would hold the
+   * batch forever. `last_checked_at` makes it a rotation instead: `markChecked`
+   * moves a request to the back of the queue whether or not anything changed.
+   * A request never checked has been waiting since it was created.
    */
   async findRunning(limit: number): Promise<ApprovalRequest[]> {
     const rows = await this.db<ApprovalRequestRow>(TABLE_REQUESTS)
@@ -772,8 +760,8 @@ export class ApprovalStore {
    * Note that the sweep has looked at these requests.
    *
    * Deliberately separate from `transition`: the point is to record the look
-   * itself, including when it found nothing to change, which is the case that
-   * used to starve the rest of the queue.
+   * itself, including when it found nothing to change, so an unresolvable
+   * request cannot starve the rest of the queue.
    */
   async markChecked(ids: string[]): Promise<void> {
     if (ids.length === 0) {
@@ -820,7 +808,7 @@ export class ApprovalStore {
   /**
    * Drop the personal data from a settled request, keeping the request itself.
    *
-   * Redacts, never deletes (Q6). The row and every decision on it are the audit
+   * Redacts, never deletes. The row and every decision on it are the audit
    * trail this plugin exists to produce; what goes is the submitted values and
    * the rendered summary, which may carry personal data such as an access
    * justification. The values *hash* stays, so a grant could still be checked.
@@ -840,20 +828,5 @@ export class ApprovalStore {
         updated_at: now,
       });
     return affected === 1;
-  }
-
-  /** Read a grant back, for tests and operator introspection. */
-  async getGrant(id: string): Promise<ApprovalGrantRow | undefined> {
-    return await this.db<ApprovalGrantRow>(TABLE_GRANTS).where({ id }).first();
-  }
-}
-
-/** A user ref as given, and normalised, for matching refs stored either way. */
-function refSpellings(ref: string): string[] {
-  try {
-    return [...new Set([ref, normaliseEntityRef(ref)])];
-  } catch {
-    // Unparseable: it can only match itself, if it matches anything at all.
-    return [ref];
   }
 }

@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import { TestDatabases } from '@backstage/backend-test-utils';
 import type { Knex } from 'knex';
@@ -42,7 +26,7 @@ const ALL_TABLES = [
  * What the database said when it refused a write, or that it did not refuse.
  *
  * Not `rejects.toThrow()`, which is what these tests used and why they failed
- * intermittently (T6 in the code review, B13 in the browser review). The write
+ * intermittently. The write
  * *was* refused every time. But better-sqlite3 registers its error class with
  * its native addon once per process, and Jest gives each test file its own
  * realm. So in a worker that has already run another SQLite suite, a
@@ -253,6 +237,62 @@ describe('migrations', () => {
         [forbids, false],
         [silent, false],
         [broken, false],
+      ]);
+    });
+
+    it('normalises the approver refs decisions were stored with', async () => {
+      // Votes recorded before the service normalised them kept the token's
+      // spelling, and the quorum count compares refs exactly.
+      await knex.migrate.latest({ directory: migrationsDir });
+      await knex.migrate.down({
+        directory: migrationsDir,
+        name: '20261006000000_normalise_decision_refs.js',
+      });
+
+      const requestId = '3f1e4c8a-0000-4000-8000-00000000000a';
+      await knex(TABLE_REQUESTS).insert({
+        id: requestId,
+        template_ref: 'template:default/gated',
+        values_json: '{}',
+        values_hash: 'a'.repeat(64),
+        requester_ref: 'user:default/requester',
+        status: 'pending',
+        policy_snapshot: JSON.stringify({ approvers: [], quorum: 2 }),
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+      const vote = (id: string, approverRef: string) => ({
+        id: `3f1e4c8a-0000-4000-8000-0000000000${id}`,
+        request_id: requestId,
+        approver_ref: approverRef,
+        decision: 'approve',
+        created_at: new Date(),
+      });
+      // MySQL's default collation already treats the two Carols as one vote,
+      // so it refuses to store them both and there is no collision to keep.
+      const caseSensitive = !databaseId.startsWith('MYSQL');
+      await knex(TABLE_DECISIONS).insert([
+        vote('b1', 'User:Default/Alice'),
+        vote('b2', 'user:bob'),
+        vote('b3', 'user:default/carol'),
+        ...(caseSensitive ? [vote('b4', 'User:Default/Carol')] : []),
+        vote('b5', 'not a ref'),
+      ]);
+
+      await knex.migrate.latest({ directory: migrationsDir });
+
+      const refs = await knex(TABLE_DECISIONS)
+        .select('id', 'approver_ref')
+        .orderBy('id');
+      expect(refs.map(row => row.approver_ref)).toEqual([
+        'user:default/alice',
+        'user:default/bob',
+        'user:default/carol',
+        // Normalising it would collide with the vote above; the audit trail
+        // keeps both rows rather than deleting one.
+        ...(caseSensitive ? ['User:Default/Carol'] : []),
+        // Not a ref at all, so there is nothing to normalise it to.
+        'not a ref',
       ]);
     });
 

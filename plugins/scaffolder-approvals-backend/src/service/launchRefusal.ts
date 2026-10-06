@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { STATUS_CODES } from 'node:http';
 
 /**
@@ -24,7 +8,7 @@ import { STATUS_CODES } from 'node:http';
  *
  * Deliberately narrow. A 401 can be a key rotating, a 5xx or a dropped
  * connection says nothing about whether a task exists, and both are worth
- * retrying (Q9). Only an answer that proves no task was created, and that no
+ * retrying. Only an answer that proves no task was created, and that no
  * retry could change, ends the request here.
  */
 const DEFINITE_REFUSALS = new Set([400, 403, 404, 422]);

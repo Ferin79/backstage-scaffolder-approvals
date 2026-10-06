@@ -1,25 +1,11 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   type ApprovalRequest,
   isApprover,
-  normaliseEntityRef,
+  isSameEntityRef,
+  normaliseEntityRefs,
   RESOURCE_TYPE_APPROVAL_REQUEST,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
+  tryNormaliseEntityRef,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   createPermissionResourceRef,
@@ -42,13 +28,9 @@ export type ApprovalRequestFilter =
   | { key: 'templateRef'; values: string[] }
   | { key: 'approverRef'; values: string[] }
   /**
-   * Everything the inner filter does not match.
-   *
-   * Needed by {@link isNotRequester}, whose whole point is exclusion. Without
-   * it that rule had no way to say what it meant, and said the opposite
-   * instead. Keeping negation in the union rather than adding a `negate` flag
-   * to each variant means a future implementation of these filters has to
-   * handle it: the compiler will not let a `switch` over this type forget.
+   * Everything the inner filter does not match, which {@link isNotRequester}
+   * needs. Negation is a member of the union rather than a flag on each
+   * variant, so a `switch` over this type cannot forget to handle it.
    */
   | { not: ApprovalRequestFilter };
 
@@ -64,19 +46,6 @@ export const approvalRequestResourceRef = createPermissionResourceRef<
   pluginId: SCAFFOLDER_APPROVALS_PLUGIN_ID,
   resourceType: RESOURCE_TYPE_APPROVAL_REQUEST,
 });
-
-/** Refs are normalised before comparison, so casing cannot decide a rule. */
-function normaliseAll(refs: readonly string[]): string[] {
-  return refs.flatMap(ref => {
-    try {
-      return [normaliseEntityRef(ref)];
-    } catch {
-      // A ref that will not parse cannot match anything, so dropping it is
-      // equivalent to it failing to match.
-      return [];
-    }
-  });
-}
 
 /**
  * The caller is named by the request's own gate policy.
@@ -106,7 +75,7 @@ export const isDesignatedApprover = createPermissionRule({
     }),
   toQuery: ({ userRefs }) => ({
     key: 'approverRef',
-    values: normaliseAll(userRefs),
+    values: normaliseEntityRefs(userRefs),
   }),
 });
 
@@ -127,28 +96,15 @@ export const isNotRequester = createPermissionRule({
   paramsSchema: z.object({
     userRef: z.string().describe("The caller's own entity ref"),
   }),
-  apply: (request: ApprovalRequest, { userRef }) => {
-    const [caller] = normaliseAll([userRef]);
-    const [requester] = normaliseAll([request.requesterRef]);
+  apply: (request: ApprovalRequest, { userRef }) =>
     // An unparseable ref on either side must not accidentally satisfy "is not
     // the requester", so fail closed.
-    if (!caller || !requester) {
-      return false;
-    }
-    return caller !== requester;
-  },
-  /**
-   * Everything that is *not* the caller's own.
-   *
-   * This previously returned `{ key: 'requesterRef', values: [caller] }`,
-   * which is precisely the set the rule excludes — so a policy using it to
-   * filter a list would have shown a requester their own requests and nothing
-   * else, the exact inverse of a four-eyes control. The comment above it
-   * claimed such a query "gets nothing back rather than something wrong",
-   * which was the part that made it hard to spot.
-   */
+    tryNormaliseEntityRef(userRef) !== undefined &&
+    tryNormaliseEntityRef(request.requesterRef) !== undefined &&
+    !isSameEntityRef(userRef, request.requesterRef),
+  /** Everything that is *not* the caller's own. */
   toQuery: ({ userRef }) => {
-    const [caller] = normaliseAll([userRef]);
+    const caller = tryNormaliseEntityRef(userRef);
     if (!caller) {
       // `apply` fails closed on a ref that will not parse, and so must this.
       // `not` over an empty set would match *everything*, which is the same
@@ -177,12 +133,10 @@ export const hasTemplateRef = createPermissionRule({
       .describe('Entity refs of the templates this applies to'),
   }),
   apply: (request: ApprovalRequest, { templateRefs }) =>
-    normaliseAll(templateRefs).includes(
-      normaliseAll([request.templateRef])[0] ?? '',
-    ),
+    templateRefs.some(ref => isSameEntityRef(ref, request.templateRef)),
   toQuery: ({ templateRefs }) => ({
     key: 'templateRef',
-    values: normaliseAll(templateRefs),
+    values: normaliseEntityRefs(templateRefs),
   }),
 });
 

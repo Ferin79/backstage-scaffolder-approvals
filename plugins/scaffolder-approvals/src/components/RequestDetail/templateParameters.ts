@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { useApiHolder } from '@backstage/core-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import useAsync from 'react-use/esm/useAsync';
@@ -43,14 +27,21 @@ export type ParameterTitles = ReadonlyMap<string, string>;
  */
 export type ParameterStanding = 'shown' | 'hidden' | 'undeclared';
 
+/**
+ * Judges submitted parameters against a template's form: given the answers,
+ * where each key stands.
+ *
+ * @internal
+ */
+export type ParameterJudge = (
+  values: Record<string, unknown>,
+) => (key: string) => ParameterStanding;
+
 /** @internal */
 export interface TemplateParameters {
   titles: ParameterTitles;
   /** Undefined when the template could not be read: then nothing is judged. */
-  standing?: (
-    key: string,
-    values: Record<string, unknown>,
-  ) => ParameterStanding;
+  standing?: ParameterJudge;
 }
 
 type Schema = Record<string, unknown>;
@@ -226,20 +217,21 @@ function walkPage(
 }
 
 /**
- * Judges each submitted parameter against a template's parameter pages.
+ * Judges each submitted parameter against a template's parameter pages. The
+ * pages are walked once per set of answers, not once per key.
  *
  * @internal
  */
-export function parameterStanding(
-  parameters: unknown,
-): (key: string, values: Record<string, unknown>) => ParameterStanding {
+export function parameterStanding(parameters: unknown): ParameterJudge {
   const pages = pagesOf(parameters);
-  return (key, values) => {
+  return values => {
     const shown = new Set<string>();
     const declared = new Set<string>();
     pages.forEach(page => walkPage(page, values, shown, declared));
-    if (shown.has(key)) return 'shown';
-    return declared.has(key) ? 'hidden' : 'undeclared';
+    return key => {
+      if (shown.has(key)) return 'shown';
+      return declared.has(key) ? 'hidden' : 'undeclared';
+    };
   };
 }
 

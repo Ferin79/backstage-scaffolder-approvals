@@ -42,8 +42,7 @@
     "@backstage/catalog-model": "^1.10.1",
     "@backstage/plugin-catalog-node": "^2.2.5",
     "@backstage/plugin-scaffolder-common": "^2.3.0",
-    "@ferin79/backstage-plugin-scaffolder-approvals-common": "workspace:^",
-    "@ferin79/backstage-plugin-scaffolder-approvals-node": "workspace:^"
+    "@ferin79/backstage-plugin-scaffolder-approvals-common": "workspace:^"
   },
   "devDependencies": {
     "@backstage/backend-test-utils": "^1.11.7",

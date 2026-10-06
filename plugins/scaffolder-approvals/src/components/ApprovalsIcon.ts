@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { createElement } from 'react';
 
 /** The sizes Backstage's `IconComponent` asks for, as Material UI sizes them. */
@@ -27,10 +11,10 @@ const SIZES = {
 /**
  * A clipboard with a tick: a list of things waiting to be agreed to.
  *
- * An inline SVG rather than one from an icon set, which keeps this package
- * from taking a dependency for a single glyph. `currentColor` is what makes it
- * follow the colour of whatever it sits in, in both themes. Shaped as an
- * `IconComponent`, so the nav item and the template card can share it.
+ * Shaped as Backstage's `IconComponent` (a `fontSize` prop, not Remix Icon's
+ * `size`), which is what the nav item and the template card's links take.
+ * `currentColor` makes it follow the colour of whatever it sits in, in both
+ * themes.
  *
  * `createElement` rather than JSX, so the `.ts` alpha entrypoint can use it.
  */

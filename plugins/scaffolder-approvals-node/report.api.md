@@ -5,10 +5,6 @@
 ```ts
 import { ApprovalRequest } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { Entity } from '@backstage/catalog-model';
-import { findGateStep } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { GateStepError } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { GateStepLookup } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { isGated } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { JsonObject } from '@backstage/types';
 import { PermissionResourceRef } from '@backstage/plugin-permission-node';
 import { PermissionRule } from '@backstage/plugin-permission-node';
@@ -29,13 +25,9 @@ export type ApprovalRequestFilter =
       values: string[];
     }
   /**
-   * Everything the inner filter does not match.
-   *
-   * Needed by {@link isNotRequester}, whose whole point is exclusion. Without
-   * it that rule had no way to say what it meant, and said the opposite
-   * instead. Keeping negation in the union rather than adding a `negate` flag
-   * to each variant means a future implementation of these filters has to
-   * handle it: the compiler will not let a `switch` over this type forget.
+   * Everything the inner filter does not match, which {@link isNotRequester}
+   * needs. Negation is a member of the union rather than a flag on each
+   * variant, so a `switch` over this type cannot forget to handle it.
    */
   | {
       not: ApprovalRequestFilter;
@@ -65,14 +57,8 @@ export function computeTemplateStepsHash(entity: Entity): string;
 // @public
 export function computeValuesHash(values: JsonObject): string;
 
-export { findGateStep };
-
 // @public
 export function formatGrant(requestId: string, token: string): string;
-
-export { GateStepError };
-
-export { GateStepLookup };
 
 // @public
 export function generateGrantToken(): string;
@@ -104,8 +90,6 @@ export const isDesignatedApprover: PermissionRule<
     userRefs: string[];
   }
 >;
-
-export { isGated };
 
 // @public
 export const isNotRequester: PermissionRule<
@@ -153,9 +137,6 @@ export const scaffolderApprovalsPermissionRules: readonly [
     }
   >,
 ];
-
-// @public
-export const SHA256_HEX_LENGTH = 64;
 
 // @public
 export function sha256Hex(input: string): string;

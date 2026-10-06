@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   type ApprovalDecision,
   type ApprovalRequest,
@@ -33,11 +17,10 @@ export const APPROVALS_EVENT_TOPIC = SCAFFOLDER_APPROVALS_PLUGIN_ID;
 /**
  * What happened, as the event payload names it.
  *
- * `launched` and `completed` deliberately carry no notification: Q20 settles on
- * four in v1, and "launched" is redundant with "decided" in somebody's inbox.
- * They exist because an external subscriber — a Slack integration, an audit
- * pipeline — needs the whole lifecycle, not the part that happens to be worth
- * interrupting a person for.
+ * `launched` and `completed` deliberately carry no notification: "launched" is
+ * redundant with "decided" in somebody's inbox. They exist because an external
+ * subscriber — a Slack integration, an audit pipeline — needs the whole
+ * lifecycle, not the part that happens to be worth interrupting a person for.
  */
 export type ApprovalEventAction =
   | 'requested'
@@ -50,9 +33,8 @@ export type ApprovalEventAction =
 
 /**
  * How a person or a template is named in a notification: "alice", not
- * "user:default/alice" (B16 in the browser review). The namespace stays when
- * it is not the default one, since two people in different namespaces can share
- * a name.
+ * "user:default/alice". The namespace stays when it is not the default one,
+ * since two people in different namespaces can share a name.
  *
  * Not the catalog's display name: a notification goes out in the middle of a
  * decision, and a slow or unavailable catalog must not hold that up. The
@@ -80,7 +62,7 @@ export interface ApprovalNotifierOptions {
 /**
  * Fans a state change out to notifications, signals and events.
  *
- * All three are optional (§7.5): the plugin has to work in a deployment that
+ * All three are optional: the plugin has to work in a deployment that
  * installs none of them, so every call site checks before using one and every
  * failure is swallowed with a log. A notification that cannot be sent is not a
  * reason to undo an approval that has already been committed.
@@ -140,8 +122,7 @@ export class ApprovalNotifier implements ApprovalObserver {
     await this.fanOut('decided', request, {
       // A vote that leaves the request pending is an event and a signal, never
       // a notification: "Request approved" while another approval is still
-      // needed would tell the requester something untrue. Q20's four are
-      // about outcomes, and a partial vote is not one.
+      // needed would tell the requester something untrue.
       recipients: request.status === 'pending' ? [] : [request.requesterRef],
       title: approved ? 'Request approved' : 'Request denied',
       description: `${nameOf(decision.approverRef)} ${
@@ -165,11 +146,9 @@ export class ApprovalNotifier implements ApprovalObserver {
   /**
    * The requester withdrew it.
    *
-   * An event and a signal, because this was the one change that published
-   * nothing, so a page open on it never noticed (B10). And a notification that
-   * *replaces* each approver's "Approval requested" rather than adding a fifth
-   * kind (Q20): without it, that one stayed unread and led to a request nobody
-   * could act on (B11).
+   * An event and a signal, so an open page updates, and a notification that
+   * *replaces* each approver's "Approval requested" rather than piling up
+   * beside it: left alone, that one would lead to a request nobody can act on.
    */
   async onWithdrawn(request: ApprovalRequest): Promise<void> {
     await this.fanOut('withdrawn', request, {
@@ -282,7 +261,7 @@ export class ApprovalNotifier implements ApprovalObserver {
       // and approvers are normally groups, so addressing them meant the people
       // most likely to have the page open were the ones who never saw it
       // update. The payload is the request id and its status and nothing else,
-      // which reveals nothing: reads are open to any signed-in user (Q12), and
+      // which reveals nothing: reads are open to any signed-in user, and
       // the page fetches the request itself once it is told to.
       await this.signals.publish({
         recipients: { type: 'broadcast' },

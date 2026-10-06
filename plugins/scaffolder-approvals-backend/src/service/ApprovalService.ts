@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   APPROVAL_GRANT_SECRET,
   type ApprovalDecision,
@@ -23,13 +7,12 @@ import {
   checkGatedTemplate,
   type ConsumeGrantResponse,
   computeQuorumProgress,
+  DECISION_INELIGIBILITY_MESSAGES,
   type DecideApprovalRequestOptions,
-  type DecisionIneligibility,
-  type GatePolicy,
-  normaliseEntityRef,
   renderGateSummary,
   type SubmitApprovalRequestResponse,
   type TemplateDrift,
+  tryNormaliseEntityRef,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   compareTemplate,
@@ -54,8 +37,12 @@ import {
 import type { CatalogService } from '@backstage/plugin-catalog-node';
 import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import type { ScaffolderService } from '@backstage/plugin-scaffolder-node';
-import { durationToMilliseconds, type HumanDuration } from '@backstage/types';
-import type { JsonObject, JsonValue } from '@backstage/types';
+import {
+  durationToMilliseconds,
+  type HumanDuration,
+  type JsonObject,
+  type JsonValue,
+} from '@backstage/types';
 import type { ApprovalStore } from '../database';
 import { describeLaunchRefusal } from './launchRefusal';
 import { assertValuesDepth, readEntityRef } from './requestInput';
@@ -81,28 +68,14 @@ export interface ApprovalObserver {
     request: ApprovalRequest,
     decision: ApprovalDecision,
   ): Promise<void>;
-  /**
-   * The template is running.
-   *
-   * Optional, because it carries no notification (Q20) and an implementation
-   * that only feeds somebody's inbox has nothing to do with it.
-   */
+  /** The template is running. Optional, as are the hooks below. */
   onLaunched?(request: ApprovalRequest): Promise<void>;
-  /**
-   * The requester withdrew the request before it was decided.
-   *
-   * Optional, like `onLaunched`, and for the same reason: Q20 settles on four
-   * notifications and this is not one of them. It exists because withdrawing
-   * was the one change that told nothing at all — no event for a subscriber,
-   * and no signal, so a page open on the request never updated (B10).
-   */
+  /** The requester withdrew the request before it was decided. */
   onWithdrawn?(request: ApprovalRequest): Promise<void>;
   /**
    * The approved request will not run: the scaffolder refused to start the
-   * template, so no task exists and none would on a retry.
-   *
-   * Optional, like the others the sweeps raise; `reason` is the sentence
-   * recorded on the request.
+   * template, so no task exists and none would on a retry. `reason` is the
+   * sentence recorded on the request.
    */
   onFailed?(request: ApprovalRequest, reason: string): Promise<void>;
 }
@@ -128,20 +101,11 @@ export interface ApprovalServiceOptions {
   auth: AuthService;
   userInfo: UserInfoService;
   logger: LoggerService;
-  /** How long a minted grant stays redeemable (Q7). */
+  /** How long a minted grant stays redeemable. */
   grantTtl: HumanDuration;
   observer?: ApprovalObserver;
   now?: () => Date;
 }
-
-/** Why a caller was refused a vote, in words. */
-const INELIGIBILITY_MESSAGES: Record<DecisionIneligibility, string> = {
-  'not-an-approver': 'You are not an approver for this request',
-  'self-approval': 'Self-approval is not permitted for this request',
-  'not-pending': 'This request has already been decided',
-  expired: 'This request timed out before anyone decided',
-  'already-voted': 'You have already decided on this request',
-};
 
 /**
  * How long a claimed launch is left alone before another caller may take it
@@ -154,11 +118,27 @@ const INELIGIBILITY_MESSAGES: Record<DecisionIneligibility, string> = {
  * a gated template, so a task that has not reached it in ten minutes is queued
  * behind a saturated worker pool, and revoking its grant would fail a run that
  * was about to succeed.
- *
- * Not configurable, deliberately: Q17 keeps app-config to `grantTtl` and
- * `retention`.
  */
 const LAUNCH_CLAIM_GRACE_MS = 10 * 60 * 1000;
+
+/**
+ * The caller's own ref, normalised like every other ref this plugin stores,
+ * for a request's requester or a decision's approver. MySQL's default
+ * collation is case-insensitive while SQLite and Postgres compare bytes, so a
+ * ref stored as the token spelled it would compare differently per database.
+ */
+function normaliseCallerRef(userEntityRef: string | undefined): string {
+  if (!userEntityRef) {
+    throw new NotAllowedError(
+      'Approval requests can only be used by a signed-in user',
+    );
+  }
+  const normalised = tryNormaliseEntityRef(userEntityRef);
+  if (!normalised) {
+    throw new NotAllowedError(`Not a usable user identity: ${userEntityRef}`);
+  }
+  return normalised;
+}
 
 /**
  * The approval state machine.
@@ -199,17 +179,14 @@ export class ApprovalService {
    * The gate policy is read off the template and **snapshotted**, so editing
    * the template afterwards cannot change the terms of a request already in
    * flight. Group membership is the deliberate exception: `approvers` holds
-   * refs, and the catalog resolves them at decision time.
+   * refs, and the caller's groups are matched against them at decision time.
    */
   async submit(options: SubmitOptions): Promise<SubmitApprovalRequestResponse> {
     const { values, credentials } = options;
 
-    // Read in one spelling before anything else uses it, and refused as a
-    // client error when it does not parse. Stored in that spelling too:
+    // Normalised before anything uses it, and stored that way:
     // `Template:Default/Gated` and `template:default/gated` are the same
-    // template, and storing them as written created two requests where Q13
-    // wants one, and let a grant approved for one spelling be refused for the
-    // other now that consuming checks the template too.
+    // template, and must collapse into one request and redeem one grant.
     const templateRef = readEntityRef(options.templateRef, {
       defaultKind: 'template',
       field: 'templateRef',
@@ -218,10 +195,7 @@ export class ApprovalService {
 
     const requesterRef = await this.callerRef(credentials);
 
-    const template = (await this.catalog.getEntityByRef(templateRef, {
-      credentials,
-    })) as TemplateEntityV1beta3 | undefined;
-
+    const template = await this.getTemplate(templateRef, credentials);
     if (!template) {
       throw new NotFoundError(`No such template: ${templateRef}`);
     }
@@ -229,13 +203,8 @@ export class ApprovalService {
       throw new InputError(`${templateRef} is not a Template`);
     }
 
-    // The gate's shape, secret-typed parameters (S7) and the policy, through
-    // the same function the wizard's review step uses before it offers
-    // "Request approval" — so the two cannot disagree about which templates
-    // can be asked for, or give different reasons (B8 in the browser review).
-    // A secret-typed parameter is refused rather than warned about: it never
-    // reaches the request at all, and if it did it would be stored in
-    // `values`, which every signed-in user can read (Q12).
+    // The same check the wizard and the catalog processor run, so none of them
+    // can disagree about which templates can be asked for.
     const check = checkGatedTemplate(template, templateRef);
     if (!check.gated) {
       throw new InputError(
@@ -245,43 +214,38 @@ export class ApprovalService {
     if (!check.usable) {
       throw new InputError(check.problem);
     }
-    const policy: GatePolicy = check.policy;
+    const { policy } = check;
 
-    // Validated before anything is stored (Q3), so an approval is never spent
-    // on a request that cannot run.
+    // Validated before anything is stored, so an approval is never spent on a
+    // request that cannot run.
     validateValues(template, values);
-
-    // The gate step comes from the catalog, where the scaffolder's templating
-    // has not run — and for a gated template it would not run until after the
-    // approval this summary exists to inform. Fill the parameter references in
-    // here, or approvers read a literal `${{ parameters.repository }}`.
-    const summary = policy.summary
-      ? renderGateSummary(policy.summary, values)
-      : undefined;
 
     const created = await this.store.createOrCollapse({
       templateRef,
       values,
       valuesHash: computeValuesHash(values),
       requesterRef,
-      summary,
+      // The gate step comes from the catalog, where the scaffolder's templating
+      // has not run, so the parameter references are filled in here.
+      summary: policy.summary
+        ? renderGateSummary(policy.summary, values)
+        : undefined,
       policySnapshot: policy,
       expiresAt: policy.timeout
         ? new Date(
             this.now().getTime() + durationToMilliseconds(policy.timeout),
           )
         : undefined,
-      // §10.3: what the template looked like now, so an approver deciding in
-      // three days can be told if it has changed underneath them.
+      // What the template looks like now, so an approver deciding later can
+      // be told if it has changed underneath them.
       templateUid: template.metadata.uid,
       templateStepsHash: computeTemplateStepsHash(template),
     });
 
     if (!created.collapsed) {
-      const request = await this.store.getRequest(created.id);
-      if (request) {
-        await this.notify(() => this.observer?.onSubmitted(request));
-      }
+      await this.notifyCurrent(created.id, request =>
+        this.observer?.onSubmitted(request),
+      );
     }
 
     return created;
@@ -302,9 +266,7 @@ export class ApprovalService {
   ): Promise<TemplateDrift | undefined> {
     let template: TemplateEntityV1beta3 | undefined;
     try {
-      template = (await this.catalog.getEntityByRef(request.templateRef, {
-        credentials,
-      })) as TemplateEntityV1beta3 | undefined;
+      template = await this.getTemplate(request.templateRef, credentials);
     } catch (error) {
       this.logger.warn(
         `Could not check ${request.templateRef} for drift`,
@@ -336,22 +298,6 @@ export class ApprovalService {
     return drift;
   }
 
-  /** Whether submitted values still satisfy a template's parameters now. */
-  private valuesStillFit(
-    template: TemplateEntityV1beta3,
-    values: JsonObject,
-  ): boolean {
-    try {
-      validateValues(template, values);
-      return true;
-    } catch (error) {
-      if (error instanceof InputError) {
-        return false;
-      }
-      throw error;
-    }
-  }
-
   /**
    * Record a vote and, if the gate is now satisfied, approve and launch.
    *
@@ -361,27 +307,18 @@ export class ApprovalService {
   async decide(options: DecideOptions): Promise<ApprovalRequestWithDecisions> {
     const { requestId, decision, comment, credentials } = options;
 
-    if (decision !== 'approve' && decision !== 'deny') {
-      throw new InputError(`Unknown decision: ${decision}`);
-    }
-
     const caller = await this.userInfo.getUserInfo(credentials);
+    const request = await this.requireRequest(requestId);
 
-    const request = await this.store.getRequest(requestId);
-    if (!request) {
-      throw new NotFoundError(`No such approval request: ${requestId}`);
-    }
-
-    const existing = await this.store.listDecisions(requestId);
     const eligibility = checkDecisionEligibility(
       request,
       caller,
-      existing,
+      await this.store.listDecisions(requestId),
       this.now(),
     );
     if (!eligibility.allowed) {
-      const message = INELIGIBILITY_MESSAGES[eligibility.reason];
-      // A stale request is a conflict; the other reasons are refusals.
+      const message = DECISION_INELIGIBILITY_MESSAGES[eligibility.reason];
+      // A request that moved on is a conflict; the other reasons are refusals.
       throw eligibility.reason === 'not-pending' ||
         eligibility.reason === 'already-voted' ||
         eligibility.reason === 'expired'
@@ -391,7 +328,7 @@ export class ApprovalService {
 
     const recorded = await this.store.recordDecision({
       requestId,
-      approverRef: caller.userEntityRef,
+      approverRef: normaliseCallerRef(caller.userEntityRef),
       decision,
       comment,
     });
@@ -399,25 +336,22 @@ export class ApprovalService {
     if (!recorded.recorded) {
       // Lost a race with the same approver's other request. The stored vote
       // stands, since decisions are append-only.
-      throw new ConflictError(INELIGIBILITY_MESSAGES['already-voted']);
+      throw new ConflictError(DECISION_INELIGIBILITY_MESSAGES['already-voted']);
     }
 
-    const decidedAt = this.now();
+    const announce = () =>
+      this.notifyCurrent(requestId, current =>
+        this.observer?.onDecided(current, recorded.decision),
+      );
+    // Guarded on the timeout as well as the status, so a decision and the
+    // timeout sweep landing together produce exactly one winner.
+    const settle = { decidedAt: this.now(), notExpired: true };
 
     if (decision === 'deny') {
-      const rejected = await this.store.transition(
-        requestId,
-        'pending',
-        'rejected',
-        // Guarded on the timeout as well as the status, so a decision and the
-        // timeout sweep landing together produce exactly one winner.
-        { decidedAt, notExpired: true },
-      );
-      if (rejected) {
-        // Re-read, never reuse `request`: it was loaded before the transition
-        // and still says `pending`, so every subscriber would be told a
-        // rejected request is awaiting a decision.
-        await this.notifyDecided(requestId, recorded.decision);
+      if (
+        await this.store.transition(requestId, 'pending', 'rejected', settle)
+      ) {
+        await announce();
       } else {
         // A concurrent approval reached quorum first. The denial is on record
         // as part of the audit trail, but it arrived too late to stop the run.
@@ -434,25 +368,13 @@ export class ApprovalService {
     );
 
     if (!progress.satisfied) {
-      // Still pending, but somebody voted. Announced like any other decision,
-      // with the status it really has, so an open page moves from "0 of 2" to
-      // "1 of 2" and a subscriber sees every vote (B10, B12 in the browser
-      // review). The notifier sends no notification for it: telling the
-      // requester "approved" while one approval is still missing would be
-      // worse than telling them nothing.
-      await this.notifyDecided(requestId, recorded.decision);
-      return await this.requireRequestWithDecisions(requestId);
-    }
-
-    const approved = await this.store.transition(
-      requestId,
-      'pending',
-      'approved',
-      { decidedAt, notExpired: true },
-    );
-
-    if (approved) {
-      await this.notifyDecided(requestId, recorded.decision);
+      // Still pending, but somebody voted: announced so an open page moves from
+      // "0 of 2" to "1 of 2". The notifier sends no notification for it.
+      await announce();
+    } else if (
+      await this.store.transition(requestId, 'pending', 'approved', settle)
+    ) {
+      await announce();
       await this.launch(requestId);
     }
 
@@ -460,46 +382,19 @@ export class ApprovalService {
   }
 
   /**
-   * Tell the observer about a decision, with the request as it is *now*.
-   *
-   * The request this method is handed by `decide` was loaded before the
-   * transition, so its status is still `pending` whatever the decision did.
-   * Publishing that is worse than publishing nothing: an external subscriber
-   * acting on `status` would see every approval and every rejection as an
-   * undecided request.
-   */
-  private async notifyDecided(
-    requestId: string,
-    decision: ApprovalDecision,
-  ): Promise<void> {
-    const current = await this.store.getRequest(requestId);
-    if (!current) {
-      return;
-    }
-    await this.notify(() => this.observer?.onDecided(current, decision));
-  }
-
-  /**
    * Withdraw a pending request.
    *
    * Only the requester may withdraw, and only before a decision — that is what
-   * `cancelled` means, as distinct from `rejected`.
-   *
-   * Nor after the timeout. A request is dead the moment its deadline passes,
-   * not when the sweep notices, exactly as for a decision; withdrawing it in
-   * that window recorded a timeout as a withdrawal and told the approvers so
-   * (M2 in the browser review).
+   * `cancelled` means, as distinct from `rejected`. Nor after the timeout: a
+   * request is dead the moment its deadline passes, not when the sweep notices.
    */
   async cancel(options: {
     requestId: string;
     credentials: BackstageCredentials;
   }): Promise<ApprovalRequest> {
-    const callerRef = await this.callerRef(options.credentials);
-
-    const request = await this.store.getRequest(options.requestId);
-    if (!request) {
-      throw new NotFoundError(`No such approval request: ${options.requestId}`);
-    }
+    const { requestId, credentials } = options;
+    const callerRef = await this.callerRef(credentials);
+    const request = await this.requireRequest(requestId);
 
     if (request.requesterRef !== callerRef) {
       throw new NotAllowedError('Only the requester may cancel a request');
@@ -517,7 +412,7 @@ export class ApprovalService {
     }
 
     if (
-      !(await this.store.transition(options.requestId, 'pending', 'cancelled', {
+      !(await this.store.transition(requestId, 'pending', 'cancelled', {
         decidedAt: now,
         // The same guard as a decision's, so a withdrawal and the timeout
         // sweep landing together produce exactly one outcome.
@@ -525,11 +420,11 @@ export class ApprovalService {
       }))
     ) {
       throw new ConflictError(
-        `Approval request ${options.requestId} is no longer pending`,
+        `Approval request ${requestId} is no longer pending`,
       );
     }
 
-    const withdrawn = await this.requireRequest(options.requestId);
+    const withdrawn = await this.requireRequest(requestId);
     await this.notify(() => this.observer?.onWithdrawn?.(withdrawn));
     return withdrawn;
   }
@@ -542,33 +437,27 @@ export class ApprovalService {
    *
    * **1. Claim the launch.** A compare-and-set on the request, so that a
    * decision and a sweep tick racing each other produce exactly one launch
-   * rather than two grants and two tasks (§6 forbids read-then-write here). A
-   * claim goes stale after {@link LAUNCH_CLAIM_GRACE_MS}, so a launcher that
-   * crashed mid-flight does not block the request forever.
+   * rather than two grants and two tasks. A claim goes stale after
+   * {@link LAUNCH_CLAIM_GRACE_MS}, so a launcher that crashed mid-flight does
+   * not block the request forever.
    *
    * **2. Recover a task that already started.** If a grant has been consumed,
    * the template is running and only this plugin's record of it was lost — a
    * crash between `scaffold()` returning and the status transition. Its
-   * `consumed_by_task_id` is the task id, which is the whole reason that column
-   * exists.
+   * `consumed_by_task_id` is the task id.
    *
-   * **3. Revoke a grant a previous attempt left behind.** Q9 asks for the
-   * launch to be retried, and it cannot be while the old grant is still
-   * redeemable: two live grants is two possible runs. Revoking is itself
-   * compare-and-set, so a task redeeming the grant at the same moment wins and
-   * this caller recovers its id instead.
+   * **3. Revoke a grant a previous attempt left behind.** The launch cannot be
+   * retried while the old grant is still redeemable: two live grants is two
+   * possible runs. Revoking is itself compare-and-set, so a task redeeming the
+   * grant at the same moment wins and this caller recovers its id instead.
    *
    * **4. Stop at the deadline.** The first grant's expiry is when the approval
    * stops being redeemable. Past it, `launch` does nothing and the sweep fails
-   * the request — Q9's "`failed` only once the grant lapses". This is
-   * deliberately different from a task that ran and failed (Q5), which is
-   * terminal and needs a fresh approval.
+   * the request. This is deliberately different from a task that ran and
+   * failed, which is terminal and needs a fresh approval.
    */
   async launch(requestId: string): Promise<void> {
-    const request = await this.store.getRequest(requestId);
-    if (!request) {
-      throw new NotFoundError(`No such approval request: ${requestId}`);
-    }
+    const request = await this.requireRequest(requestId);
 
     if (request.status !== 'approved') {
       this.logger.info(
@@ -627,15 +516,19 @@ export class ApprovalService {
       return;
     }
 
+    // Service credentials, not the requester's: `AuthService` cannot mint
+    // credentials for an arbitrary user, and by the time an approval lands
+    // there is no request from the requester in flight. So `task.createdBy` is
+    // this plugin, `${{ user.* }}` renders empty, and the run is not
+    // permission-checked: the approver list is the access-control boundary.
+    // See docs/security-model.md.
+    const credentials = await this.auth.getOwnServiceCredentials();
+
     // Noted, not refused. A template repo takes unrelated commits while an
     // approval waits, and failing every in-flight request on any edit would
-    // make the feature unusable. What matters is that the change is visible:
-    // the approver saw it on the request page before deciding, and this line
-    // ties the run in the log to the template it actually ran.
-    const drift = await this.templateDrift(
-      request,
-      await this.auth.getOwnServiceCredentials(),
-    );
+    // make the feature unusable. The approver saw the change on the request
+    // page before deciding; this line ties the run to the template it ran.
+    const drift = await this.templateDrift(request, credentials);
     if (drift?.changed) {
       this.logger.warn(
         `Launching approval request ${requestId} against a template that has changed since submit: ${drift.reasons.join(
@@ -651,27 +544,6 @@ export class ApprovalService {
       valuesHash: request.valuesHash,
       expiresAt: deadline,
     });
-
-    // Service credentials, not the requester's: `AuthService` cannot mint
-    // credentials for an arbitrary user from an entity ref, and by the time an
-    // approval lands there is no request from the requester in flight.
-    //
-    // Three consequences, all deliberate and all documented in the README:
-    //
-    // - `task.createdBy` is the service principal, which is why the request
-    //   page rather than the scaffolder task list is the canonical view of who
-    //   asked for what, and why `${{ user.* }}` renders empty in the template.
-    // - `ServerPermissionClient` answers ALLOW for a service principal without
-    //   consulting any policy, so the run is not permission-checked. An
-    //   approval can grant more than the requester could have run themselves;
-    //   the approver list is the access-control boundary.
-    // - Steps that call other plugins act as this plugin, not as the
-    //   requester.
-    //
-    // A deployment that needs the tighter property adds a
-    // `scaffolder.action.execute` policy denying the action to user
-    // principals, which reaches every direct run and no approved one.
-    const credentials = await this.auth.getOwnServiceCredentials();
 
     let taskId: string;
     try {
@@ -691,25 +563,20 @@ export class ApprovalService {
       taskId = response.taskId;
     } catch (error) {
       // The scaffolder answered, and refused: the values no longer fit the
-      // template's parameters, or the template is gone. No task was created,
-      // and asking again would get the same answer, so retrying until the
-      // grant lapsed only kept the request at "Starting" for an hour and then
-      // blamed the lapse. End it now, with the scaffolder's own reason.
+      // template's parameters, or the template is gone. No task was created and
+      // asking again would get the same answer, so end the request now with the
+      // scaffolder's own reason.
       const refusal = describeLaunchRefusal(error);
       if (refusal) {
         await this.failRefusedLaunch(requestId, grantId, refusal);
         return;
       }
 
-      // Q9: otherwise a launch failure is not a task failure, so the request
-      // stays `approved` and the next sweep retries it.
-      //
-      // The grant is deliberately left live rather than revoked here. The
-      // error does not say whether a task was created: `ScaffolderClient`
-      // throws a plain `Error` for a timeout or a 5xx as well, and a task that
-      // exists is on its way to the gate holding this grant. Waiting out the
-      // grace period costs at most one sweep interval, while guessing wrong
-      // would fail a run that was about to succeed.
+      // Otherwise a launch failure is not a task failure: the request stays
+      // `approved` and the next sweep retries it. The grant is deliberately
+      // left live, because the error does not say whether a task was created —
+      // `ScaffolderClient` throws a plain `Error` for a timeout or a 5xx too,
+      // and a task that exists is on its way to the gate holding this grant.
       this.logger.warn(
         `Failed to launch approval request ${requestId}; the next sweep will retry it until ${deadline.toISOString()}`,
         error instanceof Error ? error : undefined,
@@ -730,77 +597,9 @@ export class ApprovalService {
   }
 
   /**
-   * End a request whose launch the scaffolder refused outright.
-   *
-   * The grant is withdrawn first, so nothing can redeem it once the request
-   * says it failed. Revoking is compare-and-set and loses to a task that has
-   * redeemed the grant; a refusal means no such task exists, but if one ever
-   * did, its id is recovered rather than the request being failed underneath a
-   * running template.
-   */
-  private async failRefusedLaunch(
-    requestId: string,
-    grantId: string,
-    reason: string,
-  ): Promise<void> {
-    if (!(await this.store.revokeGrant(grantId))) {
-      await this.recoverStartedTask(requestId);
-      return;
-    }
-
-    if (
-      !(await this.store.transition(requestId, 'approved', 'failed', {
-        failureReason: reason,
-      }))
-    ) {
-      return;
-    }
-
-    this.logger.warn(`Approval request ${requestId} failed: ${reason}`);
-    const failed = await this.store.getRequest(requestId);
-    if (failed) {
-      await this.notify(() => this.observer?.onFailed?.(failed, reason));
-    }
-  }
-
-  /** Announce a running template, again reading the request after the write. */
-  private async notifyLaunched(requestId: string): Promise<void> {
-    const current = await this.store.getRequest(requestId);
-    if (!current) {
-      return;
-    }
-    await this.notify(() => this.observer?.onLaunched?.(current));
-  }
-
-  /**
-   * Move a request to `running` on the strength of a grant a task has already
-   * redeemed.
-   *
-   * Returns true when there was such a task, whether or not this call was the
-   * one that recorded it.
-   */
-  private async recoverStartedTask(requestId: string): Promise<boolean> {
-    const consumed = await this.store.findConsumedGrant(requestId);
-    if (!consumed?.consumed_by_task_id) {
-      return false;
-    }
-
-    const taskId = consumed.consumed_by_task_id;
-    if (
-      await this.store.transition(requestId, 'approved', 'running', { taskId })
-    ) {
-      this.logger.info(
-        `Recovered task ${taskId} for approval request ${requestId} from its consumed grant`,
-      );
-      await this.notifyLaunched(requestId);
-    }
-    return true;
-  }
-
-  /**
    * Redeem a grant on behalf of a running task.
    *
-   * Returns false for every kind of failure, deliberately. The caller is
+   * Returns undefined for every kind of failure, deliberately. The caller is
    * presenting a bearer token, and distinguishing "no such grant" from "wrong
    * values" or "already used" would tell an attacker which part to change.
    *
@@ -815,12 +614,9 @@ export class ApprovalService {
     taskId: string;
     templateRef: string;
   }): Promise<ConsumeGrantResponse | undefined> {
-    // An unparseable ref cannot match anything, and saying so here would tell
-    // a bearer-token holder which part of their guess was wrong.
-    let templateRef: string;
-    try {
-      templateRef = normaliseEntityRef(options.templateRef);
-    } catch {
+    // An unparseable ref cannot match anything.
+    const templateRef = tryNormaliseEntityRef(options.templateRef);
+    if (!templateRef) {
       return undefined;
     }
 
@@ -831,35 +627,118 @@ export class ApprovalService {
       taskId: options.taskId,
       templateRef,
     });
-
     if (!consumed) {
       return undefined;
     }
 
     // Read back only after the grant is spent, so nothing about a request is
-    // revealed to a caller whose token was refused.
-    const request = await this.store.getRequest(options.requestId);
+    // revealed to a caller whose token was refused. The grant's foreign key
+    // makes a missing request impossible short of a concurrent delete.
+    const request = await this.store.getRequestWithDecisions(options.requestId);
     if (!request) {
-      // The grant's foreign key makes this impossible short of a concurrent
-      // delete, and the task is already running, so say so rather than hide it.
       throw new ConflictError(
         `Approval grant for ${options.requestId} was consumed but the request has gone`,
       );
     }
-
-    const decisions = await this.store.listDecisions(options.requestId);
 
     return {
       requestId: request.id,
       requesterRef: request.requesterRef,
       approvedBy: [
         ...new Set(
-          decisions
+          request.decisions
             .filter(decision => decision.decision === 'approve')
             .map(decision => decision.approverRef),
         ),
       ],
     };
+  }
+
+  /** Whether submitted values still satisfy a template's parameters now. */
+  private valuesStillFit(
+    template: TemplateEntityV1beta3,
+    values: JsonObject,
+  ): boolean {
+    try {
+      validateValues(template, values);
+      return true;
+    } catch (error) {
+      if (error instanceof InputError) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * End a request whose launch the scaffolder refused outright.
+   *
+   * The grant is withdrawn first, so nothing can redeem it once the request
+   * says it failed. Revoking loses to a task that has redeemed the grant; a
+   * refusal means no such task exists, but if one ever did, its id is
+   * recovered rather than the request being failed underneath a running
+   * template.
+   */
+  private async failRefusedLaunch(
+    requestId: string,
+    grantId: string,
+    reason: string,
+  ): Promise<void> {
+    if (!(await this.store.revokeGrant(grantId))) {
+      await this.recoverStartedTask(requestId);
+      return;
+    }
+
+    if (
+      await this.store.transition(requestId, 'approved', 'failed', {
+        failureReason: reason,
+      })
+    ) {
+      this.logger.warn(`Approval request ${requestId} failed: ${reason}`);
+      await this.notifyCurrent(requestId, failed =>
+        this.observer?.onFailed?.(failed, reason),
+      );
+    }
+  }
+
+  /**
+   * Move a request to `running` on the strength of a grant a task has already
+   * redeemed.
+   *
+   * Returns true when there was such a task, whether or not this call was the
+   * one that recorded it.
+   */
+  private async recoverStartedTask(requestId: string): Promise<boolean> {
+    const taskId = (await this.store.findConsumedGrant(requestId))
+      ?.consumed_by_task_id;
+    if (!taskId) {
+      return false;
+    }
+
+    if (
+      await this.store.transition(requestId, 'approved', 'running', { taskId })
+    ) {
+      this.logger.info(
+        `Recovered task ${taskId} for approval request ${requestId} from its consumed grant`,
+      );
+      await this.notifyLaunched(requestId);
+    }
+    return true;
+  }
+
+  private async notifyLaunched(requestId: string): Promise<void> {
+    await this.notifyCurrent(requestId, request =>
+      this.observer?.onLaunched?.(request),
+    );
+  }
+
+  private async getTemplate(
+    templateRef: string,
+    credentials: BackstageCredentials,
+  ): Promise<TemplateEntityV1beta3 | undefined> {
+    return (await this.catalog.getEntityByRef(templateRef, {
+      credentials,
+    })) as TemplateEntityV1beta3 | undefined;
   }
 
   private async requireRequest(id: string): Promise<ApprovalRequest> {
@@ -882,21 +761,23 @@ export class ApprovalService {
 
   private async callerRef(credentials: BackstageCredentials): Promise<string> {
     const { userEntityRef } = await this.userInfo.getUserInfo(credentials);
-    if (!userEntityRef) {
-      throw new NotAllowedError(
-        'Approval requests can only be submitted by a signed-in user',
-      );
-    }
+    return normaliseCallerRef(userEntityRef);
+  }
 
-    // Normalised, like every other ref this plugin stores. Two engines compare
-    // strings differently — MySQL's default collation is case-insensitive
-    // while SQLite and Postgres compare bytes — so a ref stored as written
-    // makes "is this the requester?" and "collapse a duplicate" answer
-    // differently depending on the database underneath.
-    try {
-      return normaliseEntityRef(userEntityRef);
-    } catch {
-      throw new NotAllowedError(`Not a usable user identity: ${userEntityRef}`);
+  /**
+   * Tell the observer about a change, with the request as it is *now*.
+   *
+   * Always re-read after the write: a request loaded before a transition still
+   * carries its old status, and every subscriber would be told, say, that a
+   * rejected request is still awaiting a decision.
+   */
+  private async notifyCurrent(
+    requestId: string,
+    hook: (request: ApprovalRequest) => Promise<void> | undefined,
+  ): Promise<void> {
+    const current = await this.store.getRequest(requestId);
+    if (current) {
+      await this.notify(() => hook(current));
     }
   }
 

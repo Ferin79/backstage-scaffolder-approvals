@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type {
   TemplateDrift,
   TemplateDriftReason,
@@ -66,13 +50,18 @@ export function driftBlocksLaunch(drift?: TemplateDrift): boolean {
   );
 }
 
-/** @public */
+/** @internal */
 export interface DriftNoticeProps {
   drift?: TemplateDrift;
+  /**
+   * How loudly to say it. `danger` on the page; the approve dialog softens it
+   * to `warning` when approving will still launch.
+   */
+  status?: 'danger' | 'warning';
 }
 
 /**
- * Warn an approver that the template has changed under them (§10.3).
+ * Warn an approver that the template has changed under them.
  *
  * The values and the policy are frozen when a request is submitted, but the
  * template is read live from the catalog at launch. Somebody approving three
@@ -84,10 +73,11 @@ export interface DriftNoticeProps {
  * evidence of a change, and a warning that fires on infrastructure trouble is
  * one people learn to click past.
  *
- * @public
+ * @internal
  */
 export function DriftNotice(props: DriftNoticeProps) {
-  const explanations = explainDrift(props.drift);
+  const { drift, status = 'danger' } = props;
+  const explanations = explainDrift(drift);
   if (explanations.length === 0) {
     return null;
   }
@@ -97,7 +87,7 @@ export function DriftNotice(props: DriftNoticeProps) {
       // `alert` rather than `status`: this changes what approving means, so
       // it is worth interrupting a screen-reader user for.
       role="alert"
-      status="danger"
+      status={status}
       icon
       title="The template has changed"
       description={

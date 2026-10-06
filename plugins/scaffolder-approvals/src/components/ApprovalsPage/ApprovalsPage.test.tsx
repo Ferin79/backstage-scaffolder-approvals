@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type { ApprovalRequest } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { entityPresentationApiRef } from '@backstage/plugin-catalog-react';
 import { signalApiRef } from '@backstage/plugin-signals-react';
@@ -96,7 +80,7 @@ describe('ApprovalsPage', () => {
     expect(
       await screen.findByText('Nothing is waiting on you'),
     ).toBeInTheDocument();
-    // B15: inside the table, under its column headers, and without the
+    // Inside the table, under its column headers, and without the
     // illustrated empty state, whose image was taller than the empty row and
     // left the table with a scrollbar and nothing to scroll.
     expect(
@@ -126,7 +110,7 @@ describe('ApprovalsPage', () => {
   });
 
   it('names templates and people as the catalog does', async () => {
-    // B16: the list showed the last segment of each ref, "request-github-admin"
+    // The list showed the last segment of each ref, "request-github-admin"
     // and "requester", rather than what the catalog calls them.
     await renderInTestApp(
       <TestApiProvider
@@ -161,7 +145,7 @@ describe('ApprovalsPage', () => {
   });
 
   it('leaves out who asked on "Your requests", since it is always you', async () => {
-    // B20: a "Requested by" column whose every row named the viewer.
+    // A "Requested by" column whose every row named the viewer.
     const listRequests = jest
       .fn()
       .mockResolvedValue({ items: [PENDING], totalItems: 1 });
@@ -189,7 +173,7 @@ describe('ApprovalsPage', () => {
     await render({ listRequests });
 
     // Somebody looking for work does not want a history of everything they
-    // ever approved, nor the requests they have already voted on (B2).
+    // ever approved, nor the requests they have already voted on.
     await waitFor(() =>
       expect(listRequests).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -223,7 +207,7 @@ describe('ApprovalsPage', () => {
   });
 
   it('shows a pending request past its deadline as expired', async () => {
-    // B9: the sweep that moves it to `expired` runs every five minutes, and
+    // The sweep that moves it to `expired` runs every five minutes, and
     // until then it read as waiting for a decision nobody can make.
     await render({
       listRequests: jest.fn().mockResolvedValue({
@@ -237,7 +221,7 @@ describe('ApprovalsPage', () => {
   });
 
   it('refetches the list when the backend signals a change', async () => {
-    // B10: a vote takes a row out of an inbox and a submission adds one; the
+    // A vote takes a row out of an inbox and a submission adds one; the
     // list used to show neither until the page was reloaded.
     let deliver: (message: object) => void = () => {};
     const signalApi = {

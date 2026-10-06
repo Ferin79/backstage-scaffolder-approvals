@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   canonicalJson,
   type TemplateDrift,
@@ -31,7 +15,7 @@ import { sha256Hex } from './hashes';
  * Hash the steps a template will execute.
  *
  * `values` and `policy_snapshot` are frozen when a request is submitted, but
- * the template itself is read live from the catalog at launch time (§10.3). An
+ * the template itself is read live from the catalog at launch time. An
  * approver looking at a request sees the values and the policy; without this
  * they have no way to notice that the steps changed underneath them, and an
  * added step runs like any other.

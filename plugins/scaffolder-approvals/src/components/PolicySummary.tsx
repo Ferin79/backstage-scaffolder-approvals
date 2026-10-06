@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type { GatePolicy } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { EntityRefLink } from '@backstage/plugin-catalog-react';
 import { Text } from '@backstage/ui';
@@ -37,13 +21,11 @@ export interface PolicySummaryProps {
  * requester cannot approve their own request."
  *
  * One sentence for the wizard and the request page alike, so a requester reads
- * the same terms before submitting and after. The wizard used to put "2 of
- * these must approve" above a list holding a single group, which read as if
- * two groups were expected (B18 in the browser review).
+ * the same terms before submitting and after.
  *
  * Each approver is the catalog's name for them, linked to their page, rather
- * than a raw entity ref (B16): a requester wants to know who is in the group
- * they are waiting on.
+ * than a raw entity ref: a requester wants to know who is in the group they
+ * are waiting on.
  *
  * @internal
  */

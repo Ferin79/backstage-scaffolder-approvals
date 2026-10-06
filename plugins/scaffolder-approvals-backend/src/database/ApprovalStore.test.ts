@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { resolvePackagePath } from '@backstage/backend-plugin-api';
 import { TestDatabases } from '@backstage/backend-test-utils';
 import {
@@ -301,6 +285,21 @@ describe('ApprovalStore', () => {
         });
       });
 
+      it('refuses a ref that is not normalised', async () => {
+        // One person under two spellings would slip past the one-vote-each
+        // index and count twice towards the quorum.
+        const { id } = await store.createOrCollapse(newRequest());
+
+        await expect(
+          store.recordDecision({
+            requestId: id,
+            approverRef: 'User:Default/Alice',
+            decision: 'approve',
+          }),
+        ).rejects.toThrow(/must be a normalised entity ref/);
+        expect(await store.listDecisions(id)).toEqual([]);
+      });
+
       it('keeps the first vote when an approver votes twice', async () => {
         const { id } = await store.createOrCollapse(newRequest());
 
@@ -404,7 +403,8 @@ describe('ApprovalStore', () => {
           }),
         ).toBe(true);
 
-        const grant = await store.getGrant(grantId);
+        const grant = await store.findConsumedGrant(id);
+        expect(grant?.id).toBe(grantId);
         expect(grant?.consumed_by_task_id).toBe(taskId);
         expect(grant?.consumed_at).not.toBeNull();
       });
@@ -450,7 +450,7 @@ describe('ApprovalStore', () => {
       });
 
       it('refuses a mismatched values hash', async () => {
-        // Q10: the grant is bound to what was approved. Running other
+        // The grant is bound to what was approved. Running other
         // parameters under an approval for these ones is the attack this stops.
         const { id, token } = await approvedRequestWithGrant();
 
@@ -611,7 +611,7 @@ describe('ApprovalStore', () => {
     });
 
     describe('listRequests with actionableBy', () => {
-      // B2 in the browser review: the inbox listed every request that named
+      // The inbox listed every request that named
       // the caller, so an approver's count never fell when they voted, and a
       // requester in the approver group saw their own request as work to do.
       const ALICE = 'user:default/alice';
@@ -683,6 +683,21 @@ describe('ApprovalStore', () => {
         ]);
         // Counted the same way, so "4 waiting on you" and the list agree.
         expect(totalItems).toBe(4);
+      });
+
+      it('reads the caller however the token spells them', async () => {
+        const { items } = await store.listRequests({
+          approverRefs: ['User:Default/Alice', 'Group:DevX-Team'],
+          actionableBy: 'User:Default/Alice',
+        });
+
+        const byId = new Map(Object.entries(ids).map(([k, v]) => [v, k]));
+        expect(items.map(item => byId.get(item.id)).sort()).toEqual([
+          'deadlineAhead',
+          'othersVoted',
+          'ownAllowed',
+          'waiting',
+        ]);
       });
 
       it('agrees with checkDecisionEligibility, request by request', async () => {
@@ -895,7 +910,7 @@ describe('ApprovalStore', () => {
       }
 
       it('rotates, so a batch that changes nothing still yields', async () => {
-        // C6: ordering by `updated_at` sounds like "longest waiting" and is
+        // Ordering by `updated_at` sounds like "longest waiting" and is
         // not. A task still running never changes status, so nothing moves its
         // `updated_at` and it holds its place in every batch — with a batch of
         // two, the third request is never returned again however long it has

@@ -29,6 +29,7 @@ import { ReviewStep } from './components/scaffolder/ReviewStep';
 import {
   ApprovalsIndexPage,
   GatedTemplateCard,
+  scaffolderApprovalsPlugin,
 } from '@ferin79/backstage-plugin-scaffolder-approvals';
 
 import {
@@ -61,6 +62,12 @@ const app = createApp({
     });
     bind(orgPlugin.externalRoutes, {
       catalogIndex: catalogPlugin.routes.catalogIndex,
+    });
+    // The request page links to an approved run's task, and Resubmit can
+    // reopen a template's form with the submitted values.
+    bind(scaffolderApprovalsPlugin.externalRoutes, {
+      scaffolderTask: scaffolderPlugin.routes.ongoingTask,
+      scaffolderTemplate: scaffolderPlugin.routes.selectedTemplate,
     });
   },
   components: {

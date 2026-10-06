@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   createApiFactory,
   createPlugin,
@@ -21,9 +5,16 @@ import {
   discoveryApiRef,
   fetchApiRef,
 } from '@backstage/core-plugin-api';
+import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { createCardExtension } from '@backstage/plugin-home-react';
 import { ApprovalsClient, approvalsApiRef } from './api';
-import { requestRouteRef, rootRouteRef } from './routes';
+import { loadPendingApprovalsCard } from './homePageCard';
+import {
+  requestRouteRef,
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from './routes';
 
 /**
  * The scaffolder-approvals frontend plugin, for the legacy frontend system.
@@ -31,17 +22,20 @@ import { requestRouteRef, rootRouteRef } from './routes';
  * @public
  */
 export const scaffolderApprovalsPlugin = createPlugin({
-  id: 'scaffolder-approvals',
+  id: SCAFFOLDER_APPROVALS_PLUGIN_ID,
   routes: {
     root: rootRouteRef,
     request: requestRouteRef,
+  },
+  externalRoutes: {
+    scaffolderTask: scaffolderTaskRouteRef,
+    scaffolderTemplate: scaffolderTemplateRouteRef,
   },
   apis: [
     createApiFactory({
       api: approvalsApiRef,
       deps: { discoveryApi: discoveryApiRef, fetchApi: fetchApiRef },
-      factory: ({ discoveryApi, fetchApi }) =>
-        new ApprovalsClient({ discoveryApi, fetchApi }),
+      factory: deps => new ApprovalsClient(deps),
     }),
   ],
 });
@@ -61,7 +55,7 @@ export const ApprovalsIndexPage = scaffolderApprovalsPlugin.provide(
 );
 
 /**
- * A home-page card showing how many requests are waiting on you (Q22).
+ * A home-page card showing how many requests are waiting on you.
  *
  * `createCardExtension` rather than a plain component export, because that is
  * what lets the home plugin place it, size it and remember where somebody put
@@ -74,15 +68,6 @@ export const PendingApprovalsHomePageCard = scaffolderApprovalsPlugin.provide(
     name: 'PendingApprovalsCard',
     title: 'Approvals',
     description: 'Approval requests waiting on your decision',
-    components: () =>
-      // The card's own module, not the components barrel: the barrel also
-      // carries the wizard's review step, and with it the scaffolder's form
-      // and review code, none of which a home page needs to load.
-      import('./components/PendingApprovalsCard').then(m => ({
-        Content: m.PendingApprovalsContent,
-        // The extension draws its own card, so the way to the page has to be
-        // handed over as well, or the home page has none (B19).
-        Actions: m.PendingApprovalsActions,
-      })),
+    components: loadPendingApprovalsCard,
   }),
 );

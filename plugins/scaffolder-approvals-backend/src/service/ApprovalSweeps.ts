@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type {
   ApprovalRequest,
   ApprovalRequestStatus,
@@ -36,6 +20,16 @@ import type { ApprovalService } from './ApprovalService';
  */
 export const DEFAULT_BATCH_SIZE = 50;
 
+/**
+ * How many batches one retention tick may redact.
+ *
+ * Redaction is cheap, and an organisation that settles more requests between
+ * ticks than one batch holds would otherwise fall further behind every day.
+ * Capped so that a first run over years of history still finishes inside the
+ * task's timeout; the rest waits for the next tick.
+ */
+const MAX_REDACTION_BATCHES = 20;
+
 export interface ApprovalSweepsOptions {
   store: ApprovalStore;
   service: ApprovalService;
@@ -43,7 +37,7 @@ export interface ApprovalSweepsOptions {
   auth: AuthService;
   logger: LoggerService;
   notifier?: ApprovalNotifier;
-  /** How long values and summaries are kept before redaction (Q6). */
+  /** How long values and summaries are kept before redaction. */
   retention: HumanDuration;
   batchSize?: number;
   now?: () => Date;
@@ -106,7 +100,7 @@ export class ApprovalSweeps {
    *    records which task consumed it, so the id is recovered rather than the
    *    template being run a second time.
    * 2. **The approval is still redeemable.** Hand it to `launch`, which claims
-   *    it, revokes whatever a failed attempt left behind and tries again (Q9).
+   *    it, revokes whatever a failed attempt left behind and tries again.
    *    A launch that is genuinely in flight keeps its claim and `launch`
    *    declines, so this is safe to call on every tick.
    * 3. **The approval has lapsed.** Nothing redeemed it before the deadline, so
@@ -142,8 +136,9 @@ export class ApprovalSweeps {
             continue;
           }
 
-          await this.fail(
+          await this.failRequest(
             request,
+            'approved',
             'the approval grant expired before the template could start',
           );
           continue;
@@ -188,8 +183,9 @@ export class ApprovalSweeps {
           // delete tasks in normal operation, so this is a real end state
           // rather than a blip — and leaving the request `running` forever is
           // the worse answer, because the requester is still waiting on it.
-          await this.failRunning(
+          await this.failRequest(
             request,
+            'running',
             'the scaffolder no longer has a record of the task',
           );
         } else {
@@ -206,24 +202,6 @@ export class ApprovalSweeps {
     // that cannot be resolved must still move to the back of the queue, or it
     // holds a place in every batch and starves everything behind it.
     await this.store.markChecked(requests.map(request => request.id));
-  }
-
-  /** A running request whose task has settled badly, or vanished. */
-  private async failRunning(
-    request: ApprovalRequest,
-    reason: string,
-  ): Promise<void> {
-    if (
-      await this.store.transition(request.id, 'running', 'failed', {
-        failureReason: reason,
-      })
-    ) {
-      this.logger.warn(`Approval request ${request.id} failed: ${reason}`);
-      await this.notifier?.onFailed(
-        { ...request, status: 'failed', failureReason: reason },
-        reason,
-      );
-    }
   }
 
   /**
@@ -243,33 +221,23 @@ export class ApprovalSweeps {
       return;
     }
 
-    let failureReason: string | undefined;
     if (next === 'failed') {
-      failureReason =
+      await this.failRequest(
+        request,
+        'running',
         taskStatus === 'cancelled'
           ? 'the task was cancelled'
-          : 'the task failed';
-    }
-
-    const moved = await this.store.transition(request.id, 'running', next, {
-      failureReason,
-    });
-    if (!moved) {
+          : 'the task failed',
+      );
       return;
     }
 
-    this.logger.info(
-      `Approval request ${request.id} is ${next}; its task ${request.taskId} ${taskStatus}`,
-    );
-
-    if (failureReason) {
-      await this.notifier?.onFailed(
-        { ...request, status: 'failed', failureReason },
-        failureReason,
+    if (await this.store.transition(request.id, 'running', next)) {
+      this.logger.info(
+        `Approval request ${request.id} is ${next}; its task ${request.taskId} ${taskStatus}`,
       );
-    } else {
-      // No notification, by Q20 — but an external subscriber needs the end of
-      // the lifecycle as much as the start of it.
+      // No notification, but an external subscriber needs the end of the
+      // lifecycle as much as the start of it.
       await this.notifier?.onCompleted({ ...request, status: next });
     }
   }
@@ -303,19 +271,27 @@ export class ApprovalSweeps {
   /**
    * Redact the personal data of long-settled requests.
    *
-   * Never deletes (Q6). What goes is the submitted values and the rendered
+   * Never deletes. What goes is the submitted values and the rendered
    * summary, which can carry personal data such as an access justification.
    * The request row and every decision on it stay indefinitely — that audit
    * trail is what this whole feature exists to produce.
+   *
+   * Works through the backlog a batch at a time until a batch comes back
+   * short, up to {@link MAX_REDACTION_BATCHES}.
    */
   async redactOld(): Promise<void> {
     const before = new Date(this.now().getTime() - this.retentionMs);
-    const requests = await this.store.findRedactable(before, this.batchSize);
 
     let redacted = 0;
-    for (const request of requests) {
-      if (await this.store.redact(request.id)) {
-        redacted += 1;
+    for (let batch = 0; batch < MAX_REDACTION_BATCHES; batch++) {
+      const requests = await this.store.findRedactable(before, this.batchSize);
+      for (const request of requests) {
+        if (await this.store.redact(request.id)) {
+          redacted += 1;
+        }
+      }
+      if (requests.length < this.batchSize) {
+        break;
       }
     }
 
@@ -326,14 +302,20 @@ export class ApprovalSweeps {
     }
   }
 
-  private async fail(request: ApprovalRequest, reason: string): Promise<void> {
-    const failed = await this.store.transition(
-      request.id,
-      'approved',
-      'failed',
-      { failureReason: reason },
-    );
-    if (failed) {
+  /**
+   * Fail a request that is still `from`, recording why. Compare-and-set, so a
+   * sweep and a task event racing each other fail it, and notify, once.
+   */
+  private async failRequest(
+    request: ApprovalRequest,
+    from: ApprovalRequestStatus,
+    reason: string,
+  ): Promise<void> {
+    if (
+      await this.store.transition(request.id, from, 'failed', {
+        failureReason: reason,
+      })
+    ) {
       this.logger.warn(`Approval request ${request.id} failed: ${reason}`);
       await this.notifier?.onFailed(
         { ...request, status: 'failed', failureReason: reason },

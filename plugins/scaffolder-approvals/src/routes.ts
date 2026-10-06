@@ -1,20 +1,9 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { createRouteRef, createSubRouteRef } from '@backstage/core-plugin-api';
+import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import {
+  createExternalRouteRef,
+  createRouteRef,
+  createSubRouteRef,
+} from '@backstage/core-plugin-api';
 
 /**
  * The approvals page: the inbox and your own requests.
@@ -22,7 +11,7 @@ import { createRouteRef, createSubRouteRef } from '@backstage/core-plugin-api';
  * @public
  */
 export const rootRouteRef = createRouteRef({
-  id: 'scaffolder-approvals',
+  id: SCAFFOLDER_APPROVALS_PLUGIN_ID,
 });
 
 /**
@@ -35,7 +24,43 @@ export const rootRouteRef = createRouteRef({
  * @public
  */
 export const requestRouteRef = createSubRouteRef({
-  id: 'scaffolder-approvals:request',
+  id: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:request`,
   parent: rootRouteRef,
   path: '/requests/:requestId',
+});
+
+/**
+ * A task's page in the scaffolder, where an approved run's log is.
+ *
+ * The requester cannot find that task under "my tasks", because the plugin's
+ * service principal created it, so the request page links here. The new
+ * frontend system binds it to the scaffolder's task page by default; a legacy
+ * app binds it to `scaffolderPlugin.routes.ongoingTask`. Left unbound, the
+ * request page names the task without linking it.
+ *
+ * @public
+ */
+export const scaffolderTaskRouteRef = createExternalRouteRef({
+  id: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:scaffolder-task`,
+  optional: true,
+  params: ['taskId'],
+  defaultTarget: 'scaffolder.ongoingTask',
+});
+
+/**
+ * A template's form in the scaffolder.
+ *
+ * Resubmitting a request whose template no longer takes its values opens this
+ * form with the values filled in, for the requester to correct. The new
+ * frontend system binds it to the scaffolder by default; a legacy app binds it
+ * to `scaffolderPlugin.routes.selectedTemplate`. Left unbound, Resubmit says
+ * why it failed and stays on the request.
+ *
+ * @public
+ */
+export const scaffolderTemplateRouteRef = createExternalRouteRef({
+  id: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:scaffolder-template`,
+  optional: true,
+  params: ['namespace', 'templateName'],
+  defaultTarget: 'scaffolder.selectedTemplate',
 });

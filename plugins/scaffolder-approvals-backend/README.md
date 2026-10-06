@@ -87,7 +87,7 @@ Full request and response shapes are in the [API reference](https://github.com/F
 | `scaffolder-approvals-timeouts`  | 5 minutes | Expires pending requests past their gate's timeout                                                    |
 | `scaffolder-approvals-retention` | 6 hours   | Redacts the values and summary of long-settled requests                                               |
 
-Each run handles a capped batch, so a backlog built up during an outage drains steadily. Scaffolder task events are the fast path for status; the reconciliation job is the backstop.
+The reconcile and timeout jobs handle a capped batch per run, so a backlog built up during an outage drains steadily; the retention job redacts up to 1,000 requests per run. Scaffolder task events are the fast path for status; the reconciliation job is the backstop.
 
 **Retention redacts, never deletes.** The request, who asked, every decision and the values hash are kept indefinitely: that is the audit trail.
 

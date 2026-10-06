@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type { Entity } from '@backstage/catalog-model';
 import { GATE_ACTION_ID } from './constants';
 import { checkGatedTemplate } from './gatedTemplate';
@@ -68,7 +52,7 @@ describe('checkGatedTemplate', () => {
     });
   });
 
-  // B8 in the browser review: the wizard offered "Request approval" for these,
+  // The wizard offered "Request approval" for these,
   // and only the backend said no. These are the backend's own sentences.
   it.each([
     ['an if: on the gate', [gate({ if: '${{ parameters.go }}' }), after]],
@@ -87,7 +71,7 @@ describe('checkGatedTemplate', () => {
     );
   });
 
-  // H1 in the second browser review: these were accepted, offered on Create…
+  // These were once accepted, offered on Create…
   // and approved, then failed at the gate on every run — an approval spent on
   // a request that could never run.
   it.each([

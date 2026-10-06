@@ -1,25 +1,9 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   type ApprovalCaller,
   type ApprovalRequestWithDecisions,
   checkDecisionEligibility,
   computeQuorumProgress,
-  type DecisionIneligibility,
+  DECISION_INELIGIBILITY_MESSAGES,
   type GatePolicy,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { IdentityApi } from '@backstage/core-plugin-api';
@@ -28,23 +12,12 @@ import type { ApprovalsApi } from '../src';
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-/** The backend's words for why somebody cannot decide, more or less. */
-const REFUSAL: Record<DecisionIneligibility, string> = {
-  'not-an-approver': 'You are not an approver for this request',
-  'self-approval': 'You cannot approve your own request',
-  'not-pending': 'This request has already been decided',
-  expired: 'This request timed out before anyone decided',
-  'already-voted': 'You have already decided on this request',
-};
-
 /**
  * The requests the harness starts with, as seen by `you`.
  *
  * `you` is an approver on every request, next to devx-team. The harness signs
- * in as a guest who is in no group, so when the requests named devx-team
- * alone, its inbox listed requests that its own user could not decide, and the
- * approve and deny flow could not be tried here at all (B21 in the browser
- * review).
+ * in as a guest who is in no group, so requests naming devx-team alone would
+ * fill its inbox with requests its own user could not decide.
  *
  * Between them they cover what is worth looking at: a quorum part-way met, a
  * request to deny, one of your own to withdraw, one running, and one redacted
@@ -240,7 +213,7 @@ export function createMockApprovalsApi(
         request.decisions,
       );
       if (!eligibility.allowed) {
-        throw new Error(REFUSAL[eligibility.reason]);
+        throw new Error(DECISION_INELIGIBILITY_MESSAGES[eligibility.reason]);
       }
 
       const now = new Date().toISOString();

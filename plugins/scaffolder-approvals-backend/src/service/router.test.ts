@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   computeValuesHash,
@@ -257,7 +241,7 @@ describe('createRouter', () => {
         expect(stored.body.templateRef).toBe(TEMPLATE_REF);
       });
 
-      // M1 in the browser review: each of these was a 500.
+      // Each of these was a 500.
       it.each(['template:default/', '::::', '   '])(
         'answers 400, not 500, for the templateRef %j',
         async templateRef => {
@@ -309,7 +293,7 @@ describe('createRouter', () => {
     });
 
     describe('GET /requests', () => {
-      it('lets any signed-in user see everything (Q12)', async () => {
+      it('lets any signed-in user see everything', async () => {
         await submit();
 
         const response = await request(app)
@@ -321,7 +305,7 @@ describe('createRouter', () => {
         expect(response.body.items[0].requesterRef).toBe(REQUESTER);
       });
 
-      // M5 in the browser review: submit normalised the refs it stored, and the
+      // Submit normalised the refs it stored, and the
       // filters compared them as typed, so these all found nothing.
       it.each([
         ['templateRef', 'Template:Default/Request-GitHub-Admin'],
@@ -422,7 +406,7 @@ describe('createRouter', () => {
       });
 
       it('narrows the approver view to what the caller can act on', async () => {
-        // B2 in the browser review. The requester is in devx-team too, so the
+        // The requester is in devx-team too, so the
         // gate names them — but it does not let them approve their own
         // request, and "waiting on you" must not say it is waiting on them.
         const id = await submit();
@@ -526,7 +510,7 @@ describe('createRouter', () => {
       });
 
       it('tells an approver when the template has changed', async () => {
-        // §10.3: the detail page is where somebody decides, so it is where the
+        // The detail page is where somebody decides, so it is where the
         // warning has to appear.
         const id = await submit();
         (template as any).spec.steps.push({
@@ -558,7 +542,7 @@ describe('createRouter', () => {
       });
 
       it('reports 400 for an id that is not a uuid', async () => {
-        // C8: Postgres types the column as `uuid` and rejects anything
+        // Postgres types the column as `uuid` and rejects anything
         // malformed at the driver, so this was a 500 there and a 404 on the
         // other two engines. The one that looks like a server fault is the one
         // an operator pages on.
@@ -693,7 +677,7 @@ describe('createRouter', () => {
 
     /**
      * A service token whose principal is the scaffolder, which is the only
-     * caller allowed to redeem a grant (S3). `mockCredentials.service()`
+     * caller allowed to redeem a grant. `mockCredentials.service()`
      * defaults to `external:test-service`, which is exactly the principal that
      * must be refused.
      */
@@ -706,7 +690,7 @@ describe('createRouter', () => {
       });
     }
 
-    describe('auditing (P4)', () => {
+    describe('auditing', () => {
       it('records a decision at high severity', async () => {
         const id = await submit();
 
@@ -977,7 +961,7 @@ describe('createRouter', () => {
       });
 
       it('refuses a service principal that is not the scaffolder', async () => {
-        // S3: `allow: ['service']` lets in every service principal, including a
+        // `allow: ['service']` lets in every service principal, including a
         // static `external:` token issued for something unrelated. It cannot
         // forge a grant, but spending one makes the legitimate task fail at its
         // own gate — a denial of service against approved runs.
@@ -1015,7 +999,7 @@ describe('createRouter', () => {
       });
 
       it('refuses a grant redeemed under a different template', async () => {
-        // S4: §3 binds a grant to (request, template, values). Without the
+        // A grant is bound to (request, template, values). Without the
         // template a leaked grant would redeem inside any gated template that
         // happened to take the same values.
         const { grant } = await approvedGrant();

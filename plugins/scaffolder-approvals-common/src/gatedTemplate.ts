@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type { Entity } from '@backstage/catalog-model';
 import type {
   TemplateEntityStepV1beta3,
@@ -45,14 +29,15 @@ export type GatedTemplateCheck =
 /**
  * Check a template the way the approvals backend does before it accepts a
  * request for it: the gate's shape, then its `values` input, then secret-typed
- * parameters, then the gate policy. Everything submit refuses about a *template*, that is — validating
- * the submitted values needs the values, and stays with the backend.
+ * parameters, then the gate policy. That is everything submit refuses about a
+ * *template*; validating the submitted values needs the values, and stays with
+ * the backend.
  *
- * One function, used by the backend at submit and by the wizard's review step
- * before it offers "Request approval", so the button and the server cannot
- * disagree about which templates can be asked for, or give different reasons.
- * The `problem` sentences are the ones the backend refuses with, worded for the
- * person who is standing there with a filled-in form.
+ * One function, used by the backend at submit, by the catalog processor at
+ * ingestion and by the wizard before it offers "Request approval", so none of
+ * them can disagree about which templates can be asked for, or give different
+ * reasons. Only the first problem is reported: each one alone makes the
+ * template unusable.
  *
  * @param templateRef - how to name the template in a `problem`; pass the ref
  *   the caller used, so the sentence talks about what they asked for.
@@ -64,7 +49,7 @@ export function checkGatedTemplate(
 ): GatedTemplateCheck {
   let step: TemplateEntityStepV1beta3 | undefined;
   try {
-    step = findGateStep(template).step;
+    step = findGateStep(template);
   } catch (error) {
     // A malformed gate is a template bug, not a caller mistake, but the caller
     // is who is standing here — so say what is wrong with it.
@@ -83,7 +68,7 @@ export function checkGatedTemplate(
   }
 
   // A gate that cannot check the run against the approval refuses every run,
-  // so accepting a request for it would spend an approval on nothing (Q3).
+  // so accepting a request for it would spend an approval on nothing.
   const valuesProblem = findGateValuesProblem(step);
   if (valuesProblem) {
     return {
@@ -93,9 +78,9 @@ export function checkGatedTemplate(
     };
   }
 
-  // S7. A secret-typed parameter never reaches the request at all — the
-  // scaffolder puts it in the task's `secrets` — so a template declaring one
-  // would be approved and then run without it.
+  // A secret-typed parameter never reaches the request at all — the scaffolder
+  // puts it in the task's `secrets` — so a template declaring one would be
+  // approved and then run without it.
   const secretParameters = findSecretParameters(
     (template as TemplateEntityV1beta3).spec?.parameters,
   );

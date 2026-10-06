@@ -20,14 +20,7 @@ export function createApprovalGateAction(options: {
     selfApprove?: boolean | undefined;
     timeout?:
       | {
-          years?: number | undefined;
-          months?: number | undefined;
-          weeks?: number | undefined;
-          days?: number | undefined;
-          hours?: number | undefined;
-          minutes?: number | undefined;
-          seconds?: number | undefined;
-          milliseconds?: number | undefined;
+          [x: string]: number | undefined;
         }
       | undefined;
     summary?: string | undefined;

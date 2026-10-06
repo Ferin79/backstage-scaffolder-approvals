@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { stringifyEntityRef } from '@backstage/catalog-model';
 import {
   type IconComponent,
@@ -56,8 +40,8 @@ export interface GatedTemplateCardProps {
  * The scaffolder's own template card, plus who has to approve a gated one.
  *
  * Without it nothing on **Create…** tells a gated template from any other,
- * and a requester learns that it needs approval on the wizard's last step
- * (B17 in the browser review). Each approver becomes one of the card's links,
+ * and a requester learns that it needs approval on the wizard's last step.
+ * Each approver becomes one of the card's links,
  * "Approver: DevX team", to their catalog page: the card's own slot for links
  * an app adds, which is how the scaffolder itself adds "View TechDocs". The
  * card is otherwise the scaffolder's, untouched.

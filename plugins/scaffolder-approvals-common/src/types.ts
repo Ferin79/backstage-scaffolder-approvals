@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type { HumanDuration, JsonObject } from '@backstage/types';
 
 /**
@@ -71,15 +55,6 @@ export const TERMINAL_APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[
   ['completed', 'failed', 'rejected', 'cancelled', 'expired'];
 
 /**
- * Whether a request has reached a state it can never leave.
- *
- * @public
- */
-export function isTerminalStatus(status: ApprovalRequestStatus): boolean {
-  return TERMINAL_APPROVAL_REQUEST_STATUSES.includes(status);
-}
-
-/**
  * Whether a status is one this plugin recognises.
  *
  * Useful when reading a status back out of the database or off the wire, where
@@ -108,8 +83,7 @@ export function isApprovalRequestStatus(
  * and a caller's own group refs are matched against them at decision time.
  * Those refs come from the caller's token, so somebody added to an approver
  * group can decide from their next sign-in — not from the moment they are
- * added. Q11 asked for a catalog lookup to close that window; see the README
- * for why it was not built.
+ * added.
  *
  * @public
  */
@@ -193,7 +167,7 @@ export interface ApprovalRequest {
   taskId?: string;
 
   /**
-   * `metadata.uid` of the template when the request was submitted (§10.3).
+   * `metadata.uid` of the template when the request was submitted.
    *
    * Undefined for a request submitted before drift was tracked, which is not
    * the same as "unchanged".
@@ -471,7 +445,7 @@ export interface ConsumeGrantRequest {
   /**
    * The template the task is running, as the scaffolder knows it.
    *
-   * §3 binds a grant to `(request_id, template_ref, values_hash)`. Without
+   * A grant is bound to its request, its template and its values. Without
    * this a leaked grant would redeem inside *any* gated template that happened
    * to take the same values, which is a real possibility when several
    * access-request templates share a parameter shape.

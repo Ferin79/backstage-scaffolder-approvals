@@ -1,21 +1,6 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import type { ApprovalRequestWithDecisions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
+import { identityApiRef } from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { signalApiRef } from '@backstage/plugin-signals-react';
@@ -23,7 +8,11 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLocation } from 'react-router-dom';
 import { type ApprovalsApi, approvalsApiRef } from '../../api';
-import { rootRouteRef } from '../../routes';
+import {
+  rootRouteRef,
+  scaffolderTaskRouteRef,
+  scaffolderTemplateRouteRef,
+} from '../../routes';
 import { RequestDetail } from './RequestDetail';
 
 const REQUEST: ApprovalRequestWithDecisions = {
@@ -106,15 +95,16 @@ function refusal(statusCode: number, message: string) {
 function render(
   api: Partial<ApprovalsApi>,
   identity: ReturnType<typeof identityOf> = APPROVER,
-  alertApi = { post: jest.fn(), alert$: jest.fn() },
+  toastApi = { post: jest.fn() },
   signals?: ReturnType<typeof fakeSignals>,
+  scaffolderBound = true,
 ) {
   return renderInTestApp(
     <TestApiProvider
       apis={[
         [approvalsApiRef, api as ApprovalsApi],
         [identityApiRef, identity as any],
-        [alertApiRef, alertApi as any],
+        [toastApiRef, toastApi as any],
         ...(signals ? [[signalApiRef, signals.api] as const] : []),
       ]}
     >
@@ -128,6 +118,12 @@ function render(
       mountedRoutes: {
         '/scaffolder-approvals': rootRouteRef,
         '/catalog/:namespace/:kind/:name': entityRouteRef,
+        // The scaffolder's pages, bound as an app binds them.
+        ...(scaffolderBound && {
+          '/create/tasks/:taskId': scaffolderTaskRouteRef,
+          '/create/templates/:namespace/:templateName':
+            scaffolderTemplateRouteRef,
+        }),
       },
     },
   );
@@ -147,7 +143,7 @@ describe('RequestDetail', () => {
   });
 
   it('puts the status in a labelled header item', async () => {
-    // B14: as a bare child of the header's spaced grid, the pill slid over
+    // As a bare child of the header's spaced grid, the pill slid over
     // the subtitle on a narrow screen. A labelled metadata item wraps under
     // the title instead, and names what the pill is.
     await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
@@ -176,11 +172,11 @@ describe('RequestDetail', () => {
     // A confirmation rather than a bare button: approving starts the template
     // immediately.
     const decide = jest.fn().mockResolvedValue(REQUEST);
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render(
       { getRequest: jest.fn().mockResolvedValue(REQUEST), decide },
       APPROVER,
-      alertApi,
+      toastApi,
     );
 
     await userEvent.click(
@@ -200,8 +196,8 @@ describe('RequestDetail', () => {
         comment: undefined,
       }),
     );
-    expect(alertApi.post).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Request approved' }),
+    expect(toastApi.post).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Request approved' }),
     );
   });
 
@@ -230,7 +226,7 @@ describe('RequestDetail', () => {
   it('shows what the backend said when a decision is refused', async () => {
     // The backend's refusals are written to be read by a person, so they are
     // surfaced rather than replaced with a generic failure.
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render(
       {
         getRequest: jest.fn().mockResolvedValue(REQUEST),
@@ -241,7 +237,7 @@ describe('RequestDetail', () => {
           ),
       },
       APPROVER,
-      alertApi,
+      toastApi,
     );
 
     await userEvent.click(
@@ -252,10 +248,10 @@ describe('RequestDetail', () => {
     );
 
     await waitFor(() =>
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('already decided'),
-          severity: 'error',
+          title: expect.stringContaining('already decided'),
+          status: 'danger',
         }),
       ),
     );
@@ -264,17 +260,17 @@ describe('RequestDetail', () => {
   });
 
   describe('a dialog left open while the request moves on', () => {
-    // M6 in the browser review: the page behind updated to Denied, and the
+    // The page behind updated to Denied, and the
     // dialog went on offering Approve.
     it('closes the decide dialog, and says nothing was sent', async () => {
       const signals = fakeSignals();
       const decide = jest.fn();
-      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const toastApi = { post: jest.fn() };
       const getRequest = jest
         .fn()
         .mockResolvedValueOnce(REQUEST)
         .mockResolvedValue({ ...REQUEST, status: 'rejected' as const });
-      await render({ getRequest, decide }, APPROVER, alertApi, signals);
+      await render({ getRequest, decide }, APPROVER, toastApi, signals);
 
       await userEvent.click(
         await screen.findByRole('button', { name: 'Approve' }),
@@ -294,11 +290,11 @@ describe('RequestDetail', () => {
           screen.queryByText('Approve this request?'),
         ).not.toBeInTheDocument(),
       );
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message:
+          title:
             'Nothing was sent: this request was settled while the dialog was open.',
-          severity: 'info',
+          status: 'info',
         }),
       );
       expect(decide).not.toHaveBeenCalled();
@@ -339,7 +335,7 @@ describe('RequestDetail', () => {
     });
 
     it('closes on a conflict, and shows where the request stands', async () => {
-      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const toastApi = { post: jest.fn() };
       const getRequest = jest
         .fn()
         .mockResolvedValueOnce(REQUEST)
@@ -354,7 +350,7 @@ describe('RequestDetail', () => {
             ),
         },
         APPROVER,
-        alertApi,
+        toastApi,
       );
 
       await userEvent.click(
@@ -372,10 +368,10 @@ describe('RequestDetail', () => {
       expect(
         screen.queryByText('Approve this request?'),
       ).not.toBeInTheDocument();
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('already been decided'),
-          severity: 'error',
+          title: expect.stringContaining('already been decided'),
+          status: 'danger',
         }),
       );
     });
@@ -383,7 +379,7 @@ describe('RequestDetail', () => {
     it('closes the withdraw dialog once the request is settled', async () => {
       const signals = fakeSignals();
       const cancel = jest.fn();
-      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const toastApi = { post: jest.fn() };
       const getRequest = jest
         .fn()
         .mockResolvedValueOnce(REQUEST)
@@ -391,7 +387,7 @@ describe('RequestDetail', () => {
       await render(
         { getRequest, cancel },
         identityOf('user:default/requester'),
-        alertApi,
+        toastApi,
         signals,
       );
 
@@ -411,9 +407,9 @@ describe('RequestDetail', () => {
           screen.queryByText('Withdraw this request?'),
         ).not.toBeInTheDocument(),
       );
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message:
+          title:
             'Nothing was withdrawn: this request is no longer waiting for a decision.',
         }),
       );
@@ -423,7 +419,7 @@ describe('RequestDetail', () => {
 
   describe('when you cannot decide', () => {
     it('tells a requester outside every approver group that it is their request', async () => {
-      // L8 in the browser review: "You are not an approver for this request"
+      // "You are not an approver for this request"
       // is true, and beside the point on your own request.
       await render(
         { getRequest: async () => REQUEST },
@@ -509,7 +505,7 @@ describe('RequestDetail', () => {
     const REQUESTER = identityOf('user:default/requester');
 
     it('offers Withdraw while the request is pending', async () => {
-      // §5: withdrawing is what `cancelled` means, as distinct from
+      // Withdrawing is what `cancelled` means, as distinct from
       // `rejected` — nobody decided, the requester changed their mind.
       const cancel = jest.fn().mockResolvedValue(REQUEST);
       await render({ getRequest: async () => REQUEST, cancel }, REQUESTER);
@@ -519,7 +515,7 @@ describe('RequestDetail', () => {
           name: 'Withdraw',
         }),
       );
-      // B11: it asks first, as Approve and Deny do — withdrawing is as final.
+      // It asks first, as Approve and Deny do — withdrawing is as final.
       expect(
         await screen.findByText('Withdraw this request?'),
       ).toBeInTheDocument();
@@ -552,7 +548,7 @@ describe('RequestDetail', () => {
     });
 
     it('offers Resubmit once the request has failed', async () => {
-      // Q5: a spent approval cannot be spent twice, so this starts a new
+      // A spent approval cannot be spent twice, so this starts a new
       // request rather than retrying the old one.
       const submitRequest = jest
         .fn()
@@ -578,10 +574,10 @@ describe('RequestDetail', () => {
     });
 
     describe('when the template no longer takes the values', () => {
-      // L18 in the browser review: after the template gained a required
+      // After the template gained a required
       // field, Resubmit posted the old values again and was refused again.
       it('opens its form with the values filled in', async () => {
-        const alertApi = { post: jest.fn(), alert$: jest.fn() };
+        const toastApi = { post: jest.fn() };
         await render(
           {
             getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
@@ -595,7 +591,7 @@ describe('RequestDetail', () => {
               ),
           },
           REQUESTER,
-          alertApi,
+          toastApi,
         );
 
         await userEvent.click(
@@ -613,10 +609,10 @@ describe('RequestDetail', () => {
         expect(
           JSON.parse(new URLSearchParams(search).get('formData')!),
         ).toEqual(REQUEST.values);
-        expect(alertApi.post).toHaveBeenCalledWith(
+        expect(toastApi.post).toHaveBeenCalledWith(
           expect.objectContaining({
-            severity: 'info',
-            message: expect.stringMatching(
+            status: 'info',
+            title: expect.stringMatching(
               /^Could not resubmit as it was: .*'ticket'\. The values are filled in on the template's form/,
             ),
           }),
@@ -624,7 +620,7 @@ describe('RequestDetail', () => {
       });
 
       it('stays put and says so for any other failure', async () => {
-        const alertApi = { post: jest.fn(), alert$: jest.fn() };
+        const toastApi = { post: jest.fn() };
         await render(
           {
             getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
@@ -633,7 +629,7 @@ describe('RequestDetail', () => {
               .mockRejectedValue(refusal(503, 'Service Unavailable')),
           },
           REQUESTER,
-          alertApi,
+          toastApi,
         );
 
         await userEvent.click(
@@ -641,10 +637,42 @@ describe('RequestDetail', () => {
         );
 
         await waitFor(() =>
-          expect(alertApi.post).toHaveBeenCalledWith(
+          expect(toastApi.post).toHaveBeenCalledWith(
             expect.objectContaining({
-              message: 'Could not resubmit: Service Unavailable',
-              severity: 'error',
+              title: 'Could not resubmit: Service Unavailable',
+              status: 'danger',
+            }),
+          ),
+        );
+        expect(screen.getByTestId('location').textContent).toBe('/');
+      });
+
+      it("says why and stays put when the app has not bound the scaffolder's form", async () => {
+        const toastApi = { post: jest.fn() };
+        await render(
+          {
+            getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
+            submitRequest: jest
+              .fn()
+              .mockRejectedValue(
+                refusal(400, "(root) must have required property 'ticket'"),
+              ),
+          },
+          REQUESTER,
+          toastApi,
+          undefined,
+          false,
+        );
+
+        await userEvent.click(
+          await screen.findByRole('button', { name: 'Resubmit' }),
+        );
+
+        await waitFor(() =>
+          expect(toastApi.post).toHaveBeenCalledWith(
+            expect.objectContaining({
+              title: expect.stringContaining("required property 'ticket'"),
+              status: 'danger',
             }),
           ),
         );
@@ -686,7 +714,7 @@ describe('RequestDetail', () => {
     });
 
     it('links to the task log once there is a task', async () => {
-      // §10.1: the requester cannot find this task under "my tasks", because
+      // The requester cannot find this task under "my tasks", because
       // it was created by the service principal. This link is the only way
       // they reach its log.
       await render({
@@ -701,11 +729,35 @@ describe('RequestDetail', () => {
         await screen.findByRole('link', { name: 'task-42' }),
       ).toHaveAttribute('href', '/create/tasks/task-42');
     });
+
+    it('names the task without linking it when the app has not bound the scaffolder', async () => {
+      await render(
+        {
+          getRequest: async () => ({
+            ...REQUEST,
+            status: 'running' as const,
+            taskId: 'task-42',
+          }),
+        },
+        APPROVER,
+        undefined,
+        undefined,
+        false,
+      );
+
+      expect(await screen.findByText('task-42')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'task-42' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: /View task log/ }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe('template drift', () => {
     it('warns an approver that the steps have changed', async () => {
-      // §10.3: the values and the policy are frozen at submit, but the
+      // The values and the policy are frozen at submit, but the
       // template is read live at launch, so the steps on screen are not
       // necessarily the ones that will run.
       await render({
@@ -722,7 +774,7 @@ describe('RequestDetail', () => {
       );
     });
 
-    // H3: the scaffolder would refuse these values, so approving cannot work.
+    // The scaffolder would refuse these values, so approving cannot work.
     it('warns that the values no longer fit the parameters', async () => {
       await render({
         getRequest: async () => ({
@@ -736,7 +788,7 @@ describe('RequestDetail', () => {
       expect(notice).toHaveTextContent(/approving will fail/);
     });
 
-    // L19 in the browser review: the dialog covers the page's warning, and
+    // The dialog covers the page's warning, and
     // went on saying the template "starts straight away".
     it('repeats the warning in the approve dialog, and asks to approve anyway', async () => {
       await render({
@@ -922,7 +974,7 @@ describe('RequestDetail', () => {
               } as Partial<ApprovalsApi> as ApprovalsApi,
             ],
             [identityApiRef, APPROVER as any],
-            [alertApiRef, { post: jest.fn(), alert$: jest.fn() } as any],
+            [toastApiRef, { post: jest.fn() } as any],
             [catalogApiRef, { getEntityByRef: async () => TEMPLATE } as any],
           ]}
         >
@@ -999,14 +1051,14 @@ describe('RequestDetail', () => {
     // row at all.
     expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
     // With no summary, the template's name stands in as the title: not its
-    // raw ref (B16). The page's title, under the plugin header's "Approvals".
+    // raw ref. The page's title, under the plugin header's "Approvals".
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
       /^request-github-admin$/,
     );
   });
 
   describe('a settled request', () => {
-    // B4 in the browser review: "This request has already been decided" on
+    // "This request has already been decided" on
     // requests nobody decided, "0 of 2 approvals needed" on settled ones, and
     // an "Expires" date on requests that can no longer expire.
     it.each([
@@ -1098,7 +1150,7 @@ describe('RequestDetail', () => {
   });
 
   it('says who can approve, how many it takes, and whether the requester may', async () => {
-    // B5: the requester could see "0 of 2" but not whose two.
+    // The requester could see "0 of 2" but not whose two.
     await render({
       getRequest: async () => ({
         ...REQUEST,
@@ -1116,7 +1168,7 @@ describe('RequestDetail', () => {
       'Needs 2 approvals from devx-team or lead. The requester cannot approve their own request.',
     );
     // Each approver links to their catalog page, so a requester can see who
-    // is in the group they are waiting on (B16).
+    // is in the group they are waiting on.
     expect(screen.getByRole('link', { name: 'devx-team' })).toHaveAttribute(
       'href',
       '/catalog/default/group/devx-team',
@@ -1128,7 +1180,7 @@ describe('RequestDetail', () => {
   });
 
   it('names people and the template, each linked to its catalog page', async () => {
-    // B16: "user:default/requester", "template:default/request-github-admin"
+    // "user:default/requester", "template:default/request-github-admin"
     // and "group:default/devx-team" everywhere, none of them links.
     await render({
       getRequest: async () => ({
@@ -1170,7 +1222,7 @@ describe('RequestDetail', () => {
   });
 
   describe('a request past its deadline that the sweep has not reached yet', () => {
-    // B9: still `pending` in the database for up to five minutes, but nobody
+    // Still `pending` in the database for up to five minutes, but nobody
     // can decide it, so it must not read as waiting.
     const LAPSED = {
       ...REQUEST,
@@ -1203,7 +1255,7 @@ describe('RequestDetail', () => {
   });
 
   describe('when the request cannot be loaded', () => {
-    // B6: a bare error bar with no page around it and no way back.
+    // A bare error bar with no page around it and no way back.
     // Shaped like the client's `ResponseError`, body included: the error
     // panel reads the body of anything named ResponseError.
     const failing = (statusCode: number, message: string) =>
@@ -1262,7 +1314,7 @@ describe('RequestDetail', () => {
   });
 
   describe('live updates', () => {
-    // B10: somebody else's decision, or the template finishing, appeared only
+    // Somebody else's decision, or the template finishing, appeared only
     // on a manual reload.
     it('refetches when the backend signals a change to this request', async () => {
       const signals = fakeSignals();

@@ -161,6 +161,11 @@ export interface DecideApprovalRequestOptions {
 }
 
 // @public
+export const DECISION_INELIGIBILITY_MESSAGES: Readonly<
+  Record<DecisionIneligibility, string>
+>;
+
+// @public
 export type DecisionEligibility =
   | {
       allowed: true;
@@ -185,7 +190,9 @@ export const DEFAULT_QUORUM = 1;
 export const DEFAULT_SELF_APPROVE = false;
 
 // @public
-export function findGateStep(entity: Entity): GateStepLookup;
+export function findGateStep(
+  entity: Entity,
+): TemplateEntityStepV1beta3 | undefined;
 
 // @public
 export function findGateValuesProblem(
@@ -241,11 +248,7 @@ export class GateStepError extends Error {
 }
 
 // @public
-export interface GateStepLookup {
-  index?: number;
-  // (undocumented)
-  step?: TemplateEntityStepV1beta3;
-}
+export const HUMAN_DURATION_UNITS: readonly (keyof HumanDuration)[];
 
 // @public
 export function isApprovalRequestStatus(
@@ -259,10 +262,7 @@ export function isApprover(
 ): boolean;
 
 // @public
-export function isGated(entity: Entity): boolean;
-
-// @public
-export function isTerminalStatus(status: ApprovalRequestStatus): boolean;
+export function isSameEntityRef(a: string, b: string): boolean;
 
 // @public
 export interface ListApprovalRequestsOptions {
@@ -288,6 +288,9 @@ export interface ListApprovalRequestsResponse {
 
 // @public
 export function normaliseEntityRef(ref: string): string;
+
+// @public
+export function normaliseEntityRefs(refs: readonly string[]): string[];
 
 // @public
 export interface QuorumProgress {
@@ -346,4 +349,7 @@ export type TemplateDriftReason =
 
 // @public
 export const TERMINAL_APPROVAL_REQUEST_STATUSES: readonly ApprovalRequestStatus[];
+
+// @public
+export function tryNormaliseEntityRef(ref: string): string | undefined;
 ```

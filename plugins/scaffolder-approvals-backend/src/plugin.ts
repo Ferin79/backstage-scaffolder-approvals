@@ -1,28 +1,10 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   scaffolderApprovalsPermissions,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   approvalRequestResourceRef,
-  hasTemplateRef,
-  isDesignatedApprover,
-  isNotRequester,
+  scaffolderApprovalsPermissionRules,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import {
   coreServices,
@@ -76,7 +58,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
         catalog: catalogServiceRef,
         events: eventsServiceRef,
         scaffolder: scaffolderServiceRef,
-        // Soft dependencies (§7.5). Both refs carry a default factory, so they
+        // Soft dependencies. Both refs carry a default factory, so they
         // always resolve and the backend starts whether or not the plugins
         // behind them are installed — what degrades is the call, not startup.
         // `ApprovalNotifier` swallows and logs those failures, so a deployment
@@ -115,7 +97,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
         permissionsRegistry.addResourceType({
           resourceRef: approvalRequestResourceRef,
           permissions: scaffolderApprovalsPermissions,
-          rules: [isDesignatedApprover, isNotRequester, hasTemplateRef],
+          rules: [...scaffolderApprovalsPermissionRules],
           getResources: async resourceRefs => store.getManyByIds(resourceRefs),
         });
 

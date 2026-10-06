@@ -1,20 +1,8 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { parseEntityRef, stringifyEntityRef } from '@backstage/catalog-model';
+import {
+  DEFAULT_NAMESPACE,
+  parseEntityRef,
+  stringifyEntityRef,
+} from '@backstage/catalog-model';
 import { InputError } from '@backstage/errors';
 
 /**
@@ -22,9 +10,8 @@ import { InputError } from '@backstage/errors';
  *
  * No template form comes anywhere near this: an object field inside an array
  * inside an object is three. The limit exists because the values are hashed
- * by a recursive serialiser, and 3,000 levels of `{"a":` — well inside the
- * body size limit — overflowed the stack and answered 500 (M1 in the browser
- * review).
+ * by a recursive serialiser, and a few thousand levels of `{"a":` — well
+ * inside the body size limit — would overflow the stack.
  */
 export const MAX_VALUES_DEPTH = 64;
 
@@ -35,10 +22,10 @@ export const MAX_VALUES_DEPTH = 64;
  * knows which kind it means: `request-github-admin` is the template
  * `template:default/request-github-admin`. Case and namespace are normalised
  * as they are on submit, so a filter written the way a request was submitted
- * finds it (M5).
+ * finds it.
  *
  * A ref that does not parse is the client's mistake, so it is a 400 naming
- * the field, never the `TypeError` the parser throws, which became a 500 (M1).
+ * the field rather than the parser's `TypeError`, which would be a 500.
  */
 export function readEntityRef(
   raw: string,
@@ -48,7 +35,7 @@ export function readEntityRef(
     return stringifyEntityRef(
       parseEntityRef(raw.trim(), {
         defaultKind: options.defaultKind,
-        defaultNamespace: 'default',
+        defaultNamespace: DEFAULT_NAMESPACE,
       }),
     );
   } catch (error) {

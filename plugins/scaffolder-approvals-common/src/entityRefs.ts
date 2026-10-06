@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { parseEntityRef, stringifyEntityRef } from '@backstage/catalog-model';
 
 /**
@@ -33,4 +17,44 @@ export function normaliseEntityRef(ref: string): string {
   return stringifyEntityRef(
     parseEntityRef(ref.trim(), { defaultNamespace: 'default' }),
   );
+}
+
+/**
+ * {@link normaliseEntityRef}, or `undefined` for a ref that does not parse.
+ *
+ * For comparisons: a ref that cannot be read cannot match anything, so it is
+ * dropped rather than failing the whole check.
+ *
+ * @public
+ */
+export function tryNormaliseEntityRef(ref: string): string | undefined {
+  try {
+    return normaliseEntityRef(ref);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether two refs name the same entity, whatever their casing or namespace
+ * spelling. False when either does not parse, so a malformed ref never
+ * matches.
+ *
+ * @public
+ */
+export function isSameEntityRef(a: string, b: string): boolean {
+  const left = tryNormaliseEntityRef(a);
+  return left !== undefined && left === tryNormaliseEntityRef(b);
+}
+
+/**
+ * {@link tryNormaliseEntityRef} over a list, dropping the refs that do not
+ * parse: a ref that cannot be read cannot match anything.
+ *
+ * @public
+ */
+export function normaliseEntityRefs(refs: readonly string[]): string[] {
+  return refs
+    .map(tryNormaliseEntityRef)
+    .filter((ref): ref is string => ref !== undefined);
 }

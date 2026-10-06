@@ -1,24 +1,9 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   GATE_ACTION_ID,
   GATED_ANNOTATION,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { alertApiRef } from '@backstage/core-plugin-api';
+import {} from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { screen } from '@testing-library/react';
@@ -69,7 +54,7 @@ const REVIEW_PROPS = {
 function render(options: {
   entity?: unknown;
   api?: Partial<ApprovalsApi>;
-  alertApi?: { post: jest.Mock; alert$: jest.Mock };
+  toastApi?: { post: jest.Mock };
   catalogApi?: { getEntityByRef: jest.Mock };
   // The scaffolder's own wizard routes. Mounting a made-up shape here once hid
   // that the component never recognised a gated template in a real app.
@@ -85,10 +70,7 @@ function render(options: {
       apis={[
         [catalogApiRef, catalogApi as any],
         [approvalsApiRef, (options.api ?? {}) as ApprovalsApi],
-        [
-          alertApiRef,
-          (options.alertApi ?? { post: jest.fn(), alert$: jest.fn() }) as any,
-        ],
+        [toastApiRef, (options.toastApi ?? { post: jest.fn() }) as any],
       ]}
     >
       <Routes>
@@ -167,7 +149,7 @@ describe('GatedReviewStep', () => {
 
     // One sentence, the same the request page uses afterwards. It used to be
     // "2 of these must approve" above a list, which with a single group read
-    // as if two groups were expected (B18).
+    // as if two groups were expected.
     expect(
       await screen.findByText(/^Needs 2 approvals from/),
     ).toHaveTextContent(
@@ -177,7 +159,7 @@ describe('GatedReviewStep', () => {
   });
 
   it('links each approver to their catalog page, in a new tab', async () => {
-    // B16: by name, not as a raw ref, and somewhere to find out who is in the
+    // By name, not as a raw ref, and somewhere to find out who is in the
     // group. A new tab, because leaving the wizard throws away the form.
     await render({ entity: template(true) });
 
@@ -205,7 +187,7 @@ describe('GatedReviewStep', () => {
   });
 
   it('shows the values being submitted, as the ordinary review step does', async () => {
-    // B7: replacing the review step had dropped its table, so a requester
+    // Replacing the review step had dropped its table, so a requester
     // submitted values they could no longer see — the very values the
     // approvers judge and the approval is bound to.
     await render({ entity: template(true) });
@@ -216,7 +198,7 @@ describe('GatedReviewStep', () => {
   });
 
   describe('a template the backend would refuse', () => {
-    // B8: the button was offered, and only the backend said no.
+    // The button was offered, and only the backend said no.
     it('says it cannot be requested, why, and offers only Back', async () => {
       const entity = template(true);
       (entity.spec.steps[0] as Record<string, unknown>).if =
@@ -240,7 +222,7 @@ describe('GatedReviewStep', () => {
       expect(submitRequest).not.toHaveBeenCalled();
     });
 
-    // H1: without the whole parameters to compare, the gate refuses every run,
+    // Without the whole parameters to compare, the gate refuses every run,
     // so the request must not be offered only to fail after approval.
     it.each([
       ['no values', undefined],
@@ -302,7 +284,7 @@ describe('GatedReviewStep', () => {
   it('says what the backend said when a request is refused', async () => {
     // The backend validates the values against the template's own parameter
     // schema and refuses in words worth reading.
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render({
       entity: template(true),
       api: {
@@ -312,21 +294,21 @@ describe('GatedReviewStep', () => {
             new Error("values do not match the template's parameters"),
           ),
       },
-      alertApi,
+      toastApi,
     });
 
     await userEvent.click(await screen.findByTestId('request-approval'));
 
-    expect(alertApi.post).toHaveBeenCalledWith(
+    expect(toastApi.post).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('do not match'),
-        severity: 'error',
+        title: expect.stringContaining('do not match'),
+        status: 'danger',
       }),
     );
   });
 
   it('says so when an identical request is already open', async () => {
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render({
       entity: template(true),
       api: {
@@ -334,14 +316,14 @@ describe('GatedReviewStep', () => {
           .fn()
           .mockResolvedValue({ id: 'req-1', collapsed: true }),
       },
-      alertApi,
+      toastApi,
     });
 
     await userEvent.click(await screen.findByTestId('request-approval'));
 
-    expect(alertApi.post).toHaveBeenCalledWith(
+    expect(toastApi.post).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: 'You already have an identical request open',
+        title: 'You already have an identical request open',
       }),
     );
   });

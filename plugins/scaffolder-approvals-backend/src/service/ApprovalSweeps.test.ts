@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { GATE_ACTION_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   hashGrantToken,
@@ -201,7 +185,7 @@ describe('ApprovalSweeps', () => {
       });
 
       it('revokes the grant and relaunches once the grace period has passed', async () => {
-        // C1/Q9: the launch is retried while the approval is still
+        // The launch is retried while the approval is still
         // redeemable. Before this, the live grant made the sweep wait until it
         // expired and then fail the request, so a failed launch was never
         // retried at all.
@@ -260,11 +244,11 @@ describe('ApprovalSweeps', () => {
 
         const failed = await store.getRequest(id);
         expect(failed?.status).toBe('failed');
-        // The page says why, not only that it failed (H3).
+        // The page says why, not only that it failed.
         expect(failed?.failureReason).toMatch(
           /grant expired before the template could start/,
         );
-        // Terminal: the approval is spent and a fresh one is needed (Q5).
+        // Terminal: the approval is spent and a fresh one is needed.
         expect(notifier.onFailed).toHaveBeenCalledWith(
           expect.objectContaining({ id }),
           expect.stringMatching(
@@ -379,7 +363,7 @@ describe('ApprovalSweeps', () => {
 
       it('announces a completed run, without notifying anyone', async () => {
         // G4: the lifecycle an external subscriber sees has to include the end
-        // of it. Q20 still says no notification for this one.
+        // of it. Still no notification for this one.
         const id = await approved();
         getTask.mockResolvedValue({ id: 'task-1', status: 'completed' });
 
@@ -392,7 +376,7 @@ describe('ApprovalSweeps', () => {
       });
 
       it('rotates, so a slow batch cannot starve what is behind it', async () => {
-        // C6: ordering by `updated_at` sounds like "longest waiting" and is
+        // Ordering by `updated_at` sounds like "longest waiting" and is
         // not. A task that is still running never changes status, so nothing
         // moves its `updated_at` and it holds its place in every batch. With a
         // batch of 2, the third request was never looked at again.
@@ -657,6 +641,40 @@ describe('ApprovalSweeps', () => {
         expect((await store.getRequest(id))?.redactedAt).toBe(
           first?.redactedAt,
         );
+      });
+
+      it('works through a backlog larger than one batch', async () => {
+        const capped = new ApprovalSweeps({
+          store,
+          service,
+          scaffolder: { scaffold, getTask } as unknown as ScaffolderService,
+          auth: mockServices.auth(),
+          logger: mockServices.logger.mock(),
+          retention: { days: 180 },
+          batchSize: 2,
+          now: () => clock,
+        });
+
+        const ids: string[] = [];
+        for (const index of [0, 1, 2, 3, 4]) {
+          const { id } = await service.submit({
+            templateRef: TEMPLATE_REF,
+            values: { ...VALUES, index },
+            credentials: REQUESTER_CALLER.credentials,
+          });
+          await service.cancel({
+            requestId: id,
+            credentials: REQUESTER_CALLER.credentials,
+          });
+          ids.push(id);
+        }
+
+        clock = new Date('2027-09-13T10:00:00.000Z');
+        await capped.redactOld();
+
+        for (const id of ids) {
+          expect((await store.getRequest(id))?.values).toBeNull();
+        }
       });
     });
 

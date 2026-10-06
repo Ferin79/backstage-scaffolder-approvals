@@ -1,26 +1,25 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   GATE_ACTION_ID,
   GATED_ANNOTATION,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { mockServices } from '@backstage/backend-test-utils';
 import type { Entity } from '@backstage/catalog-model';
+import type {
+  CatalogProcessorCache,
+  LocationSpec,
+} from '@backstage/plugin-catalog-node';
 import { ApprovalsGateProcessor } from './ApprovalsGateProcessor';
+
+const LOCATION: LocationSpec = { type: 'url', target: 'https://x/t.yaml' };
+
+/** The per-entity cache the catalog hands every processor. */
+function memoryCache(store = new Map<string, unknown>()) {
+  return {
+    store,
+    get: async <T>(key: string) => store.get(key) as T | undefined,
+    set: async (key: string, value: unknown) => void store.set(key, value),
+  } as CatalogProcessorCache & { store: Map<string, unknown> };
+}
 
 const GATE = {
   id: 'gate',
@@ -51,10 +50,16 @@ function template(
 describe('ApprovalsGateProcessor', () => {
   let logger: ReturnType<typeof mockServices.logger.mock>;
   let processor: ApprovalsGateProcessor;
+  let cache: ReturnType<typeof memoryCache>;
+
+  /** One processing cycle, sharing this test's cache as the catalog would. */
+  const run = (entity: Entity) =>
+    processor.preProcessEntity(entity, LOCATION, () => {}, LOCATION, cache);
 
   beforeEach(() => {
     logger = mockServices.logger.mock();
     processor = new ApprovalsGateProcessor(logger);
+    cache = memoryCache();
   });
 
   it('names itself', () => {
@@ -63,9 +68,7 @@ describe('ApprovalsGateProcessor', () => {
 
   describe('deriving the annotation', () => {
     it('stamps a gated template', async () => {
-      const result = await processor.preProcessEntity(
-        template([GATE, PUBLISH]),
-      );
+      const result = await run(template([GATE, PUBLISH]));
 
       expect(result.metadata.annotations).toEqual({
         [GATED_ANNOTATION]: 'true',
@@ -73,7 +76,7 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('keeps the annotations the template already had', async () => {
-      const result = await processor.preProcessEntity(
+      const result = await run(
         template([GATE], { 'backstage.io/source-location': 'url:https://x' }),
       );
 
@@ -85,7 +88,7 @@ describe('ApprovalsGateProcessor', () => {
 
     it('returns an ungated template untouched', async () => {
       const entity = template([PUBLISH]);
-      const result = await processor.preProcessEntity(entity);
+      const result = await run(entity);
 
       // The very same object, not merely an equal one: the catalog re-processes
       // every entity on each refresh, and rebuilding it would be pure churn.
@@ -101,12 +104,12 @@ describe('ApprovalsGateProcessor', () => {
         spec: { steps: [GATE] },
       } as Entity;
 
-      expect(await processor.preProcessEntity(component)).toBe(component);
+      expect(await run(component)).toBe(component);
     });
 
     it('is idempotent across refresh cycles', async () => {
-      const first = await processor.preProcessEntity(template([GATE]));
-      const second = await processor.preProcessEntity(first);
+      const first = await run(template([GATE]));
+      const second = await run(first);
 
       expect(second).toBe(first);
       expect(second).toEqual(first);
@@ -116,7 +119,7 @@ describe('ApprovalsGateProcessor', () => {
       // The mismatch that matters: annotated but ungated would send people
       // through an approval flow for something they can simply run. Deriving
       // the annotation only works if the processor owns it in both directions.
-      const result = await processor.preProcessEntity(
+      const result = await run(
         template([PUBLISH], { [GATED_ANNOTATION]: 'true' }),
       );
 
@@ -127,7 +130,7 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('leaves other annotations in place when stripping', async () => {
-      const result = await processor.preProcessEntity(
+      const result = await run(
         template([PUBLISH], {
           [GATED_ANNOTATION]: 'true',
           'backstage.io/source-location': 'url:https://x',
@@ -140,7 +143,7 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('corrects an annotation that says the wrong thing', async () => {
-      const result = await processor.preProcessEntity(
+      const result = await run(
         template([GATE], { [GATED_ANNOTATION]: 'false' }),
       );
 
@@ -151,12 +154,10 @@ describe('ApprovalsGateProcessor', () => {
       // A template trying to be gated and failing must not read as freely
       // runnable, so the annotation follows the presence of the step rather
       // than its validity.
-      const lateGate = await processor.preProcessEntity(
-        template([PUBLISH, GATE]),
-      );
+      const lateGate = await run(template([PUBLISH, GATE]));
       expect(lateGate.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
 
-      const twoGates = await processor.preProcessEntity(template([GATE, GATE]));
+      const twoGates = await run(template([GATE, GATE]));
       expect(twoGates.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
     });
 
@@ -167,9 +168,9 @@ describe('ApprovalsGateProcessor', () => {
         metadata: { name: 'bare' },
       } as Entity;
 
-      expect(await processor.preProcessEntity(bare)).toBe(bare);
+      expect(await run(bare)).toBe(bare);
       await expect(
-        processor.preProcessEntity(template([null, undefined] as unknown[])),
+        run(template([null, undefined] as unknown[])),
       ).resolves.toBeDefined();
     });
   });
@@ -184,14 +185,14 @@ describe('ApprovalsGateProcessor', () => {
         [GATE, GATE],
         [{ id: 'gate', action: GATE_ACTION_ID, input: {} }],
       ]) {
-        const result = await processor.preProcessEntity(template(steps));
+        const result = await run(template(steps));
         expect(result.metadata.annotations?.[GATED_ANNOTATION]).toBe('true');
       }
       expect(logger.warn).toHaveBeenCalled();
     });
 
     it('warns about a gate that is not the first step', async () => {
-      await processor.preProcessEntity(template([PUBLISH, GATE]));
+      await run(template([PUBLISH, GATE]));
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringMatching(/unusable gate.*must be the first step/),
@@ -199,7 +200,7 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('warns about more than one gate', async () => {
-      await processor.preProcessEntity(template([GATE, GATE]));
+      await run(template([GATE, GATE]));
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringMatching(/unusable gate.*exactly one is allowed/),
@@ -210,7 +211,7 @@ describe('ApprovalsGateProcessor', () => {
       // Without `values`, the gate cannot check the run against what was
       // approved, so the action refuses every run. Saying so at ingestion beats
       // finding out when somebody finally uses the template.
-      await processor.preProcessEntity(
+      await run(
         template([
           { id: 'gate', action: GATE_ACTION_ID, input: { approvers: ['g'] } },
         ]),
@@ -222,14 +223,14 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('says nothing about a well-formed gate', async () => {
-      await processor.preProcessEntity(template([GATE, PUBLISH]));
+      await run(template([GATE, PUBLISH]));
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
     it('warns when a later step depends on the requester OAuth token', async () => {
-      // §10.2: the token belongs to whoever submitted the request and will be
+      // The token belongs to whoever submitted the request and will be
       // dead by the time a multi-day approval completes.
-      await processor.preProcessEntity(
+      await run(
         template([
           GATE,
           {
@@ -248,14 +249,12 @@ describe('ApprovalsGateProcessor', () => {
     it('warns about an `if:` or an `each:` on the gate', async () => {
       // Both let a direct run past the gate: a falsy condition skips the step,
       // and a loop over an empty list runs it zero times.
-      await processor.preProcessEntity(
-        template([{ ...GATE, if: '${{ parameters.gate }}' }, PUBLISH]),
-      );
+      await run(template([{ ...GATE, if: '${{ parameters.gate }}' }, PUBLISH]));
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringMatching(/unusable gate.*must not carry an 'if:'/),
       );
 
-      await processor.preProcessEntity(
+      await run(
         template([{ ...GATE, each: '${{ parameters.items }}' }, PUBLISH]),
       );
       expect(logger.warn).toHaveBeenCalledWith(
@@ -264,9 +263,7 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('warns about a later step that runs after a failure', async () => {
-      await processor.preProcessEntity(
-        template([GATE, { ...PUBLISH, if: '${{ always() }}' }]),
-      );
+      await run(template([GATE, { ...PUBLISH, if: '${{ always() }}' }]));
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringMatching(/run even after an earlier step fails/),
@@ -274,7 +271,7 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('warns about a later step tagged where the gate is not', async () => {
-      await processor.preProcessEntity(
+      await run(
         template([
           GATE,
           { ...PUBLISH, 'backstage:permissions': { tags: ['admin'] } },
@@ -289,14 +286,12 @@ describe('ApprovalsGateProcessor', () => {
     it('warns about a policy that could never be satisfied', async () => {
       // gatePolicy.ts promises a template that ingests cleanly cannot then
       // fail at submit, which only holds if the policy is read here too.
-      await processor.preProcessEntity(
-        template([{ ...GATE, input: { ...GATE.input, quorum: 0 } }]),
-      );
+      await run(template([{ ...GATE, input: { ...GATE.input, quorum: 0 } }]));
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringMatching(/unusable gate policy.*quorum/),
       );
 
-      await processor.preProcessEntity(
+      await run(
         template([
           { ...GATE, input: { ...GATE.input, approvers: ['component:x/y'] } },
         ]),
@@ -309,7 +304,7 @@ describe('ApprovalsGateProcessor', () => {
     it('warns when the gate is handed less than the whole parameters', async () => {
       // The gate hashes what it is handed, so a subset never matches what was
       // approved and every run is refused.
-      await processor.preProcessEntity(
+      await run(
         template([
           {
             ...GATE,
@@ -327,9 +322,9 @@ describe('ApprovalsGateProcessor', () => {
     });
 
     it('warns when a later step reads the user context', async () => {
-      // §10.1: an approved run launches as a service principal, so there is no
+      // An approved run launches as a service principal, so there is no
       // user on the task and the reference renders empty.
-      await processor.preProcessEntity(
+      await run(
         template([
           GATE,
           {
@@ -345,7 +340,7 @@ describe('ApprovalsGateProcessor', () => {
       );
     });
 
-    it('warns about a secret-typed parameter (S7)', async () => {
+    it('warns about a secret-typed parameter', async () => {
       // The backend refuses these at submit, so saying so here is the
       // difference between an author finding out now and a requester finding
       // out when they try to use the template.
@@ -364,10 +359,10 @@ describe('ApprovalsGateProcessor', () => {
         },
       } as Entity;
 
-      await processor.preProcessEntity(entity);
+      await run(entity);
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringMatching(/secret-typed parameter/),
+        expect.stringMatching(/secret-typed/),
       );
     });
 
@@ -376,37 +371,21 @@ describe('ApprovalsGateProcessor', () => {
       // warning becomes a permanent stream that nobody reads.
       const entity = template([PUBLISH, GATE]);
       for (let cycle = 0; cycle < 3; cycle++) {
-        await processor.preProcessEntity(entity);
+        await run(entity);
       }
 
       expect(logger.warn).toHaveBeenCalledTimes(1);
     });
 
-    it('uses the processor cache to remember what it has said', async () => {
-      const store = new Map<string, string>();
-      const cache = {
-        get: async (key: string) => store.get(key),
-        set: async (key: string, value: string) => void store.set(key, value),
-      };
-      const entity = template([PUBLISH, GATE]);
+    it('keeps what it has said in the processor cache', async () => {
+      await run(template([PUBLISH, GATE]));
 
-      for (let cycle = 0; cycle < 3; cycle++) {
-        await processor.preProcessEntity(
-          entity,
-          undefined,
-          undefined,
-          undefined,
-          cache as any,
-        );
-      }
-
-      expect(logger.warn).toHaveBeenCalledTimes(1);
-      expect(store.size).toBe(1);
+      expect(cache.store.size).toBe(1);
     });
 
     it('does not warn about user tokens on an ungated template', async () => {
       // Nothing waits, so nothing expires.
-      await processor.preProcessEntity(
+      await run(
         template([
           {
             id: 'publish',

@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import {
   APPROVAL_GRANT_SECRET,
   GATE_ACTION_ID,
@@ -124,7 +108,7 @@ describe('approval:gate', () => {
 
     it('does not send the caller to the approvals page, which cannot submit', async () => {
       // The page lists requests; it has no form. Pointing people at it was a
-      // dead end (B3 in the browser review).
+      // dead end.
       await expect(
         action.handler(context({ secrets: {} })),
       ).rejects.not.toThrow(/approvals page/);
@@ -150,7 +134,7 @@ describe('approval:gate', () => {
         // match what it was minted for.
         valuesHash: computeValuesHash(VALUES),
         taskId: 'task-1',
-        // §3 binds a grant to the template as well as the values, so a leaked
+        // A grant is bound to the template as well as the values, so a leaked
         // grant cannot redeem inside a different gated template.
         templateRef: TEMPLATE_REF,
       });

@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { InputError } from '@backstage/errors';
 import type { TemplateEntityV1beta3 } from '@backstage/plugin-scaffolder-common';
 import type { JsonObject } from '@backstage/types';
@@ -85,7 +69,7 @@ function describe(errors: ErrorObject[]): string {
 /**
  * Check submitted values against a template's parameter schema.
  *
- * Done at submit time (Q3) rather than at launch, so that an approval is never
+ * Done at submit time rather than at launch, so that an approval is never
  * spent on a request that cannot run. An approver's time is the scarce
  * resource: finding out days later that a required field was missing means
  * starting the whole approval over.
