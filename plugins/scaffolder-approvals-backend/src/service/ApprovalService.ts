@@ -122,6 +122,25 @@ export interface ApprovalServiceOptions {
 const LAUNCH_CLAIM_GRACE_MS = 10 * 60 * 1000;
 
 /**
+ * The caller's own ref, normalised like every other ref this plugin stores,
+ * for a request's requester or a decision's approver. MySQL's default
+ * collation is case-insensitive while SQLite and Postgres compare bytes, so a
+ * ref stored as the token spelled it would compare differently per database.
+ */
+function normaliseCallerRef(userEntityRef: string | undefined): string {
+  if (!userEntityRef) {
+    throw new NotAllowedError(
+      'Approval requests can only be used by a signed-in user',
+    );
+  }
+  const normalised = tryNormaliseEntityRef(userEntityRef);
+  if (!normalised) {
+    throw new NotAllowedError(`Not a usable user identity: ${userEntityRef}`);
+  }
+  return normalised;
+}
+
+/**
  * The approval state machine.
  *
  * Everything about quorum, transitions and launching lives here so that the
@@ -309,7 +328,7 @@ export class ApprovalService {
 
     const recorded = await this.store.recordDecision({
       requestId,
-      approverRef: caller.userEntityRef,
+      approverRef: normaliseCallerRef(caller.userEntityRef),
       decision,
       comment,
     });
@@ -742,20 +761,7 @@ export class ApprovalService {
 
   private async callerRef(credentials: BackstageCredentials): Promise<string> {
     const { userEntityRef } = await this.userInfo.getUserInfo(credentials);
-    if (!userEntityRef) {
-      throw new NotAllowedError(
-        'Approval requests can only be submitted by a signed-in user',
-      );
-    }
-
-    // Normalised, like every other ref this plugin stores: MySQL's default
-    // collation is case-insensitive while SQLite and Postgres compare bytes,
-    // so a ref stored as written would compare differently per database.
-    const normalised = tryNormaliseEntityRef(userEntityRef);
-    if (!normalised) {
-      throw new NotAllowedError(`Not a usable user identity: ${userEntityRef}`);
-    }
-    return normalised;
+    return normaliseCallerRef(userEntityRef);
   }
 
   /**

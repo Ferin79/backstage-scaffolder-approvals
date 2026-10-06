@@ -285,6 +285,21 @@ describe('ApprovalStore', () => {
         });
       });
 
+      it('refuses a ref that is not normalised', async () => {
+        // One person under two spellings would slip past the one-vote-each
+        // index and count twice towards the quorum.
+        const { id } = await store.createOrCollapse(newRequest());
+
+        await expect(
+          store.recordDecision({
+            requestId: id,
+            approverRef: 'User:Default/Alice',
+            decision: 'approve',
+          }),
+        ).rejects.toThrow(/must be a normalised entity ref/);
+        expect(await store.listDecisions(id)).toEqual([]);
+      });
+
       it('keeps the first vote when an approver votes twice', async () => {
         const { id } = await store.createOrCollapse(newRequest());
 
@@ -668,6 +683,21 @@ describe('ApprovalStore', () => {
         ]);
         // Counted the same way, so "4 waiting on you" and the list agree.
         expect(totalItems).toBe(4);
+      });
+
+      it('reads the caller however the token spells them', async () => {
+        const { items } = await store.listRequests({
+          approverRefs: ['User:Default/Alice', 'Group:DevX-Team'],
+          actionableBy: 'User:Default/Alice',
+        });
+
+        const byId = new Map(Object.entries(ids).map(([k, v]) => [v, k]));
+        expect(items.map(item => byId.get(item.id)).sort()).toEqual([
+          'deadlineAhead',
+          'othersVoted',
+          'ownAllowed',
+          'waiting',
+        ]);
       });
 
       it('agrees with checkDecisionEligibility, request by request', async () => {

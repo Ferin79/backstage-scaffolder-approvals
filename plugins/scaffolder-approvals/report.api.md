@@ -11,6 +11,7 @@ import { BackstagePlugin } from '@backstage/core-plugin-api';
 import { CardExtensionProps } from '@backstage/plugin-home-react';
 import { DecideApprovalRequestOptions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { DiscoveryApi } from '@backstage/core-plugin-api';
+import { ExternalRouteRef } from '@backstage/core-plugin-api';
 import type { FetchApi } from '@backstage/core-plugin-api';
 import { IconComponent } from '@backstage/core-plugin-api';
 import { JSX as JSX_2 } from 'react';
@@ -119,8 +120,39 @@ export const scaffolderApprovalsPlugin: BackstagePlugin<
     root: RouteRef<undefined>;
     request: SubRouteRef<PathParams<'/requests/:requestId'>>;
   },
-  {},
+  {
+    scaffolderTask: ExternalRouteRef<
+      {
+        taskId: string;
+      },
+      true
+    >;
+    scaffolderTemplate: ExternalRouteRef<
+      {
+        namespace: string;
+        templateName: string;
+      },
+      true
+    >;
+  },
   {}
+>;
+
+// @public
+export const scaffolderTaskRouteRef: ExternalRouteRef<
+  {
+    taskId: string;
+  },
+  true
+>;
+
+// @public
+export const scaffolderTemplateRouteRef: ExternalRouteRef<
+  {
+    namespace: string;
+    templateName: string;
+  },
+  true
 >;
 
 // @public

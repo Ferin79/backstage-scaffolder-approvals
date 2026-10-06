@@ -10,6 +10,7 @@ import { ConfigurableExtensionDataRef } from '@backstage/frontend-plugin-api';
 import { ExtensionBlueprintParams } from '@backstage/frontend-plugin-api';
 import { ExtensionDataRef } from '@backstage/frontend-plugin-api';
 import { ExtensionInput } from '@backstage/frontend-plugin-api';
+import { ExternalRouteRef } from '@backstage/frontend-plugin-api';
 import { HomePageWidgetBlueprintParams } from '@backstage/plugin-home-react/alpha';
 import { HomePageWidgetData } from '@backstage/plugin-home-react/alpha';
 import { IconElement } from '@backstage/frontend-plugin-api';
@@ -26,7 +27,15 @@ const _default: OverridableFrontendPlugin<
     root: RouteRef<undefined>;
     request: SubRouteRef<PathParams<'/requests/:requestId'>>;
   },
-  {},
+  {
+    scaffolderTask: ExternalRouteRef<{
+      taskId: string;
+    }>;
+    scaffolderTemplate: ExternalRouteRef<{
+      namespace: string;
+      templateName: string;
+    }>;
+  },
   {
     'api:scaffolder-approvals/approvals': OverridableExtensionDefinition<{
       kind: 'api';
@@ -131,6 +140,4 @@ const _default: OverridableFrontendPlugin<
   }
 >;
 export default _default;
-
-// (No @packageDocumentation comment for this package)
 ```

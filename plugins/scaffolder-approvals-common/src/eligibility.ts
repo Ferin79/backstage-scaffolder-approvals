@@ -1,4 +1,8 @@
-import { isSameEntityRef, tryNormaliseEntityRef } from './entityRefs';
+import {
+  isSameEntityRef,
+  normaliseEntityRefs,
+  tryNormaliseEntityRef,
+} from './entityRefs';
 import type { ApprovalDecision, ApprovalRequest, GatePolicy } from './types';
 
 /**
@@ -80,9 +84,10 @@ export function isApprover(
   caller: ApprovalCaller,
 ): boolean {
   const callerRefs = new Set(
-    [caller.userEntityRef, ...(caller.ownershipEntityRefs ?? [])]
-      .map(tryNormaliseEntityRef)
-      .filter((ref): ref is string => ref !== undefined),
+    normaliseEntityRefs([
+      caller.userEntityRef,
+      ...(caller.ownershipEntityRefs ?? []),
+    ]),
   );
   return policy.approvers.some(approver => {
     const normalised = tryNormaliseEntityRef(approver);

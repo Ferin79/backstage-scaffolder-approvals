@@ -290,6 +290,9 @@ export interface ListApprovalRequestsResponse {
 export function normaliseEntityRef(ref: string): string;
 
 // @public
+export function normaliseEntityRefs(refs: readonly string[]): string[];
+
+// @public
 export interface QuorumProgress {
   approvals: number;
   denied: boolean;

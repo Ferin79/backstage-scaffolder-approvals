@@ -5,6 +5,7 @@ import {
   type ApprovalRequestStatus,
   type ApprovalRequestWithDecisions,
   type GatePolicy,
+  normaliseEntityRefs,
   TERMINAL_APPROVAL_REQUEST_STATUSES,
   tryNormaliseEntityRef,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
@@ -68,6 +69,7 @@ export interface TransitionFields {
 /** A vote to record. */
 export interface NewApprovalDecision {
   requestId: string;
+  /** The voter's user ref, normalised like every ref the store keeps. */
   approverRef: string;
   decision: ApprovalDecisionOutcome;
   comment?: string;
@@ -116,7 +118,8 @@ export interface ListApprovalRequestRows {
    * Restrict to requests any of these refs may decide on.
    *
    * Pass the caller's own ownership refs — their user ref plus their groups —
-   * and the join matches whichever of them the policy happens to list.
+   * and the join matches whichever of them the policy happens to list. They
+   * are normalised here, however the token spelled them.
    */
   approverRefs?: string[];
   /**
@@ -335,16 +338,14 @@ export class ApprovalStore {
           'id',
           this.db<ApprovalRequestApproverRow>(TABLE_REQUEST_APPROVERS)
             .select('request_id')
-            .whereIn('approver_ref', options.approverRefs),
+            .whereIn('approver_ref', normaliseEntityRefs(options.approverRefs)),
         );
       }
       if (options.actionableBy !== undefined) {
-        // Both spellings, because the refs this is compared with are not all
-        // stored the same way: `requester_ref` is normalised at submit, while a
-        // decision stores the caller's ref as their token gave it.
-        // `checkDecisionEligibility` normalises both sides, and this has to
-        // agree with it.
-        const self = refSpellings(options.actionableBy);
+        // Requester and approver refs are stored normalised, so the caller's
+        // is too, the way `checkDecisionEligibility` compares them.
+        const self =
+          tryNormaliseEntityRef(options.actionableBy) ?? options.actionableBy;
         query
           .where('status', 'pending')
           .where(builder =>
@@ -354,12 +355,12 @@ export class ApprovalStore {
             'id',
             this.db<ApprovalDecisionRow>(TABLE_DECISIONS)
               .select('request_id')
-              .whereIn('approver_ref', self),
+              .where('approver_ref', self),
           )
           // `self_approve` is never null (see its migration), so this cannot
           // turn into an unknown that drops rows it should keep.
           .whereNot(builder =>
-            builder.whereIn('requester_ref', self).where('self_approve', false),
+            builder.where('requester_ref', self).where('self_approve', false),
           );
       }
       return query;
@@ -453,10 +454,19 @@ export class ApprovalStore {
    * won, rather than by trusting an affected-row count —
    * `onConflict().ignore()` compiles to `INSERT IGNORE` on MySQL, whose counts
    * also swallow unrelated failures.
+   *
+   * The unique index only works if one person has one spelling, so a ref that
+   * is not normalised is refused rather than stored.
    */
   async recordDecision(
     input: NewApprovalDecision,
   ): Promise<RecordDecisionResult> {
+    if (tryNormaliseEntityRef(input.approverRef) !== input.approverRef) {
+      throw new TypeError(
+        `approverRef must be a normalised entity ref, got ${input.approverRef}`,
+      );
+    }
+
     const id = randomUUID();
 
     await this.db(TABLE_DECISIONS)
@@ -819,12 +829,4 @@ export class ApprovalStore {
       });
     return affected === 1;
   }
-}
-
-/**
- * A user ref as given, and normalised, for matching refs stored either way. An
- * unparseable ref can only match itself, if it matches anything at all.
- */
-function refSpellings(ref: string): string[] {
-  return [...new Set([ref, tryNormaliseEntityRef(ref) ?? ref])];
 }

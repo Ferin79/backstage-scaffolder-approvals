@@ -240,6 +240,62 @@ describe('migrations', () => {
       ]);
     });
 
+    it('normalises the approver refs decisions were stored with', async () => {
+      // Votes recorded before the service normalised them kept the token's
+      // spelling, and the quorum count compares refs exactly.
+      await knex.migrate.latest({ directory: migrationsDir });
+      await knex.migrate.down({
+        directory: migrationsDir,
+        name: '20261006000000_normalise_decision_refs.js',
+      });
+
+      const requestId = '3f1e4c8a-0000-4000-8000-00000000000a';
+      await knex(TABLE_REQUESTS).insert({
+        id: requestId,
+        template_ref: 'template:default/gated',
+        values_json: '{}',
+        values_hash: 'a'.repeat(64),
+        requester_ref: 'user:default/requester',
+        status: 'pending',
+        policy_snapshot: JSON.stringify({ approvers: [], quorum: 2 }),
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+      const vote = (id: string, approverRef: string) => ({
+        id: `3f1e4c8a-0000-4000-8000-0000000000${id}`,
+        request_id: requestId,
+        approver_ref: approverRef,
+        decision: 'approve',
+        created_at: new Date(),
+      });
+      // MySQL's default collation already treats the two Carols as one vote,
+      // so it refuses to store them both and there is no collision to keep.
+      const caseSensitive = !databaseId.startsWith('MYSQL');
+      await knex(TABLE_DECISIONS).insert([
+        vote('b1', 'User:Default/Alice'),
+        vote('b2', 'user:bob'),
+        vote('b3', 'user:default/carol'),
+        ...(caseSensitive ? [vote('b4', 'User:Default/Carol')] : []),
+        vote('b5', 'not a ref'),
+      ]);
+
+      await knex.migrate.latest({ directory: migrationsDir });
+
+      const refs = await knex(TABLE_DECISIONS)
+        .select('id', 'approver_ref')
+        .orderBy('id');
+      expect(refs.map(row => row.approver_ref)).toEqual([
+        'user:default/alice',
+        'user:default/bob',
+        'user:default/carol',
+        // Normalising it would collide with the vote above; the audit trail
+        // keeps both rows rather than deleting one.
+        ...(caseSensitive ? ['User:Default/Carol'] : []),
+        // Not a ref at all, so there is nothing to normalise it to.
+        'not a ref',
+      ]);
+    });
+
     it('refuses to list one approver twice for a request', async () => {
       // The composite primary key is what keeps a duplicate from inflating an
       // inbox or a count.

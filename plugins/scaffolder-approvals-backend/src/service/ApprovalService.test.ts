@@ -120,8 +120,12 @@ describe('ApprovalService', () => {
     const alice = caller('user:default/alice', ['group:default/devx-team']);
     const bob = caller('user:default/bob', ['group:default/devx-team']);
     const outsider = caller('user:default/outsider');
+    // Alice again, as a sign-in resolver might spell her.
+    const aliceAsSpelt = caller('User:Default/Alice', [
+      'group:default/devx-team',
+    ]);
 
-    const known = [requester, alice, bob, outsider];
+    const known = [requester, alice, bob, outsider, aliceAsSpelt];
 
     beforeEach(async () => {
       knex = await databases.init(databaseId);
@@ -552,6 +556,33 @@ describe('ApprovalService', () => {
         expect(afterSecond.decisions).toHaveLength(2);
         expect(afterSecond.taskId).toBe('task-1');
         expect(scaffold).toHaveBeenCalledTimes(1);
+      });
+
+      it('stores the vote under the normalised ref, so one person counts once', async () => {
+        entity = gatedTemplate({
+          approvers: ['group:default/devx-team'],
+          quorum: 2,
+        });
+        const { id } = await submit();
+
+        const decided = await service.decide({
+          requestId: id,
+          decision: 'approve',
+          credentials: aliceAsSpelt.credentials,
+        });
+        expect(decided.decisions.map(d => d.approverRef)).toEqual([
+          'user:default/alice',
+        ]);
+
+        // The same person under the other spelling has already voted.
+        await expect(
+          service.decide({
+            requestId: id,
+            decision: 'approve',
+            credentials: alice.credentials,
+          }),
+        ).rejects.toThrow(/already decided/);
+        expect((await store.getRequest(id))?.status).toBe('pending');
       });
 
       it('counts distinct principals, not votes', async () => {

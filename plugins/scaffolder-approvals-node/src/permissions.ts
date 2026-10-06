@@ -2,6 +2,7 @@ import {
   type ApprovalRequest,
   isApprover,
   isSameEntityRef,
+  normaliseEntityRefs,
   RESOURCE_TYPE_APPROVAL_REQUEST,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
   tryNormaliseEntityRef,
@@ -47,16 +48,6 @@ export const approvalRequestResourceRef = createPermissionResourceRef<
 });
 
 /**
- * Refs are normalised before comparison, so casing cannot decide a rule. A ref
- * that will not parse cannot match anything, so it is dropped.
- */
-function normaliseAll(refs: readonly string[]): string[] {
-  return refs
-    .map(tryNormaliseEntityRef)
-    .filter((ref): ref is string => ref !== undefined);
-}
-
-/**
  * The caller is named by the request's own gate policy.
  *
  * Matches through groups: pass the caller's ownership refs and the rule matches
@@ -84,7 +75,7 @@ export const isDesignatedApprover = createPermissionRule({
     }),
   toQuery: ({ userRefs }) => ({
     key: 'approverRef',
-    values: normaliseAll(userRefs),
+    values: normaliseEntityRefs(userRefs),
   }),
 });
 
@@ -145,7 +136,7 @@ export const hasTemplateRef = createPermissionRule({
     templateRefs.some(ref => isSameEntityRef(ref, request.templateRef)),
   toQuery: ({ templateRefs }) => ({
     key: 'templateRef',
-    values: normaliseAll(templateRefs),
+    values: normaliseEntityRefs(templateRefs),
   }),
 });
 

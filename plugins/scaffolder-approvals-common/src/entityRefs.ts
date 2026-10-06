@@ -46,3 +46,15 @@ export function isSameEntityRef(a: string, b: string): boolean {
   const left = tryNormaliseEntityRef(a);
   return left !== undefined && left === tryNormaliseEntityRef(b);
 }
+
+/**
+ * {@link tryNormaliseEntityRef} over a list, dropping the refs that do not
+ * parse: a ref that cannot be read cannot match anything.
+ *
+ * @public
+ */
+export function normaliseEntityRefs(refs: readonly string[]): string[] {
+  return refs
+    .map(tryNormaliseEntityRef)
+    .filter((ref): ref is string => ref !== undefined);
+}
