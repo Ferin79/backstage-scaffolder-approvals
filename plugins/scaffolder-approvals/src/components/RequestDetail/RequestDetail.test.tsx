@@ -1,5 +1,6 @@
 import type { ApprovalRequestWithDecisions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { alertApiRef, identityApiRef } from '@backstage/core-plugin-api';
+import { identityApiRef } from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { signalApiRef } from '@backstage/plugin-signals-react';
@@ -90,7 +91,7 @@ function refusal(statusCode: number, message: string) {
 function render(
   api: Partial<ApprovalsApi>,
   identity: ReturnType<typeof identityOf> = APPROVER,
-  alertApi = { post: jest.fn(), alert$: jest.fn() },
+  toastApi = { post: jest.fn() },
   signals?: ReturnType<typeof fakeSignals>,
 ) {
   return renderInTestApp(
@@ -98,7 +99,7 @@ function render(
       apis={[
         [approvalsApiRef, api as ApprovalsApi],
         [identityApiRef, identity as any],
-        [alertApiRef, alertApi as any],
+        [toastApiRef, toastApi as any],
         ...(signals ? [[signalApiRef, signals.api] as const] : []),
       ]}
     >
@@ -160,11 +161,11 @@ describe('RequestDetail', () => {
     // A confirmation rather than a bare button: approving starts the template
     // immediately.
     const decide = jest.fn().mockResolvedValue(REQUEST);
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render(
       { getRequest: jest.fn().mockResolvedValue(REQUEST), decide },
       APPROVER,
-      alertApi,
+      toastApi,
     );
 
     await userEvent.click(
@@ -184,8 +185,8 @@ describe('RequestDetail', () => {
         comment: undefined,
       }),
     );
-    expect(alertApi.post).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Request approved' }),
+    expect(toastApi.post).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Request approved' }),
     );
   });
 
@@ -214,7 +215,7 @@ describe('RequestDetail', () => {
   it('shows what the backend said when a decision is refused', async () => {
     // The backend's refusals are written to be read by a person, so they are
     // surfaced rather than replaced with a generic failure.
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render(
       {
         getRequest: jest.fn().mockResolvedValue(REQUEST),
@@ -225,7 +226,7 @@ describe('RequestDetail', () => {
           ),
       },
       APPROVER,
-      alertApi,
+      toastApi,
     );
 
     await userEvent.click(
@@ -236,10 +237,10 @@ describe('RequestDetail', () => {
     );
 
     await waitFor(() =>
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('already decided'),
-          severity: 'error',
+          title: expect.stringContaining('already decided'),
+          status: 'danger',
         }),
       ),
     );
@@ -253,12 +254,12 @@ describe('RequestDetail', () => {
     it('closes the decide dialog, and says nothing was sent', async () => {
       const signals = fakeSignals();
       const decide = jest.fn();
-      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const toastApi = { post: jest.fn() };
       const getRequest = jest
         .fn()
         .mockResolvedValueOnce(REQUEST)
         .mockResolvedValue({ ...REQUEST, status: 'rejected' as const });
-      await render({ getRequest, decide }, APPROVER, alertApi, signals);
+      await render({ getRequest, decide }, APPROVER, toastApi, signals);
 
       await userEvent.click(
         await screen.findByRole('button', { name: 'Approve' }),
@@ -278,11 +279,11 @@ describe('RequestDetail', () => {
           screen.queryByText('Approve this request?'),
         ).not.toBeInTheDocument(),
       );
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message:
+          title:
             'Nothing was sent: this request was settled while the dialog was open.',
-          severity: 'info',
+          status: 'info',
         }),
       );
       expect(decide).not.toHaveBeenCalled();
@@ -323,7 +324,7 @@ describe('RequestDetail', () => {
     });
 
     it('closes on a conflict, and shows where the request stands', async () => {
-      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const toastApi = { post: jest.fn() };
       const getRequest = jest
         .fn()
         .mockResolvedValueOnce(REQUEST)
@@ -338,7 +339,7 @@ describe('RequestDetail', () => {
             ),
         },
         APPROVER,
-        alertApi,
+        toastApi,
       );
 
       await userEvent.click(
@@ -356,10 +357,10 @@ describe('RequestDetail', () => {
       expect(
         screen.queryByText('Approve this request?'),
       ).not.toBeInTheDocument();
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('already been decided'),
-          severity: 'error',
+          title: expect.stringContaining('already been decided'),
+          status: 'danger',
         }),
       );
     });
@@ -367,7 +368,7 @@ describe('RequestDetail', () => {
     it('closes the withdraw dialog once the request is settled', async () => {
       const signals = fakeSignals();
       const cancel = jest.fn();
-      const alertApi = { post: jest.fn(), alert$: jest.fn() };
+      const toastApi = { post: jest.fn() };
       const getRequest = jest
         .fn()
         .mockResolvedValueOnce(REQUEST)
@@ -375,7 +376,7 @@ describe('RequestDetail', () => {
       await render(
         { getRequest, cancel },
         identityOf('user:default/requester'),
-        alertApi,
+        toastApi,
         signals,
       );
 
@@ -395,9 +396,9 @@ describe('RequestDetail', () => {
           screen.queryByText('Withdraw this request?'),
         ).not.toBeInTheDocument(),
       );
-      expect(alertApi.post).toHaveBeenCalledWith(
+      expect(toastApi.post).toHaveBeenCalledWith(
         expect.objectContaining({
-          message:
+          title:
             'Nothing was withdrawn: this request is no longer waiting for a decision.',
         }),
       );
@@ -565,7 +566,7 @@ describe('RequestDetail', () => {
       // After the template gained a required
       // field, Resubmit posted the old values again and was refused again.
       it('opens its form with the values filled in', async () => {
-        const alertApi = { post: jest.fn(), alert$: jest.fn() };
+        const toastApi = { post: jest.fn() };
         await render(
           {
             getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
@@ -579,7 +580,7 @@ describe('RequestDetail', () => {
               ),
           },
           REQUESTER,
-          alertApi,
+          toastApi,
         );
 
         await userEvent.click(
@@ -597,10 +598,10 @@ describe('RequestDetail', () => {
         expect(
           JSON.parse(new URLSearchParams(search).get('formData')!),
         ).toEqual(REQUEST.values);
-        expect(alertApi.post).toHaveBeenCalledWith(
+        expect(toastApi.post).toHaveBeenCalledWith(
           expect.objectContaining({
-            severity: 'info',
-            message: expect.stringMatching(
+            status: 'info',
+            title: expect.stringMatching(
               /^Could not resubmit as it was: .*'ticket'\. The values are filled in on the template's form/,
             ),
           }),
@@ -608,7 +609,7 @@ describe('RequestDetail', () => {
       });
 
       it('stays put and says so for any other failure', async () => {
-        const alertApi = { post: jest.fn(), alert$: jest.fn() };
+        const toastApi = { post: jest.fn() };
         await render(
           {
             getRequest: async () => ({ ...REQUEST, status: 'failed' as const }),
@@ -617,7 +618,7 @@ describe('RequestDetail', () => {
               .mockRejectedValue(refusal(503, 'Service Unavailable')),
           },
           REQUESTER,
-          alertApi,
+          toastApi,
         );
 
         await userEvent.click(
@@ -625,10 +626,10 @@ describe('RequestDetail', () => {
         );
 
         await waitFor(() =>
-          expect(alertApi.post).toHaveBeenCalledWith(
+          expect(toastApi.post).toHaveBeenCalledWith(
             expect.objectContaining({
-              message: 'Could not resubmit: Service Unavailable',
-              severity: 'error',
+              title: 'Could not resubmit: Service Unavailable',
+              status: 'danger',
             }),
           ),
         );
@@ -906,7 +907,7 @@ describe('RequestDetail', () => {
               } as Partial<ApprovalsApi> as ApprovalsApi,
             ],
             [identityApiRef, APPROVER as any],
-            [alertApiRef, { post: jest.fn(), alert$: jest.fn() } as any],
+            [toastApiRef, { post: jest.fn() } as any],
             [catalogApiRef, { getEntityByRef: async () => TEMPLATE } as any],
           ]}
         >

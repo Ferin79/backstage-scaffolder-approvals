@@ -2,7 +2,8 @@ import {
   DEFAULT_NAMESPACE,
   stringifyEntityRef,
 } from '@backstage/catalog-model';
-import { alertApiRef, useApi } from '@backstage/core-plugin-api';
+import { useApi } from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import {
@@ -80,7 +81,7 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
   const { formData, children } = props;
 
   const catalogApi = useApi(catalogApiRef);
-  const alertApi = useApi(alertApiRef);
+  const toastApi = useApi(toastApiRef);
   const submitRequest = useSubmitApprovalRequest();
   const [busy, setBusy] = useState(false);
 
@@ -129,14 +130,14 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
     } catch (error) {
       // The backend validates the values against the template's own parameter
       // schema and refuses in words worth reading, so show what it said.
-      alertApi.post({
-        message: `Could not request approval: ${messageOf(error)}`,
-        severity: 'error',
+      toastApi.post({
+        title: `Could not request approval: ${messageOf(error)}`,
+        status: 'danger',
       });
     } finally {
       setBusy(false);
     }
-  }, [alertApi, formData, submitRequest, templateRef]);
+  }, [toastApi, formData, submitRequest, templateRef]);
 
   if (state.loading) {
     return (

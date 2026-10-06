@@ -1,9 +1,11 @@
 import type { SubmitApprovalRequestOptions } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { alertApiRef, useApi, useRouteRef } from '@backstage/core-plugin-api';
+import { useApi, useRouteRef } from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { approvalsApiRef } from '../api';
 import { requestRouteRef } from '../routes';
+import { TRANSIENT_TOAST_MS } from './toast';
 
 /**
  * Submit an approval request, say so, and open the request it made.
@@ -18,22 +20,22 @@ export function useSubmitApprovalRequest(): (
   submitted: string,
 ) => Promise<void> {
   const approvalsApi = useApi(approvalsApiRef);
-  const alertApi = useApi(alertApiRef);
+  const toastApi = useApi(toastApiRef);
   const navigate = useNavigate();
   const requestRoute = useRouteRef(requestRouteRef);
 
   return useCallback(
     async (request, submitted) => {
       const created = await approvalsApi.submitRequest(request);
-      alertApi.post({
-        message: created.collapsed
+      toastApi.post({
+        title: created.collapsed
           ? 'You already have an identical request open'
           : submitted,
-        severity: 'success',
-        display: 'transient',
+        status: 'success',
+        timeout: TRANSIENT_TOAST_MS,
       });
       navigate(requestRoute({ requestId: created.id }));
     },
-    [alertApi, approvalsApi, navigate, requestRoute],
+    [toastApi, approvalsApi, navigate, requestRoute],
   );
 }

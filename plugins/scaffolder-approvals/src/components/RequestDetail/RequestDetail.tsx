@@ -10,12 +10,12 @@ import {
   isSameEntityRef,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
-  alertApiRef,
   type BackstageUserIdentity,
   identityApiRef,
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import {
   EntityDisplayName,
   useEntityPresentation,
@@ -53,6 +53,7 @@ import {
 } from './RequestSections';
 import { WithdrawDialog } from './WithdrawDialog';
 import styles from './RequestDetail.module.css';
+import { TRANSIENT_TOAST_MS } from '../toast';
 
 /**
  * What a request is called: its gate's rendered summary, or the template's
@@ -140,7 +141,7 @@ export function RequestDetail(props: RequestDetailProps) {
   const { requestId } = props;
 
   const api = useApi(approvalsApiRef);
-  const alertApi = useApi(alertApiRef);
+  const toastApi = useApi(toastApiRef);
   const identityApi = useApi(identityApiRef);
   const navigate = useNavigate();
   const submitRequest = useSubmitApprovalRequest();
@@ -168,18 +169,17 @@ export function RequestDetail(props: RequestDetailProps) {
       setBusy(true);
       try {
         await api.decide(requestId, { decision, comment });
-        alertApi.post({
-          message:
-            decision === 'approve' ? 'Request approved' : 'Request denied',
-          severity: 'success',
-          display: 'transient',
+        toastApi.post({
+          title: decision === 'approve' ? 'Request approved' : 'Request denied',
+          status: 'success',
+          timeout: TRANSIENT_TOAST_MS,
         });
         setDeciding(undefined);
         refresh();
       } catch (error) {
-        alertApi.post({
-          message: `Could not record your decision: ${messageOf(error)}`,
-          severity: 'error',
+        toastApi.post({
+          title: `Could not record your decision: ${messageOf(error)}`,
+          status: 'danger',
         });
         // A conflict means the request moved on under the dialog: somebody
         // else settled it, it timed out, or this approver voted from another
@@ -193,23 +193,23 @@ export function RequestDetail(props: RequestDetailProps) {
         setBusy(false);
       }
     },
-    [api, alertApi, requestId, refresh],
+    [api, toastApi, requestId, refresh],
   );
 
   const withdraw = useCallback(async () => {
     setBusy(true);
     try {
       await api.cancel(requestId);
-      alertApi.post({
-        message: 'Request withdrawn',
-        severity: 'success',
-        display: 'transient',
+      toastApi.post({
+        title: 'Request withdrawn',
+        status: 'success',
+        timeout: TRANSIENT_TOAST_MS,
       });
       refresh();
     } catch (error) {
-      alertApi.post({
-        message: `Could not withdraw the request: ${messageOf(error)}`,
-        severity: 'error',
+      toastApi.post({
+        title: `Could not withdraw the request: ${messageOf(error)}`,
+        status: 'danger',
       });
       // Settled or timed out under the dialog: show what it became.
       if (httpStatusOf(error) === 409) {
@@ -219,7 +219,7 @@ export function RequestDetail(props: RequestDetailProps) {
       setBusy(false);
       setConfirmingWithdraw(false);
     }
-  }, [api, alertApi, requestId, refresh]);
+  }, [api, toastApi, requestId, refresh]);
 
   const resubmit = useCallback(
     async (templateRef: string, values: JsonObject) => {
@@ -234,24 +234,24 @@ export function RequestDetail(props: RequestDetailProps) {
           // became required, an option went away. Posting them again can only
           // be refused again, so hand them to the template's form, pre-filled,
           // for the requester to put right.
-          alertApi.post({
-            message: `Could not resubmit as it was: ${messageOf(
+          toastApi.post({
+            title: `Could not resubmit as it was: ${messageOf(
               error,
             )}. The values are filled in on the template's form instead, to correct and submit again.`,
-            severity: 'info',
+            status: 'info',
           });
           navigate(scaffolderTemplateFormPath(templateRef, values));
           return;
         }
-        alertApi.post({
-          message: `Could not resubmit: ${messageOf(error)}`,
-          severity: 'error',
+        toastApi.post({
+          title: `Could not resubmit: ${messageOf(error)}`,
+          status: 'danger',
         });
       } finally {
         setBusy(false);
       }
     },
-    [alertApi, navigate, submitRequest],
+    [toastApi, navigate, submitRequest],
   );
 
   // The page updates itself, so a dialog left open over it could go on
@@ -267,23 +267,23 @@ export function RequestDetail(props: RequestDetailProps) {
       const eligibility = eligibilityOf(request, identity);
       if (!eligibility.allowed) {
         setDeciding(undefined);
-        alertApi.post({
-          message: `Nothing was sent: ${MOVED_ON[eligibility.reason]}`,
-          severity: 'info',
-          display: 'transient',
+        toastApi.post({
+          title: `Nothing was sent: ${MOVED_ON[eligibility.reason]}`,
+          status: 'info',
+          timeout: TRANSIENT_TOAST_MS,
         });
       }
     }
     if (confirmingWithdraw && effectiveStatus(request) !== 'pending') {
       setConfirmingWithdraw(false);
-      alertApi.post({
-        message:
+      toastApi.post({
+        title:
           'Nothing was withdrawn: this request is no longer waiting for a decision.',
-        severity: 'info',
-        display: 'transient',
+        status: 'info',
+        timeout: TRANSIENT_TOAST_MS,
       });
     }
-  }, [state.value, busy, deciding, confirmingWithdraw, alertApi]);
+  }, [state.value, busy, deciding, confirmingWithdraw, toastApi]);
 
   // Only the first load shows a placeholder. A reload — after a decision, or
   // prompted by a signal — keeps the request on screen until the new copy

@@ -2,7 +2,8 @@ import {
   GATE_ACTION_ID,
   GATED_ANNOTATION,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { alertApiRef } from '@backstage/core-plugin-api';
+import {} from '@backstage/core-plugin-api';
+import { toastApiRef } from '@backstage/frontend-plugin-api';
 import { catalogApiRef, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { screen } from '@testing-library/react';
@@ -53,7 +54,7 @@ const REVIEW_PROPS = {
 function render(options: {
   entity?: unknown;
   api?: Partial<ApprovalsApi>;
-  alertApi?: { post: jest.Mock; alert$: jest.Mock };
+  toastApi?: { post: jest.Mock };
   catalogApi?: { getEntityByRef: jest.Mock };
   // The scaffolder's own wizard routes. Mounting a made-up shape here once hid
   // that the component never recognised a gated template in a real app.
@@ -69,10 +70,7 @@ function render(options: {
       apis={[
         [catalogApiRef, catalogApi as any],
         [approvalsApiRef, (options.api ?? {}) as ApprovalsApi],
-        [
-          alertApiRef,
-          (options.alertApi ?? { post: jest.fn(), alert$: jest.fn() }) as any,
-        ],
+        [toastApiRef, (options.toastApi ?? { post: jest.fn() }) as any],
       ]}
     >
       <Routes>
@@ -286,7 +284,7 @@ describe('GatedReviewStep', () => {
   it('says what the backend said when a request is refused', async () => {
     // The backend validates the values against the template's own parameter
     // schema and refuses in words worth reading.
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render({
       entity: template(true),
       api: {
@@ -296,21 +294,21 @@ describe('GatedReviewStep', () => {
             new Error("values do not match the template's parameters"),
           ),
       },
-      alertApi,
+      toastApi,
     });
 
     await userEvent.click(await screen.findByTestId('request-approval'));
 
-    expect(alertApi.post).toHaveBeenCalledWith(
+    expect(toastApi.post).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('do not match'),
-        severity: 'error',
+        title: expect.stringContaining('do not match'),
+        status: 'danger',
       }),
     );
   });
 
   it('says so when an identical request is already open', async () => {
-    const alertApi = { post: jest.fn(), alert$: jest.fn() };
+    const toastApi = { post: jest.fn() };
     await render({
       entity: template(true),
       api: {
@@ -318,14 +316,14 @@ describe('GatedReviewStep', () => {
           .fn()
           .mockResolvedValue({ id: 'req-1', collapsed: true }),
       },
-      alertApi,
+      toastApi,
     });
 
     await userEvent.click(await screen.findByTestId('request-approval'));
 
-    expect(alertApi.post).toHaveBeenCalledWith(
+    expect(toastApi.post).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: 'You already have an identical request open',
+        title: 'You already have an identical request open',
       }),
     );
   });
