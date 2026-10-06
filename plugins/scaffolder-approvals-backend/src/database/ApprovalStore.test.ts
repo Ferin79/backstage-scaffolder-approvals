@@ -404,7 +404,8 @@ describe('ApprovalStore', () => {
           }),
         ).toBe(true);
 
-        const grant = await store.getGrant(grantId);
+        const grant = await store.findConsumedGrant(id);
+        expect(grant?.id).toBe(grantId);
         expect(grant?.consumed_by_task_id).toBe(taskId);
         expect(grant?.consumed_at).not.toBeNull();
       });
@@ -450,7 +451,7 @@ describe('ApprovalStore', () => {
       });
 
       it('refuses a mismatched values hash', async () => {
-        // Q10: the grant is bound to what was approved. Running other
+        // The grant is bound to what was approved. Running other
         // parameters under an approval for these ones is the attack this stops.
         const { id, token } = await approvedRequestWithGrant();
 
@@ -611,7 +612,7 @@ describe('ApprovalStore', () => {
     });
 
     describe('listRequests with actionableBy', () => {
-      // B2 in the browser review: the inbox listed every request that named
+      // The inbox listed every request that named
       // the caller, so an approver's count never fell when they voted, and a
       // requester in the approver group saw their own request as work to do.
       const ALICE = 'user:default/alice';
@@ -895,7 +896,7 @@ describe('ApprovalStore', () => {
       }
 
       it('rotates, so a batch that changes nothing still yields', async () => {
-        // C6: ordering by `updated_at` sounds like "longest waiting" and is
+        // Ordering by `updated_at` sounds like "longest waiting" and is
         // not. A task still running never changes status, so nothing moves its
         // `updated_at` and it holds its place in every batch — with a batch of
         // two, the third request is never returned again however long it has

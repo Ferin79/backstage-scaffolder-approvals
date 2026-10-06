@@ -49,7 +49,7 @@ describe('validateValues', () => {
   });
 
   it('rejects a missing required field, naming it', () => {
-    // The whole reason validation happens at submit (Q3): an approver's time
+    // The whole reason validation happens at submit: an approver's time
     // must not be spent on a request that cannot run.
     expect(() => validateValues(SINGLE, { repository: 'backstage' })).toThrow(
       InputError,

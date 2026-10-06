@@ -56,8 +56,8 @@ export interface GatedTemplateCardProps {
  * The scaffolder's own template card, plus who has to approve a gated one.
  *
  * Without it nothing on **Create…** tells a gated template from any other,
- * and a requester learns that it needs approval on the wizard's last step
- * (B17 in the browser review). Each approver becomes one of the card's links,
+ * and a requester learns that it needs approval on the wizard's last step.
+ * Each approver becomes one of the card's links,
  * "Approver: DevX team", to their catalog page: the card's own slot for links
  * an app adds, which is how the scaffolder itself adds "View TechDocs". The
  * card is otherwise the scaffolder's, untouched.

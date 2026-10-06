@@ -16,7 +16,7 @@
 
 import { GATE_ACTION_ID } from './constants';
 import type { Entity } from '@backstage/catalog-model';
-import { findGateStep, GateStepError, isGated } from './gateStep';
+import { findGateStep, GateStepError } from './gateStep';
 
 const GATE = {
   id: 'gate',
@@ -37,16 +37,13 @@ function template(steps: unknown[]): Entity {
 
 describe('findGateStep', () => {
   it('finds a gate that is the first step, with its input', () => {
-    expect(findGateStep(template([GATE, PUBLISH]))).toEqual({
-      step: GATE,
-      index: 0,
-    });
+    expect(findGateStep(template([GATE, PUBLISH]))).toEqual(GATE);
   });
 
   it('reports no gate for an ungated template', () => {
     // Not an error: most templates are ungated.
-    expect(findGateStep(template([PUBLISH]))).toEqual({});
-    expect(findGateStep(template([]))).toEqual({});
+    expect(findGateStep(template([PUBLISH]))).toBeUndefined();
+    expect(findGateStep(template([]))).toBeUndefined();
   });
 
   it('rejects a gate that is not the first step', () => {
@@ -102,7 +99,7 @@ describe('findGateStep', () => {
     expect(
       findGateStep(
         template([GATE, { ...PUBLISH, if: '${{ parameters.publish }}' }]),
-      ).step,
+      ),
     ).toEqual(GATE);
   });
 
@@ -126,8 +123,8 @@ describe('findGateStep', () => {
           { ...GATE, 'backstage:permissions': { tags: ['admin', 'extra'] } },
           { ...PUBLISH, 'backstage:permissions': { tags: ['admin'] } },
         ]),
-      ).index,
-    ).toBe(0);
+      ),
+    ).toBeDefined();
   });
 
   it('tolerates a template with no spec or malformed steps', () => {
@@ -137,35 +134,10 @@ describe('findGateStep', () => {
         kind: 'Template',
         metadata: { name: 'broken' },
       } as Entity),
-    ).toEqual({});
+    ).toBeUndefined();
 
-    expect(findGateStep(template([null, undefined] as unknown[]))).toEqual({});
-  });
-});
-
-describe('isGated', () => {
-  it('is true for a template carrying the gate action', () => {
-    expect(isGated(template([GATE, PUBLISH]))).toBe(true);
-  });
-
-  it('is true even for a malformed gate', () => {
-    // A template trying to be gated and failing must not read as freely
-    // runnable, so `isGated` is deliberately more permissive than
-    // `findGateStep`. This is what the catalog processor stamps its annotation
-    // from, so an operator can still see that the template intends a gate.
-    expect(isGated(template([PUBLISH, GATE]))).toBe(true);
-    expect(isGated(template([GATE, GATE]))).toBe(true);
-  });
-
-  it('is false for an ungated template and for other kinds', () => {
-    expect(isGated(template([PUBLISH]))).toBe(false);
     expect(
-      isGated({
-        apiVersion: 'backstage.io/v1alpha1',
-        kind: 'Component',
-        metadata: { name: 'svc' },
-        spec: { steps: [GATE] },
-      } as Entity),
-    ).toBe(false);
+      findGateStep(template([null, undefined] as unknown[])),
+    ).toBeUndefined();
   });
 });

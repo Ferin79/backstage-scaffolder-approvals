@@ -26,8 +26,7 @@ import type {
  * `checkDecisionEligibility` refuses it, and so does the backend — but it stays
  * `pending` in the database until the timeout sweep runs, up to five minutes
  * later. Showing "Awaiting approval" in that window tells people there is
- * something to do when there is not (B9 in the browser review), so it is shown
- * as what it already is.
+ * something to do when there is not, so it is shown as what it already is.
  */
 export function effectiveStatus(
   request: Pick<ApprovalRequest, 'status' | 'expiresAt'>,

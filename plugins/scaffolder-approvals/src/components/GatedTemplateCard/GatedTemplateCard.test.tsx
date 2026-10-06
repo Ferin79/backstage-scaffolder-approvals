@@ -117,7 +117,7 @@ function cardLinks() {
 
 describe('GatedTemplateCard', () => {
   it('names the approvers of a gated template, each linked to their page', async () => {
-    // B17: on Create…, nothing told a gated template from any other, and a
+    // On Create…, nothing told a gated template from any other, and a
     // requester found out on the wizard's last step.
     await render(
       { template: template() },

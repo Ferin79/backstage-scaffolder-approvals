@@ -24,7 +24,7 @@ import { STATUS_CODES } from 'node:http';
  *
  * Deliberately narrow. A 401 can be a key rotating, a 5xx or a dropped
  * connection says nothing about whether a task exists, and both are worth
- * retrying (Q9). Only an answer that proves no task was created, and that no
+ * retrying. Only an answer that proves no task was created, and that no
  * retry could change, ends the request here.
  */
 const DEFINITE_REFUSALS = new Set([400, 403, 404, 422]);

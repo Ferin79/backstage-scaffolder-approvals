@@ -209,7 +209,7 @@ The catalog module logs these at ingestion. They never stop a template from bein
 | `has an unusable gate:` about `values`                                                                 | Set `values: ${{ parameters }}`                                           |
 | `has an unusable gate:` about `if:`, `each:`, `always()` / `failure()` or `backstage:permissions.tags` | Remove the condition or loop, or add the missing tags to the gate         |
 | `has an unusable gate policy:` …                                                                       | Fix `approvers`, `quorum`, `selfApprove` or `timeout` as the message says |
-| `is gated but declares secret-typed parameter(s)`                                                      | Remove the secret field; use integration credentials                      |
+| `cannot be gated: its parameter(s) … are secret-typed`                                                 | Remove the secret field; use integration credentials                      |
 | `is gated but a later step uses secrets.USER_OAUTH_TOKEN`                                              | Use integration credentials                                               |
 | `is gated but a later step reads '${{ user.* }}'`                                                      | Use `${{ steps.gate.output.requestedBy }}`                                |
 

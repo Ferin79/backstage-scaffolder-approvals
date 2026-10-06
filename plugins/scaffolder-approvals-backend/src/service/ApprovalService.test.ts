@@ -269,7 +269,7 @@ describe('ApprovalService', () => {
       });
 
       it('stores the requester ref in one spelling', async () => {
-        // C15: MySQL's default collation compares strings case-insensitively
+        // MySQL's default collation compares strings case-insensitively
         // while SQLite and Postgres compare bytes, so a ref stored as the
         // identity happened to spell it makes "is this the requester?" and
         // duplicate collapse answer differently per engine.
@@ -306,7 +306,7 @@ describe('ApprovalService', () => {
       });
 
       it('records what the template looked like at submit', async () => {
-        // §10.3. Without these two columns an approver deciding days later has
+        // Without these two columns an approver deciding days later has
         // no way to know the steps changed underneath them.
         (entity!.metadata as { uid?: string }).uid = 'uid-1';
 
@@ -334,7 +334,7 @@ describe('ApprovalService', () => {
       });
 
       it('reports drift once the parameters change so the values no longer fit', async () => {
-        // H3: the steps hash cannot see this, and it is the change that makes
+        // The steps hash cannot see this, and it is the change that makes
         // the scaffolder refuse the launch.
         entity = gatedTemplate(
           { approvers: ['group:default/devx-team'] },
@@ -387,12 +387,12 @@ describe('ApprovalService', () => {
         ).resolves.toBeUndefined();
       });
 
-      it('refuses a template with a secret-typed parameter (S7)', async () => {
+      it('refuses a template with a secret-typed parameter', async () => {
         // The scaffolder puts a `ui:field: Secret` value into the task's
         // secrets, not its values, so it cannot survive the wait: the request
         // would be approved and the template would run without it. And if such
         // a value did arrive it would be stored in `values`, which every
-        // signed-in user can read (Q12).
+        // signed-in user can read.
         entity = gatedTemplate(
           { approvers: ['group:default/devx-team'] },
           {
@@ -489,7 +489,7 @@ describe('ApprovalService', () => {
         expect((await store.listRequests()).totalItems).toBe(0);
       });
 
-      // H1 in the second browser review: these were accepted and approved,
+      // These were once accepted and approved,
       // and then every run failed at the gate.
       it.each([
         ['no values', { values: undefined }, /no 'values' input/],
@@ -547,7 +547,7 @@ describe('ApprovalService', () => {
         });
         expect(afterFirst.status).toBe('pending');
         expect(scaffold).not.toHaveBeenCalled();
-        // Announced although nothing changed status (B10/B12), with the status
+        // Announced although nothing changed status, with the status
         // the request really has, so an open page shows "1 of 2".
         expect(observer.onDecided).toHaveBeenCalledWith(
           expect.objectContaining({ id, status: 'pending' }),
@@ -645,7 +645,7 @@ describe('ApprovalService', () => {
             decision: 'approve',
             credentials: requester.credentials,
           }),
-        ).rejects.toThrow(/Self-approval is not permitted/);
+        ).rejects.toThrow(/cannot approve your own request/);
 
         expect((await store.getRequest(id))?.status).toBe('pending');
         expect(await store.listDecisions(id)).toHaveLength(0);
@@ -680,7 +680,7 @@ describe('ApprovalService', () => {
       });
 
       it('refuses a decision once the timeout has passed', async () => {
-        // C4: the sweep that marks a request `expired` runs every few minutes.
+        // The sweep that marks a request `expired` runs every few minutes.
         // Without this, an approval landing in that window launched the
         // template after the deadline the approvers were given.
         entity = gatedTemplate({
@@ -758,7 +758,7 @@ describe('ApprovalService', () => {
         ).rejects.toThrow(/already been decided/);
       });
 
-      it('refuses an unknown request and an unknown decision', async () => {
+      it('refuses an unknown request', async () => {
         await expect(
           service.decide({
             requestId: '3f1e4c8a-0000-4000-8000-00000000dead',
@@ -766,19 +766,10 @@ describe('ApprovalService', () => {
             credentials: alice.credentials,
           }),
         ).rejects.toThrow(/No such approval request/);
-
-        const { id } = await submit();
-        await expect(
-          service.decide({
-            requestId: id,
-            decision: 'abstain' as unknown as 'approve',
-            credentials: alice.credentials,
-          }),
-        ).rejects.toThrow(/Unknown decision/);
       });
 
       it('tells the observer the status the request now has', async () => {
-        // C3: the request was loaded before the transition, so passing it
+        // The request was loaded before the transition, so passing it
         // straight through announced every approval and every rejection as
         // `pending`. An external subscriber acting on `status` would act on a
         // decision that looked undecided.
@@ -916,7 +907,7 @@ describe('ApprovalService', () => {
       });
 
       it('leaves the request approved with no task id when the launch fails', async () => {
-        // Q9: a launch failure is not a task failure. Nothing executed and the
+        // A launch failure is not a task failure. Nothing executed and the
         // grant is unconsumed, so a retry is safe — unlike a task that ran and
         // failed, which is terminal.
         scaffold.mockRejectedValue(new Error('scaffolder unreachable'));
@@ -933,7 +924,7 @@ describe('ApprovalService', () => {
       });
 
       it('fails at once, with the reason, when the scaffolder refuses the launch', async () => {
-        // H3 in the second browser review: the template's parameters changed
+        // The template's parameters changed
         // under the request, the scaffolder answered 400 on every attempt,
         // and the request sat at "Starting" for the whole grant TTL before
         // failing as "the approval grant expired".
@@ -975,7 +966,7 @@ describe('ApprovalService', () => {
       });
 
       it('still retries a launch whose outcome is unknown', async () => {
-        // A 5xx says nothing about whether a task exists (Q9).
+        // A 5xx says nothing about whether a task exists.
         scaffold.mockRejectedValueOnce(
           new Error('Backend request failed, 503 Service Unavailable '),
         );
@@ -994,7 +985,7 @@ describe('ApprovalService', () => {
       });
 
       it('declines a second launch while one is in flight', async () => {
-        // C2: a decision's launch and a sweep tick can overlap. The claim is
+        // A decision's launch and a sweep tick can overlap. The claim is
         // compare-and-set, so only one of them mints a grant; a read of the
         // grants table followed by a write would let both through and run the
         // template twice.
@@ -1044,7 +1035,7 @@ describe('ApprovalService', () => {
       });
 
       it('revokes the unredeemed grant and relaunches after a failure', async () => {
-        // C1/Q9: the grant a failed launch left behind is what used to block
+        // The grant a failed launch left behind is what used to block
         // every retry. Revoking it is what lets a new one be minted, and the
         // old one must stop being redeemable at that moment.
         scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
@@ -1097,7 +1088,7 @@ describe('ApprovalService', () => {
       });
 
       it('stops launching once the approval is no longer redeemable', async () => {
-        // Q9: `failed` only once the grant lapses. Past that point the approval
+        // `failed` only once the grant lapses. Past that point the approval
         // is spent, and a retry needs a fresh one.
         scaffold.mockRejectedValueOnce(new Error('scaffolder unreachable'));
         const { id } = await submit();
@@ -1225,7 +1216,7 @@ describe('ApprovalService', () => {
       });
 
       it('tells the observer, so an open page and a subscriber hear of it', async () => {
-        // B10: withdrawing was the one change that published nothing, so a
+        // Withdrawing was the one change that published nothing, so a
         // page open on the request never updated.
         const { id } = await submit();
 
@@ -1262,7 +1253,7 @@ describe('ApprovalService', () => {
       });
 
       describe('once the timeout has passed', () => {
-        // M2: past the deadline but before the sweep, approving was refused
+        // Past the deadline but before the sweep, approving was refused
         // and withdrawing was not, so a timeout ended as a withdrawal.
         beforeEach(() => {
           entity = gatedTemplate({

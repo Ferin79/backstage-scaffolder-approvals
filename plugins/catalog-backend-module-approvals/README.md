@@ -55,11 +55,11 @@ The module logs a warning, and never blocks ingestion, when a gated template wil
 | `has an unusable gate:` about `values`                                                  | The gate cannot check the run against the approval, so it can never pass               |
 | `has an unusable gate:` about `if:`, `each:`, `always()`/`failure()` or permission tags | The scaffolder could run steps without the gate passing                                |
 | `has an unusable gate policy:`                                                          | `approvers`, `quorum`, `selfApprove` or `timeout` is invalid                           |
-| `is gated but declares secret-typed parameter(s)`                                       | Secrets cannot survive the wait; requests are refused                                  |
+| `cannot be gated: its parameter(s) … are secret-typed`                                  | Secrets cannot survive the wait; requests are refused                                  |
 | `is gated but a later step uses secrets.USER_OAUTH_TOKEN`                               | The requester's token will have expired by the time the run starts                     |
 | `is gated but a later step reads '${{ user.* }}'`                                       | Approved runs have no user, so those render empty. Use `steps.gate.output.requestedBy` |
 
-They are warnings on purpose. An error that kept a template out of the catalog would make _deleting the gate_ the way to get it back, which is the wrong incentive.
+The first four come from the same check the backend runs at submit, so only the first problem with a gate is reported; fix it and the next, if any, appears on the next refresh. They are warnings on purpose. An error that kept a template out of the catalog would make _deleting the gate_ the way to get it back, which is the wrong incentive.
 
 ## Accepted risk
 

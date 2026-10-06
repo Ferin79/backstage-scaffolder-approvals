@@ -39,7 +39,7 @@ const INBOX = {
 
 describe('the dev harness', () => {
   it('gives its own user something to decide', async () => {
-    // B21: every request named devx-team, which the guest is not in, so the
+    // Every request named devx-team, which the guest is not in, so the
     // inbox listed requests nobody in the harness could act on.
     const api = harnessApi();
 

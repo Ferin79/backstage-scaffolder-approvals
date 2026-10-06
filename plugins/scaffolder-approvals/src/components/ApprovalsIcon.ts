@@ -27,10 +27,10 @@ const SIZES = {
 /**
  * A clipboard with a tick: a list of things waiting to be agreed to.
  *
- * An inline SVG rather than one from an icon set, which keeps this package
- * from taking a dependency for a single glyph. `currentColor` is what makes it
- * follow the colour of whatever it sits in, in both themes. Shaped as an
- * `IconComponent`, so the nav item and the template card can share it.
+ * Shaped as Backstage's `IconComponent` (a `fontSize` prop, not Remix Icon's
+ * `size`), which is what the nav item and the template card's links take.
+ * `currentColor` makes it follow the colour of whatever it sits in, in both
+ * themes.
  *
  * `createElement` rather than JSX, so the `.ts` alpha entrypoint can use it.
  */

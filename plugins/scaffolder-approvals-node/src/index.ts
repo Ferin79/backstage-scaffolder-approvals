@@ -15,13 +15,12 @@
  */
 
 /**
- * Backend-shared types, permission rules and service refs for scaffolder-approvals.
+ * Backend helpers and permission rules for the scaffolder-approvals plugin.
  *
  * @packageDocumentation
  */
 
 export * from './hashes';
 export * from './grantToken';
-export * from './gateStep';
 export * from './templateDrift';
 export * from './permissions';

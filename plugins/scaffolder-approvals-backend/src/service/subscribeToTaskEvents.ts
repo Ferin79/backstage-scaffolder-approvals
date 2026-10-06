@@ -24,9 +24,8 @@ import type { ApprovalSweeps } from './ApprovalSweeps';
 /**
  * The topic the scaffolder publishes task lifecycle events on.
  *
- * Verified against `DatabaseTaskStore`, which publishes to `scaffolder.task`
- * with an `eventPayload` carrying `{ id, status, ... }` — on task creation, on
- * claim, on every status change and on cancellation.
+ * `DatabaseTaskStore` publishes to it on task creation, on claim, on every
+ * status change and on cancellation.
  *
  * The subscription is still written defensively, and stays an optimisation
  * rather than a guarantee: another plugin's payload shape is not this plugin's
@@ -47,10 +46,10 @@ interface TaskEventPayload {
  * Read a task id and status out of an event payload, defensively.
  *
  * The payload comes from another plugin's contract, so this reads what it needs
- * and ignores everything else rather than assuming a shape. The scaffolder
- * spells it `id`; `taskId` is accepted too, because that is what the field
- * would plausibly be renamed to and guessing wrong would silently disable the
- * fast path rather than failing loudly.
+ * and ignores everything else rather than assuming a shape. The scaffolder's
+ * payloads are not uniform: most carry the task id as `id`, but the
+ * cancellation event carries it as `taskId` and uses `id` for the id of its
+ * task-event row. So `taskId` wins when present.
  */
 export function readTaskEvent(
   payload: unknown,
@@ -71,7 +70,8 @@ export function readTaskEvent(
 
 /**
  * Subscribe to scaffolder task events so a finished run updates its request
- * without waiting for the next sweep (Q4 — both push and pull).
+ * without waiting for the next reconciliation sweep, which remains the
+ * backstop.
  */
 export async function subscribeToTaskEvents(options: {
   events: EventsService;

@@ -17,7 +17,7 @@
 // @ts-check
 
 /**
- * What the template looked like when the request was submitted (§10.3).
+ * What the template looked like when the request was submitted.
  *
  * `values` and `policy_snapshot` are frozen at submit, but the template itself
  * is loaded live from the catalog at launch time. A template edited during the

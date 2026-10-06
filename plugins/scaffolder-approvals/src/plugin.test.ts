@@ -25,9 +25,9 @@ import {
 import { requestRouteRef, rootRouteRef } from './routes';
 
 /**
- * The package dual-ships (Q14), so both entrypoints have to construct. The
+ * The package dual-ships, so both entrypoints have to construct. The
  * point of the smoke test is that the two wirings cannot drift apart unnoticed
- * — they mount the same components, and only the wiring is duplicated (Q23).
+ * — they mount the same components, and only the wiring is duplicated.
  */
 describe('dual-shipped plugin definitions', () => {
   describe('the legacy frontend system', () => {
@@ -49,7 +49,7 @@ describe('dual-shipped plugin definitions', () => {
       expect(ApprovalsIndexPage).toBeDefined();
     });
 
-    it('exposes the home-page card (Q22)', () => {
+    it('exposes the home-page card', () => {
       expect(PendingApprovalsHomePageCard).toBeDefined();
     });
   });
@@ -75,7 +75,7 @@ describe('dual-shipped plugin definitions', () => {
       ).toBeDefined();
     });
 
-    it('gives the page a nav title and icon (Q22)', () => {
+    it('gives the page a nav title and icon', () => {
       // There is no `NavItemBlueprint` in this Backstage version: a page
       // carries its own title and icon and the app builds the sidebar entry
       // from them. Without these the page is reachable only by URL, which for

@@ -18,7 +18,7 @@ import {
   type ApprovalDecision,
   computeQuorumProgress,
   isApprovalRequestStatus,
-  isTerminalStatus,
+  TERMINAL_APPROVAL_REQUEST_STATUSES,
 } from './types';
 
 function decision(
@@ -105,20 +105,14 @@ describe('computeQuorumProgress', () => {
 });
 
 describe('status helpers', () => {
-  it('identifies terminal statuses', () => {
-    expect(isTerminalStatus('pending')).toBe(false);
-    expect(isTerminalStatus('approved')).toBe(false);
-    expect(isTerminalStatus('running')).toBe(false);
-
-    for (const status of [
+  it('lists the statuses a request can never leave', () => {
+    expect([...TERMINAL_APPROVAL_REQUEST_STATUSES].sort()).toEqual([
+      'cancelled',
       'completed',
+      'expired',
       'failed',
       'rejected',
-      'cancelled',
-      'expired',
-    ] as const) {
-      expect(isTerminalStatus(status)).toBe(true);
-    }
+    ]);
   });
 
   it('guards statuses read back as bare strings', () => {

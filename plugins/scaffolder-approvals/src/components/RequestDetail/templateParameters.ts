@@ -43,14 +43,21 @@ export type ParameterTitles = ReadonlyMap<string, string>;
  */
 export type ParameterStanding = 'shown' | 'hidden' | 'undeclared';
 
+/**
+ * Judges submitted parameters against a template's form: given the answers,
+ * where each key stands.
+ *
+ * @internal
+ */
+export type ParameterJudge = (
+  values: Record<string, unknown>,
+) => (key: string) => ParameterStanding;
+
 /** @internal */
 export interface TemplateParameters {
   titles: ParameterTitles;
   /** Undefined when the template could not be read: then nothing is judged. */
-  standing?: (
-    key: string,
-    values: Record<string, unknown>,
-  ) => ParameterStanding;
+  standing?: ParameterJudge;
 }
 
 type Schema = Record<string, unknown>;
@@ -226,20 +233,21 @@ function walkPage(
 }
 
 /**
- * Judges each submitted parameter against a template's parameter pages.
+ * Judges each submitted parameter against a template's parameter pages. The
+ * pages are walked once per set of answers, not once per key.
  *
  * @internal
  */
-export function parameterStanding(
-  parameters: unknown,
-): (key: string, values: Record<string, unknown>) => ParameterStanding {
+export function parameterStanding(parameters: unknown): ParameterJudge {
   const pages = pagesOf(parameters);
-  return (key, values) => {
+  return values => {
     const shown = new Set<string>();
     const declared = new Set<string>();
     pages.forEach(page => walkPage(page, values, shown, declared));
-    if (shown.has(key)) return 'shown';
-    return declared.has(key) ? 'hidden' : 'undeclared';
+    return key => {
+      if (shown.has(key)) return 'shown';
+      return declared.has(key) ? 'hidden' : 'undeclared';
+    };
   };
 }
 

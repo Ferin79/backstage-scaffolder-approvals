@@ -42,7 +42,7 @@ const ALL_TABLES = [
  * What the database said when it refused a write, or that it did not refuse.
  *
  * Not `rejects.toThrow()`, which is what these tests used and why they failed
- * intermittently (T6 in the code review, B13 in the browser review). The write
+ * intermittently. The write
  * *was* refused every time. But better-sqlite3 registers its error class with
  * its native addon once per process, and Jest gives each test file its own
  * realm. So in a worker that has already run another SQLite suite, a

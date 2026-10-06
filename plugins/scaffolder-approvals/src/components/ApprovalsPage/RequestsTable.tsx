@@ -14,15 +14,10 @@
  * limitations under the License.
  */
 
-import {
-  type ApprovalRequest,
-  type ApprovalRequestRole,
-  type ApprovalRequestStatus,
-} from '@ferin79/backstage-plugin-scaffolder-approvals-common';
+import type { ApprovalRequest } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { useRouteRef } from '@backstage/core-plugin-api';
 import { useEntityPresentation } from '@backstage/plugin-catalog-react';
 import {
-  Avatar,
   Cell,
   CellText,
   Flex,
@@ -36,6 +31,8 @@ import { useMemo } from 'react';
 import type { ApprovalsApi } from '../../api';
 import { requestRouteRef } from '../../routes';
 import { ApprovalsIcon } from '../ApprovalsIcon';
+import { PersonAvatar } from '../PersonAvatar';
+import type { RequestsQuery } from '../queries';
 import { StatusPill } from '../StatusPill';
 import { effectiveStatus } from '../StatusPill/effectiveStatus';
 import { Timestamp } from '../Timestamp';
@@ -48,10 +45,10 @@ type Row = ApprovalRequest;
 /**
  * The template's catalog title, with the request's summary under it.
  *
- * The catalog's name rather than the ref's last segment (B16): "Request GitHub
- * admin access", not "request-github-admin". Not a link, because the whole row
+ * The catalog's name rather than the ref's last segment: "Request GitHub admin
+ * access", not "request-github-admin". Not a link, because the whole row
  * already is one. Until the catalog answers, and for an entity it does not
- * know, this is the name from the ref, as it was before.
+ * know, this is the name from the ref.
  */
 function TemplateCell(props: { item: Row }) {
   const { item } = props;
@@ -67,17 +64,18 @@ function TemplateCell(props: { item: Row }) {
 }
 
 /**
- * Who asked, by the name the catalog has for them (B16), beside their
- * initials. The avatar is decoration: the name next to it says the same.
+ * Who asked, by the name the catalog has for them, beside their initials. The
+ * avatar is decoration: the name next to it says the same.
  */
 function RequesterCell(props: { item: Row }) {
-  const { primaryTitle } = useEntityPresentation(props.item.requesterRef, {
+  const { requesterRef } = props.item;
+  const { primaryTitle } = useEntityPresentation(requesterRef, {
     defaultKind: 'user',
   });
   return (
     <Cell>
       <Flex align="center" gap="2">
-        <Avatar src="" name={primaryTitle} size="small" purpose="decoration" />
+        <PersonAvatar entityRef={requesterRef} />
         <Text variant="body-medium">{primaryTitle}</Text>
       </Flex>
     </Cell>
@@ -89,7 +87,7 @@ function RequesterCell(props: { item: Row }) {
  *
  * Not core-components' `EmptyState`: its illustration is taller than the
  * table's empty row, so the table overflowed BUI's scroll container and
- * showed a scrollbar with nothing to scroll (B15 in the browser review).
+ * showed a scrollbar with nothing to scroll.
  *
  * `grow`, because BUI puts the empty state in a row of its own: without it
  * this took only its content's width, and sat centred over the first column
@@ -117,28 +115,13 @@ function EmptyRow(props: { title: string; description: string }) {
   );
 }
 
-/** @public */
+/** @internal */
 export interface RequestsTableProps {
   api: ApprovalsApi;
-  /**
-   * Which side of a request to list.
-   *
-   * Not called `role`: that is a DOM attribute name, so a prop with that name
-   * reads as ARIA to a linter and to anyone skimming the JSX.
-   */
-  viewAs: ApprovalRequestRole;
-  /**
-   * With `viewAs="approver"`, only the requests the viewer can still decide
-   * on: not ones they have voted on, and not their own when self-approval is
-   * forbidden. What an inbox wants; a history of what someone was asked about
-   * does not.
-   */
-  actionable?: boolean;
-  status?: ApprovalRequestStatus[];
+  /** Which requests to list; the table pages through them. */
+  query: RequestsQuery;
   emptyTitle: string;
   emptyDescription: string;
-  /** Bumped by the caller to force a refetch — see ApprovalsPage. */
-  reloadToken?: number;
 }
 
 /**
@@ -148,31 +131,22 @@ export interface RequestsTableProps {
  * paging in the browser: the backend reports a total independent of the page
  * size, and an approvals inbox is exactly the thing that grows.
  *
- * @public
+ * @internal
  */
 export function RequestsTable(props: RequestsTableProps) {
-  const {
-    api,
-    viewAs,
-    actionable,
-    status,
-    emptyTitle,
-    emptyDescription,
-    reloadToken,
-  } = props;
+  const { api, query, emptyTitle, emptyDescription } = props;
 
   const requestRoute = useRouteRef(requestRouteRef);
 
   // Below BUI's `sm` breakpoint (768px) there is room for what a request is
-  // and where it stands, not for four columns: every column truncated, and the
-  // status pills were clipped mid-word (B14 in the browser review). Who asked
-  // and when are on the request page, one tap away.
+  // and where it stands, not for four columns without truncating every one.
+  // Who asked and when are on the request page, one tap away.
   const { up } = useBreakpoint();
   const narrow = !up('sm');
 
   // On "Your requests" every row was asked for by the viewer, so a column
-  // saying so is noise (B20).
-  const hideRequester = narrow || viewAs === 'requester';
+  // saying so is noise.
+  const hideRequester = narrow || query.role === 'requester';
 
   const columnConfig = useMemo(
     () => [
@@ -202,7 +176,7 @@ export function RequestsTable(props: RequestsTableProps) {
         cell: (item: Row) => (
           <Cell>
             {/* Past its deadline is expired, whether or not the sweep has
-                caught up with it yet (B9). */}
+                caught up with it yet. */}
             <StatusPill status={effectiveStatus(item)} />
           </Cell>
         ),
@@ -225,14 +199,9 @@ export function RequestsTable(props: RequestsTableProps) {
 
   const { tableProps, reload } = useTable<Row>({
     mode: 'offset',
-    // `reloadToken` participates so that deciding on a request refreshes the
-    // list behind it without a full page reload.
     getData: async ({ pageSize, offset }: OffsetParams<unknown>) => {
-      void reloadToken;
       const page = await api.listRequests({
-        role: viewAs,
-        actionable,
-        status,
+        ...query,
         limit: pageSize,
         offset,
       });

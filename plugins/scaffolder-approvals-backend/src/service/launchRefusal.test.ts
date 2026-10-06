@@ -101,7 +101,7 @@ describe('describeLaunchRefusal', () => {
     );
   });
 
-  // Q9: these say nothing about whether a task exists, so the launch must be
+  // These say nothing about whether a task exists, so the launch must be
   // retried rather than failed.
   it.each([
     ['a 500', clientFailure('500 Internal Server Error', {})],

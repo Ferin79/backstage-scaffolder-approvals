@@ -33,6 +33,7 @@ import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsIcon } from '../ApprovalsIcon';
+import { INBOX_QUERY } from '../queries';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
 import styles from './PendingApprovalsCard.module.css';
 
@@ -44,11 +45,8 @@ import styles from './PendingApprovalsCard.module.css';
  * see the count, a request that arrived while somebody was on holiday waits
  * until it expires.
  *
- * Counted with `role=approver`, `actionable` and `status=pending`, which is the
- * same query the inbox tab runs — so the number here and the list there cannot
- * disagree. `actionable` is what lets the number fall when somebody votes: a
- * request they have decided, or their own that they may not approve, is not
- * waiting on them.
+ * Counted with the same query the inbox tab runs, so the number here and the
+ * list there cannot disagree, and the number falls when somebody votes.
  * `limit: 1` because only `totalItems` is wanted; the rows are the page's job.
  *
  * @public
@@ -79,9 +77,8 @@ export function PendingApprovalsCard() {
  *
  * In the card's actions rather than as an `InfoCard` deep link, because the
  * home-page extensions draw their own card and take only `Content` and
- * `Actions` from this one. With a deep link, the card on the home page had no
- * way to the page at all (B19 in the browser review). This way the standalone
- * card and both extensions are the same card.
+ * `Actions` from this one. This way the standalone card and both extensions
+ * are the same card.
  *
  * @internal
  */
@@ -118,13 +115,7 @@ export function PendingApprovalsContent() {
   useOnApprovalsChange(() => setVersion(value => value + 1));
 
   const state = useAsync(
-    () =>
-      api.listRequests({
-        role: 'approver',
-        actionable: true,
-        status: ['pending'],
-        limit: 1,
-      }),
+    () => api.listRequests({ ...INBOX_QUERY, limit: 1 }),
     [api, version],
   );
 
@@ -170,7 +161,7 @@ export function PendingApprovalsContent() {
           {count}
         </Text>
         {/* `body-large`, the size of the body text in the MUI cards a home
-            page puts beside this one (B19). */}
+            page puts beside this one. */}
         <Text variant="body-large" color="secondary">
           {count === 0
             ? 'Nothing is waiting on you.'

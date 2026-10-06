@@ -66,13 +66,18 @@ export function driftBlocksLaunch(drift?: TemplateDrift): boolean {
   );
 }
 
-/** @public */
+/** @internal */
 export interface DriftNoticeProps {
   drift?: TemplateDrift;
+  /**
+   * How loudly to say it. `danger` on the page; the approve dialog softens it
+   * to `warning` when approving will still launch.
+   */
+  status?: 'danger' | 'warning';
 }
 
 /**
- * Warn an approver that the template has changed under them (§10.3).
+ * Warn an approver that the template has changed under them.
  *
  * The values and the policy are frozen when a request is submitted, but the
  * template is read live from the catalog at launch. Somebody approving three
@@ -84,10 +89,11 @@ export interface DriftNoticeProps {
  * evidence of a change, and a warning that fires on infrastructure trouble is
  * one people learn to click past.
  *
- * @public
+ * @internal
  */
 export function DriftNotice(props: DriftNoticeProps) {
-  const explanations = explainDrift(props.drift);
+  const { drift, status = 'danger' } = props;
+  const explanations = explainDrift(drift);
   if (explanations.length === 0) {
     return null;
   }
@@ -97,7 +103,7 @@ export function DriftNotice(props: DriftNoticeProps) {
       // `alert` rather than `status`: this changes what approving means, so
       // it is worth interrupting a screen-reader user for.
       role="alert"
-      status="danger"
+      status={status}
       icon
       title="The template has changed"
       description={

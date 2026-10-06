@@ -167,7 +167,7 @@ describe('GatedReviewStep', () => {
 
     // One sentence, the same the request page uses afterwards. It used to be
     // "2 of these must approve" above a list, which with a single group read
-    // as if two groups were expected (B18).
+    // as if two groups were expected.
     expect(
       await screen.findByText(/^Needs 2 approvals from/),
     ).toHaveTextContent(
@@ -177,7 +177,7 @@ describe('GatedReviewStep', () => {
   });
 
   it('links each approver to their catalog page, in a new tab', async () => {
-    // B16: by name, not as a raw ref, and somewhere to find out who is in the
+    // By name, not as a raw ref, and somewhere to find out who is in the
     // group. A new tab, because leaving the wizard throws away the form.
     await render({ entity: template(true) });
 
@@ -205,7 +205,7 @@ describe('GatedReviewStep', () => {
   });
 
   it('shows the values being submitted, as the ordinary review step does', async () => {
-    // B7: replacing the review step had dropped its table, so a requester
+    // Replacing the review step had dropped its table, so a requester
     // submitted values they could no longer see — the very values the
     // approvers judge and the approval is bound to.
     await render({ entity: template(true) });
@@ -216,7 +216,7 @@ describe('GatedReviewStep', () => {
   });
 
   describe('a template the backend would refuse', () => {
-    // B8: the button was offered, and only the backend said no.
+    // The button was offered, and only the backend said no.
     it('says it cannot be requested, why, and offers only Back', async () => {
       const entity = template(true);
       (entity.spec.steps[0] as Record<string, unknown>).if =
@@ -240,7 +240,7 @@ describe('GatedReviewStep', () => {
       expect(submitRequest).not.toHaveBeenCalled();
     });
 
-    // H1: without the whole parameters to compare, the gate refuses every run,
+    // Without the whole parameters to compare, the gate refuses every run,
     // so the request must not be offered only to fail after approval.
     it.each([
       ['no values', undefined],

@@ -20,9 +20,7 @@ import {
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   approvalRequestResourceRef,
-  hasTemplateRef,
-  isDesignatedApprover,
-  isNotRequester,
+  scaffolderApprovalsPermissionRules,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
 import {
   coreServices,
@@ -76,7 +74,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
         catalog: catalogServiceRef,
         events: eventsServiceRef,
         scaffolder: scaffolderServiceRef,
-        // Soft dependencies (§7.5). Both refs carry a default factory, so they
+        // Soft dependencies. Both refs carry a default factory, so they
         // always resolve and the backend starts whether or not the plugins
         // behind them are installed — what degrades is the call, not startup.
         // `ApprovalNotifier` swallows and logs those failures, so a deployment
@@ -115,7 +113,7 @@ export const scaffolderApprovalsPlugin = createBackendPlugin({
         permissionsRegistry.addResourceType({
           resourceRef: approvalRequestResourceRef,
           permissions: scaffolderApprovalsPermissions,
-          rules: [isDesignatedApprover, isNotRequester, hasTemplateRef],
+          rules: [...scaffolderApprovalsPermissionRules],
           getResources: async resourceRefs => store.getManyByIds(resourceRefs),
         });
 

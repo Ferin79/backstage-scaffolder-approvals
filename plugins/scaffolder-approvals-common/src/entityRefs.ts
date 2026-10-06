@@ -34,3 +34,31 @@ export function normaliseEntityRef(ref: string): string {
     parseEntityRef(ref.trim(), { defaultNamespace: 'default' }),
   );
 }
+
+/**
+ * {@link normaliseEntityRef}, or `undefined` for a ref that does not parse.
+ *
+ * For comparisons: a ref that cannot be read cannot match anything, so it is
+ * dropped rather than failing the whole check.
+ *
+ * @public
+ */
+export function tryNormaliseEntityRef(ref: string): string | undefined {
+  try {
+    return normaliseEntityRef(ref);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether two refs name the same entity, whatever their casing or namespace
+ * spelling. False when either does not parse, so a malformed ref never
+ * matches.
+ *
+ * @public
+ */
+export function isSameEntityRef(a: string, b: string): boolean {
+  const left = tryNormaliseEntityRef(a);
+  return left !== undefined && left === tryNormaliseEntityRef(b);
+}

@@ -44,7 +44,7 @@ describe('PendingApprovalsCard', () => {
 
     expect(await screen.findByText('3')).toBeInTheDocument();
     // `actionable`, so a request the viewer has already voted on, or their own
-    // under a gate that forbids self-approval, does not keep the count up (B2).
+    // under a gate that forbids self-approval, does not keep the count up.
     expect(listRequests).toHaveBeenCalledWith({
       role: 'approver',
       actionable: true,
@@ -97,13 +97,13 @@ describe('PendingApprovalsCard', () => {
     );
 
     // The card extension is lazy-loaded, which is slow on a busy machine: this
-    // and the test below failed twice under load in the browser review and
+    // and the test below failed twice under load and
     // passed every time alone. Generous waits rather than flaky ones.
     expect(
       await screen.findByText('2', undefined, { timeout: 10_000 }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Approvals')).toHaveLength(1);
-    // B19: the extension draws its own card, and used to take only the
+    // The extension draws its own card, and used to take only the
     // content from this one, so the home page had no way to the page.
     expect(
       screen.getByRole('link', { name: 'Open approvals' }),
@@ -121,7 +121,7 @@ describe('PendingApprovalsCard', () => {
   });
 
   it('writes its sentence at the size of the cards beside it', async () => {
-    // B19: BUI's default body text is 14px; the Material UI cards a home page
+    // BUI's default body text is 14px; the Material UI cards a home page
     // puts next to this one use 16px, which is BUI's `body-large`.
     await render({
       listRequests: async () => ({ items: [], totalItems: 0 }),
@@ -146,7 +146,7 @@ describe('PendingApprovalsCard', () => {
   }, 20_000);
 
   it('recounts when the backend signals a change', async () => {
-    // B10: a request arriving, or somebody else deciding the one that was
+    // A request arriving, or somebody else deciding the one that was
     // waiting, changed the number only on a page reload.
     let deliver: (message: object) => void = () => {};
     const signalApi = {

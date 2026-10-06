@@ -18,7 +18,7 @@ import {
   DEFAULT_NAMESPACE,
   stringifyEntityRef,
 } from '@backstage/catalog-model';
-import { alertApiRef, useApi, useRouteRef } from '@backstage/core-plugin-api';
+import { alertApiRef, useApi } from '@backstage/core-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import type { ReviewStepProps } from '@backstage/plugin-scaffolder-react';
 import {
@@ -38,13 +38,13 @@ import {
 } from '@backstage/ui';
 import { RiArrowLeftLine, RiSendPlaneLine } from '@remixicon/react';
 import { useCallback, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import useAsync from 'react-use/esm/useAsync';
-import { approvalsApiRef } from '../../api';
-import { rootRouteRef } from '../../routes';
 import { ApprovalsIcon } from '../ApprovalsIcon';
+import { messageOf } from '../errors';
 import { PolicySummary } from '../PolicySummary';
 import { readGate } from '../readGate';
+import { useSubmitApprovalRequest } from '../useSubmitApprovalRequest';
 import styles from './GatedReviewStep.module.css';
 
 /** @public */
@@ -96,10 +96,8 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
   const { formData, children } = props;
 
   const catalogApi = useApi(catalogApiRef);
-  const approvalsApi = useApi(approvalsApiRef);
   const alertApi = useApi(alertApiRef);
-  const navigate = useNavigate();
-  const rootPath = useRouteRef(rootRouteRef);
+  const submitRequest = useSubmitApprovalRequest();
   const [busy, setBusy] = useState(false);
 
   // The scaffolder routes the wizard as `/templates/:namespace/:templateName`,
@@ -131,40 +129,30 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
     const entity = (await catalogApi.getEntityByRef(templateRef)) as
       | TemplateEntityV1beta3
       | undefined;
-    // The same reading the template card on the Create page uses (B17), and
-    // the same checks the backend runs at submit (B8), so a template it would
-    // refuse is not offered for approval in the first place.
+    // The same reading the template card on the Create page uses, and the
+    // same checks the backend runs at submit, so a template it would refuse is
+    // not offered for approval in the first place.
     return entity && readGate(entity, templateRef);
   }, [catalogApi, templateRef]);
 
   const submit = useCallback(async () => {
     setBusy(true);
     try {
-      const created = await approvalsApi.submitRequest({
-        templateRef: templateRef!,
-        values: formData as JsonObject,
-      });
-      alertApi.post({
-        message: created.collapsed
-          ? 'You already have an identical request open'
-          : 'Approval requested',
-        severity: 'success',
-        display: 'transient',
-      });
-      navigate(`${rootPath()}/requests/${created.id}`);
+      await submitRequest(
+        { templateRef: templateRef!, values: formData as JsonObject },
+        'Approval requested',
+      );
     } catch (error) {
       // The backend validates the values against the template's own parameter
       // schema and refuses in words worth reading, so show what it said.
       alertApi.post({
-        message: `Could not request approval: ${
-          error instanceof Error ? error.message : error
-        }`,
+        message: `Could not request approval: ${messageOf(error)}`,
         severity: 'error',
       });
     } finally {
       setBusy(false);
     }
-  }, [alertApi, approvalsApi, formData, navigate, rootPath, templateRef]);
+  }, [alertApi, formData, submitRequest, templateRef]);
 
   if (state.loading) {
     return (
@@ -185,10 +173,8 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
 
   return (
     <Flex direction="column" gap="4">
-      {/* What is being asked for, before who is being asked. Replacing the
-          review step had dropped this table, so a requester submitted values
-          they could no longer see — and those values are exactly what the
-          approvers judge and what the approval is bound to (B7). */}
+      {/* What is being asked for, before who is being asked: these values are
+          exactly what the approvers judge and what the approval is bound to. */}
       <ReviewState
         formState={formData}
         // The stepper passes its parsed steps, titles included; the prop type
@@ -230,7 +216,7 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
             <Button
               variant="tertiary"
               isDisabled={busy}
-              onClick={props.handleBack}
+              onPress={props.handleBack}
               iconStart={<RiArrowLeftLine aria-hidden />}
             >
               Back
@@ -239,7 +225,7 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
               variant="primary"
               isDisabled={busy}
               isPending={busy}
-              onClick={submit}
+              onPress={submit}
               data-testid="request-approval"
               iconStart={<RiSendPlaneLine aria-hidden />}
             >
@@ -271,7 +257,7 @@ export function GatedReviewStep(props: GatedReviewStepProps) {
           <Flex gap="2" justify="end">
             <Button
               variant="tertiary"
-              onClick={props.handleBack}
+              onPress={props.handleBack}
               iconStart={<RiArrowLeftLine aria-hidden />}
             >
               Back

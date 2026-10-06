@@ -18,13 +18,16 @@ import {
   type ApprovalDecisionOutcome,
   type ApprovalRequest,
   type ApprovalRequestStatus,
+  type ApprovalRequestWithDecisions,
   checkDecisionEligibility,
   computeQuorumProgress,
+  type DecisionEligibility,
   type DecisionIneligibility,
+  isSameEntityRef,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
-import { parseEntityRef } from '@backstage/catalog-model';
 import {
   alertApiRef,
+  type BackstageUserIdentity,
   identityApiRef,
   useApi,
   useRouteRef,
@@ -50,9 +53,12 @@ import useAsync from 'react-use/esm/useAsync';
 import { approvalsApiRef } from '../../api';
 import { rootRouteRef } from '../../routes';
 import { ApprovalsLayout, DocumentTitle } from '../ApprovalsLayout';
+import { httpStatusOf, messageOf } from '../errors';
+import { scaffolderTemplateFormPath } from '../scaffolderPaths';
 import { StatusPill } from '../StatusPill';
 import { effectiveStatus } from '../StatusPill/effectiveStatus';
 import { useOnApprovalsChange } from '../useOnApprovalsChange';
+import { useSubmitApprovalRequest } from '../useSubmitApprovalRequest';
 import { DecisionDialog } from './DecisionDialog';
 import { DecisionPanel } from './DecisionPanel';
 import { DriftNotice } from './DriftNotice';
@@ -67,7 +73,7 @@ import styles from './RequestDetail.module.css';
 /**
  * What a request is called: its gate's rendered summary, or the template's
  * catalog name when there is none — a gate need not define a summary, and
- * redaction removes it. Never the raw template ref (B16).
+ * redaction removes it. Never the raw template ref.
  */
 function RequestTitle(props: {
   request: Pick<ApprovalRequest, 'summary' | 'templateRef'>;
@@ -83,11 +89,10 @@ function RequestTitle(props: {
 /**
  * The page header: what the request is, who asked, and where it stands.
  *
- * The catalog's names, not raw refs (B16), as plain strings: BUI's header
- * takes a string title and description. The requester's link to their
- * catalog page is in the Details card instead. The status is a labelled
- * metadata item, which wraps under the title on a narrow screen rather than
- * sliding over it (B14).
+ * The catalog's names as plain strings, because BUI's header takes a string
+ * title and description; the requester's link to their catalog page is in the
+ * Details card instead. The status is a labelled metadata item, which wraps
+ * under the title on a narrow screen rather than sliding over it.
  */
 function RequestHeader(props: {
   request: Pick<ApprovalRequest, 'summary' | 'templateRef' | 'requesterRef'>;
@@ -114,26 +119,12 @@ function RequestHeader(props: {
   );
 }
 
-/** The HTTP status of a backend refusal, when the error carries one. */
-function statusOf(error: unknown): number | undefined {
-  const statusCode = (error as { statusCode?: unknown } | undefined)
-    ?.statusCode;
-  return typeof statusCode === 'number' ? statusCode : undefined;
-}
-
-/**
- * The scaffolder's form for a template, filled in with `values`.
- *
- * The scaffolder pre-fills its wizard from a `formData` query parameter. It is
- * assumed to be mounted at `/create`, as the task links on this page already
- * assume (L13 in the browser review).
- */
-function prefilledTemplateForm(templateRef: string, values: JsonObject) {
-  const { namespace, name } = parseEntityRef(templateRef);
-  const query = new URLSearchParams({ formData: JSON.stringify(values) });
-  return `/create/templates/${encodeURIComponent(
-    namespace,
-  )}/${encodeURIComponent(name)}?${query}`;
+/** Whether the signed-in user may decide on the request, and if not, why. */
+function eligibilityOf(
+  request: ApprovalRequestWithDecisions,
+  identity: BackstageUserIdentity,
+): DecisionEligibility {
+  return checkDecisionEligibility(request, identity, request.decisions);
 }
 
 /**
@@ -167,13 +158,12 @@ export function RequestDetail(props: RequestDetailProps) {
   const api = useApi(approvalsApiRef);
   const alertApi = useApi(alertApiRef);
   const identityApi = useApi(identityApiRef);
-
   const navigate = useNavigate();
-  const rootPath = useRouteRef(rootRouteRef);
+  const submitRequest = useSubmitApprovalRequest();
 
   const [reload, setReload] = useState(0);
+  const refresh = useCallback(() => setReload(value => value + 1), []);
   const [deciding, setDeciding] = useState<ApprovalDecisionOutcome>();
-  // Withdrawing asks first, as approving and denying do (B11).
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -186,8 +176,8 @@ export function RequestDetail(props: RequestDetailProps) {
   }, [api, identityApi, requestId, reload]);
 
   // Somebody else's decision, the template launching, its task finishing, the
-  // sweep expiring it: all of these used to appear only on a manual reload.
-  useOnApprovalsChange(() => setReload(value => value + 1), requestId);
+  // sweep expiring it: the page follows along without a reload.
+  useOnApprovalsChange(refresh, requestId);
 
   const decide = useCallback(
     async (decision: ApprovalDecisionOutcome, comment?: string) => {
@@ -201,30 +191,25 @@ export function RequestDetail(props: RequestDetailProps) {
           display: 'transient',
         });
         setDeciding(undefined);
-        setReload(value => value + 1);
+        refresh();
       } catch (error) {
-        // The backend's refusals are written to be read, so show what it said
-        // rather than a generic failure.
         alertApi.post({
-          message: `Could not record your decision: ${
-            error instanceof Error ? error.message : error
-          }`,
+          message: `Could not record your decision: ${messageOf(error)}`,
           severity: 'error',
         });
         // A conflict means the request moved on under the dialog: somebody
         // else settled it, it timed out, or this approver voted from another
         // tab. There is nothing left to confirm, so close the dialog and show
-        // where the request stands now (M6 in the browser review). Anything
-        // else keeps it open, to try again.
-        if (statusOf(error) === 409) {
+        // where the request stands now. Anything else keeps it open, to retry.
+        if (httpStatusOf(error) === 409) {
           setDeciding(undefined);
-          setReload(value => value + 1);
+          refresh();
         }
       } finally {
         setBusy(false);
       }
     },
-    [api, alertApi, requestId],
+    [api, alertApi, requestId, refresh],
   );
 
   const withdraw = useCallback(async () => {
@@ -236,84 +221,66 @@ export function RequestDetail(props: RequestDetailProps) {
         severity: 'success',
         display: 'transient',
       });
-      setReload(value => value + 1);
+      refresh();
     } catch (error) {
       alertApi.post({
-        message: `Could not withdraw the request: ${
-          error instanceof Error ? error.message : error
-        }`,
+        message: `Could not withdraw the request: ${messageOf(error)}`,
         severity: 'error',
       });
       // Settled or timed out under the dialog: show what it became.
-      if (statusOf(error) === 409) {
-        setReload(value => value + 1);
+      if (httpStatusOf(error) === 409) {
+        refresh();
       }
     } finally {
       setBusy(false);
       setConfirmingWithdraw(false);
     }
-  }, [api, alertApi, requestId]);
+  }, [api, alertApi, requestId, refresh]);
 
   const resubmit = useCallback(
     async (templateRef: string, values: JsonObject) => {
       setBusy(true);
       try {
         // A new request, never a retry of this one: a spent approval cannot be
-        // spent twice (Q5), so resubmitting has to start the whole thing over
-        // with the values pre-filled.
-        const created = await api.submitRequest({ templateRef, values });
-        alertApi.post({
-          message: created.collapsed
-            ? 'You already have an identical request open'
-            : 'Request submitted',
-          severity: 'success',
-          display: 'transient',
-        });
-        navigate(`${rootPath()}/requests/${created.id}`);
+        // spent twice, so resubmitting starts the whole thing over.
+        await submitRequest({ templateRef, values }, 'Request submitted');
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (statusOf(error) === 400) {
+        if (httpStatusOf(error) === 400) {
           // The template no longer takes these values as they are: a field
           // became required, an option went away. Posting them again can only
-          // be refused again, which made Resubmit a dead end after exactly
-          // the failure it exists for (L18 in the browser review). The form
-          // can take them, pre-filled, for the requester to put right.
+          // be refused again, so hand them to the template's form, pre-filled,
+          // for the requester to put right.
           alertApi.post({
-            message: `Could not resubmit as it was: ${message}. The values are filled in on the template's form instead, to correct and submit again.`,
+            message: `Could not resubmit as it was: ${messageOf(
+              error,
+            )}. The values are filled in on the template's form instead, to correct and submit again.`,
             severity: 'info',
           });
-          navigate(prefilledTemplateForm(templateRef, values));
+          navigate(scaffolderTemplateFormPath(templateRef, values));
           return;
         }
         alertApi.post({
-          message: `Could not resubmit: ${message}`,
+          message: `Could not resubmit: ${messageOf(error)}`,
           severity: 'error',
         });
       } finally {
         setBusy(false);
       }
     },
-    [api, alertApi, navigate, rootPath],
+    [alertApi, navigate, submitRequest],
   );
 
-  // The page updates itself, and a dialog left open over it went on offering
-  // a decision that could no longer be made (M6 in the browser review). Close
-  // it once the request moves on, and say why. Not while busy: then the change
-  // is this viewer's own decision landing, which closes the dialog anyway.
+  // The page updates itself, so a dialog left open over it could go on
+  // offering a decision that can no longer be made. Close it once the request
+  // moves on, and say why. Not while busy: then the change is this viewer's
+  // own decision landing, which closes the dialog anyway.
   useEffect(() => {
     if (busy || !state.value) {
       return;
     }
     const { request, identity } = state.value;
     if (deciding) {
-      const eligibility = checkDecisionEligibility(
-        request,
-        {
-          userEntityRef: identity.userEntityRef,
-          ownershipEntityRefs: identity.ownershipEntityRefs,
-        },
-        request.decisions,
-      );
+      const eligibility = eligibilityOf(request, identity);
       if (!eligibility.allowed) {
         setDeciding(undefined);
         alertApi.post({
@@ -344,27 +311,10 @@ export function RequestDetail(props: RequestDetailProps) {
     return <RequestLoadError error={state.error} />;
   }
 
-  const request = state.value!.request;
-  const identity = state.value!.identity;
+  const { request, identity } = state.value!;
   // What to show, which for a pending request past its deadline is already
-  // `expired` (B9) — the sweep only catches up with it later.
+  // `expired` — the sweep only catches up with it later.
   const status = effectiveStatus(request);
-
-  const eligibility = checkDecisionEligibility(
-    request,
-    {
-      userEntityRef: identity.userEntityRef,
-      ownershipEntityRefs: identity.ownershipEntityRefs,
-    },
-    request.decisions,
-  );
-  const progress = computeQuorumProgress(
-    request.decisions,
-    request.policySnapshot,
-  );
-  const isRequester =
-    identity.userEntityRef.toLocaleLowerCase('en-US') ===
-    request.requesterRef.toLocaleLowerCase('en-US');
 
   return (
     <ApprovalsLayout tabs={false}>
@@ -385,9 +335,15 @@ export function RequestDetail(props: RequestDetailProps) {
               <DecisionPanel
                 request={request}
                 status={status}
-                progress={progress}
-                eligibility={eligibility}
-                isRequester={isRequester}
+                progress={computeQuorumProgress(
+                  request.decisions,
+                  request.policySnapshot,
+                )}
+                eligibility={eligibilityOf(request, identity)}
+                isRequester={isSameEntityRef(
+                  identity.userEntityRef,
+                  request.requesterRef,
+                )}
                 busy={busy}
                 onDecide={setDeciding}
                 onWithdraw={() => setConfirmingWithdraw(true)}
@@ -462,10 +418,9 @@ function RequestSkeleton() {
 /**
  * A request that could not be loaded, inside the page like everything else.
  *
- * It used to be a bare error bar at the top of an empty screen, with no
- * heading and no way back (B6). Most people who land here followed an old or
- * mangled notification link, so "this does not exist" and a way back to the
- * list are worth more to them than an error panel.
+ * Most people who land here followed an old or mangled notification link, so
+ * "this does not exist" and a way back to the list are worth more to them than
+ * an error panel.
  */
 function RequestLoadError(props: { error: Error }) {
   const { error } = props;
@@ -473,7 +428,7 @@ function RequestLoadError(props: { error: Error }) {
 
   // A `ResponseError` carries the HTTP status; anything else is a failure to
   // reach the backend at all.
-  const statusCode = (error as { statusCode?: number }).statusCode;
+  const statusCode = httpStatusOf(error);
   const back = (
     // A link, because it navigates: announced as one, and it opens in a new
     // tab like any other link.

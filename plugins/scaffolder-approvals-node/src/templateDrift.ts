@@ -31,7 +31,7 @@ import { sha256Hex } from './hashes';
  * Hash the steps a template will execute.
  *
  * `values` and `policy_snapshot` are frozen when a request is submitted, but
- * the template itself is read live from the catalog at launch time (§10.3). An
+ * the template itself is read live from the catalog at launch time. An
  * approver looking at a request sees the values and the policy; without this
  * they have no way to notice that the steps changed underneath them, and an
  * added step runs like any other.

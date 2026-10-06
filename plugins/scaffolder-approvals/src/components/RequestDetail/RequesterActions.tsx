@@ -19,7 +19,7 @@ import { Button, Flex, Text } from '@backstage/ui';
 import type { JsonObject } from '@backstage/types';
 import { RiArrowGoBackLine, RiRefreshLine } from '@remixicon/react';
 
-/** @public */
+/** @internal */
 export interface RequesterActionsProps {
   request: ApprovalRequestWithDecisions;
   /** Whether the person looking at this is the one who asked for it. */
@@ -38,15 +38,15 @@ export interface RequesterActionsProps {
  * - **Withdraw**, while it is still pending. That is what `cancelled` means, as
  *   distinct from `rejected` — nobody decided, the requester changed their
  *   mind.
- * - **Resubmit**, once it has failed. A spent approval cannot be spent twice
- *   (Q5), so this starts a *new* request with the same values rather than
+ * - **Resubmit**, once it has failed. A spent approval cannot be spent twice,
+ *   so this starts a *new* request with the same values rather than
  *   retrying the old one. The distinction matters: retrying would run a
  *   template that nobody had agreed to run again.
  *
  * Renders nothing for anyone else. An approver looking at somebody else's
  * request has the decide buttons and no business with these.
  *
- * @public
+ * @internal
  */
 export function RequesterActions(props: RequesterActionsProps) {
   const { request, isRequester, busy, onWithdraw, onResubmit } = props;
@@ -62,7 +62,7 @@ export function RequesterActions(props: RequesterActionsProps) {
           variant="secondary"
           destructive
           isDisabled={busy}
-          onClick={onWithdraw}
+          onPress={onWithdraw}
           iconStart={<RiArrowGoBackLine aria-hidden />}
         >
           Withdraw
@@ -92,7 +92,7 @@ export function RequesterActions(props: RequesterActionsProps) {
         <Button
           variant="primary"
           isDisabled={busy}
-          onClick={() => onResubmit(templateRef, values)}
+          onPress={() => onResubmit(templateRef, values)}
           iconStart={<RiRefreshLine aria-hidden />}
         >
           Resubmit

@@ -56,7 +56,7 @@ describe('readApprovalsConfig', () => {
     });
   });
 
-  // H2 in the second browser review: each of these used to be read as zero,
+  // Each of these used to be read as zero,
   // which stopped every launch without a word in the log.
   it.each([
     [

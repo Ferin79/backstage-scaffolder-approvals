@@ -20,7 +20,6 @@ import {
   computeValuesHash,
   isSha256Hex,
   sha256Hex,
-  SHA256_HEX_LENGTH,
 } from './hashes';
 
 describe('sha256Hex', () => {
@@ -36,7 +35,7 @@ describe('sha256Hex', () => {
   });
 
   it('produces a digest of the width the database columns are sized for', () => {
-    expect(sha256Hex('anything')).toHaveLength(SHA256_HEX_LENGTH);
+    expect(sha256Hex('anything')).toHaveLength(64);
   });
 
   it('hashes bytes, not code units', () => {

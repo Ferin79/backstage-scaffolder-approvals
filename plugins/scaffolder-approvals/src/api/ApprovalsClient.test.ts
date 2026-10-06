@@ -70,7 +70,7 @@ function clientAnswering(response: Response) {
 
 describe('ApprovalsClient', () => {
   describe('when the backend refuses', () => {
-    // B1 in the browser review: every refusal reached people as "Request failed
+    // Every refusal reached people as "Request failed
     // with 400 Bad Request", because ResponseError puts the status line in
     // `message` and the component tests mock this client with plain Errors.
     it('makes the sentence the backend wrote the error message', async () => {

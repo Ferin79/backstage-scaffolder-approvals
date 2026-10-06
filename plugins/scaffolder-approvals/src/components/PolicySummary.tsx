@@ -37,13 +37,11 @@ export interface PolicySummaryProps {
  * requester cannot approve their own request."
  *
  * One sentence for the wizard and the request page alike, so a requester reads
- * the same terms before submitting and after. The wizard used to put "2 of
- * these must approve" above a list holding a single group, which read as if
- * two groups were expected (B18 in the browser review).
+ * the same terms before submitting and after.
  *
  * Each approver is the catalog's name for them, linked to their page, rather
- * than a raw entity ref (B16): a requester wants to know who is in the group
- * they are waiting on.
+ * than a raw entity ref: a requester wants to know who is in the group they
+ * are waiting on.
  *
  * @internal
  */

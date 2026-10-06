@@ -46,8 +46,8 @@ const PENDING: ApprovalRequest = {
 
 describe('RequestsTable on a narrow screen', () => {
   it('keeps what a request is and where it stands, and drops the rest', async () => {
-    // B14: at phone width all four columns truncated and the status pills
-    // were clipped mid-word.
+    // At phone width all four columns truncated and the status pills were
+    // clipped mid-word.
     const api = {
       listRequests: jest
         .fn()
@@ -57,7 +57,7 @@ describe('RequestsTable on a narrow screen', () => {
     await renderInTestApp(
       <RequestsTable
         api={api}
-        viewAs="approver"
+        query={{ role: 'approver' }}
         emptyTitle="Nothing is waiting on you"
         emptyDescription="Requests you can decide on will appear here."
       />,

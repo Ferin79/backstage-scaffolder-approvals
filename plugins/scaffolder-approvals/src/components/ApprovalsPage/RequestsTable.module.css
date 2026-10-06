@@ -18,7 +18,7 @@
   text-align: center;
 }
 
-/* An icon in a circle: small enough to fit the table's empty row (B15). A
+/* An icon in a circle: small enough to fit the table's empty row. A
    surface and a border rather than a neutral fill, which is within a shade of
    the page and vanished on it. */
 .emptyIcon {

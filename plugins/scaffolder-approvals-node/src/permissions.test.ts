@@ -123,7 +123,7 @@ describe('isNotRequester', () => {
 });
 
 describe('isNotRequester.toQuery', () => {
-  // S6/M38: nothing covered this, which is how a filter that returned the
+  // Nothing covered this once, which is how a filter that returned the
   // exact set the rule excludes got shipped.
 
   it('matches everything except the caller', () => {

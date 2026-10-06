@@ -68,7 +68,7 @@ describe('checkGatedTemplate', () => {
     });
   });
 
-  // B8 in the browser review: the wizard offered "Request approval" for these,
+  // The wizard offered "Request approval" for these,
   // and only the backend said no. These are the backend's own sentences.
   it.each([
     ['an if: on the gate', [gate({ if: '${{ parameters.go }}' }), after]],
@@ -87,7 +87,7 @@ describe('checkGatedTemplate', () => {
     );
   });
 
-  // H1 in the second browser review: these were accepted, offered on Create…
+  // These were once accepted, offered on Create…
   // and approved, then failed at the gate on every run — an approval spent on
   // a request that could never run.
   it.each([

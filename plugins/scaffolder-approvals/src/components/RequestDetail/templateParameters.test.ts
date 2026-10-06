@@ -99,30 +99,30 @@ describe('parameterStanding', () => {
 
   it('calls the fields of the branch the answers chose shown', () => {
     const values = { language: 'go', goVersion: '1.24', containerised: true };
-    expect(standing('goVersion', values)).toBe('shown');
-    expect(standing('baseImage', values)).toBe('shown');
-    expect(standing('language', values)).toBe('shown');
+    expect(standing(values)('goVersion')).toBe('shown');
+    expect(standing(values)('baseImage')).toBe('shown');
+    expect(standing(values)('language')).toBe('shown');
   });
 
   it('calls a value the form kept from another branch hidden', () => {
     // What the browser test found: the TypeScript branch is shown first, so
     // a Go service is submitted with Node.js version 22 as well.
     const values = { language: 'go', goVersion: '1.24', nodeVersion: '22' };
-    expect(standing('nodeVersion', values)).toBe('hidden');
-    expect(standing('baseImage', { containerised: false })).toBe('hidden');
+    expect(standing(values)('nodeVersion')).toBe('hidden');
+    expect(standing({ containerised: false })('baseImage')).toBe('hidden');
   });
 
   it('follows if/then on the page', () => {
     expect(
-      standing('securityReview', { dataClassification: 'restricted' }),
+      standing({ dataClassification: 'restricted' })('securityReview'),
     ).toBe('shown');
-    expect(standing('securityReview', { dataClassification: 'public' })).toBe(
+    expect(standing({ dataClassification: 'public' })('securityReview')).toBe(
       'hidden',
     );
   });
 
   it('calls what no page mentions undeclared', () => {
-    expect(standing('sneaky', { language: 'go' })).toBe('undeclared');
+    expect(standing({ language: 'go' })('sneaky')).toBe('undeclared');
   });
 
   it('does not guess when a condition pins nothing', () => {
@@ -132,7 +132,7 @@ describe('parameterStanding', () => {
       then: { properties: { b: { type: 'string' } } },
       else: { properties: { c: { type: 'string' } } },
     });
-    expect(vague('b', { a: 'x' })).toBe('shown');
-    expect(vague('c', { a: 'xxxx' })).toBe('shown');
+    expect(vague({ a: 'x' })('b')).toBe('shown');
+    expect(vague({ a: 'xxxx' })('c')).toBe('shown');
   });
 });

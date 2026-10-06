@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { createRouteRef, createSubRouteRef } from '@backstage/core-plugin-api';
 
 /**
@@ -22,7 +23,7 @@ import { createRouteRef, createSubRouteRef } from '@backstage/core-plugin-api';
  * @public
  */
 export const rootRouteRef = createRouteRef({
-  id: 'scaffolder-approvals',
+  id: SCAFFOLDER_APPROVALS_PLUGIN_ID,
 });
 
 /**
@@ -35,7 +36,7 @@ export const rootRouteRef = createRouteRef({
  * @public
  */
 export const requestRouteRef = createSubRouteRef({
-  id: 'scaffolder-approvals:request',
+  id: `${SCAFFOLDER_APPROVALS_PLUGIN_ID}:request`,
   parent: rootRouteRef,
   path: '/requests/:requestId',
 });

@@ -19,6 +19,7 @@ import {
   type ConsumeGrantRequest,
   type ConsumeGrantResponse,
   GATE_ACTION_ID,
+  HUMAN_DURATION_UNITS,
   SCAFFOLDER_APPROVALS_PLUGIN_ID,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import { computeValuesHash } from '@ferin79/backstage-plugin-scaffolder-approvals-node';
@@ -54,12 +55,12 @@ const NO_GRANT_MESSAGE =
  * the inbox, the notifications, the request page — is user experience. A
  * template is gated because this step stands in front of it and throws.
  *
- * A throw stops the run only for a template whose shape lets it. Scaffolder
- * 4.1.0 skips a step with a falsy `if:`, runs an `each:` over an empty list
- * zero times, still executes later `always()`/`failure()` steps after a
- * failure, and drops steps a caller's step-read policy rejects. `findGateStep`
- * refuses all four shapes, at submit and at catalog ingestion, which is what
- * makes "the gate throws" mean "nothing else runs".
+ * A throw stops the run only for a template whose shape lets it. The scaffolder
+ * skips a step with a falsy `if:`, runs an `each:` over an empty list zero
+ * times, still executes later `always()`/`failure()` steps after a failure,
+ * and drops steps a caller's step-read policy rejects. `findGateStep` refuses
+ * all four shapes, at submit and at catalog ingestion, which is what makes
+ * "the gate throws" mean "nothing else runs".
  *
  * It is an action rather than a check in the approvals backend because
  * `taskSpec.steps` is read from the catalog while callers supply only `values`
@@ -117,20 +118,15 @@ export function createApprovalGateAction(options: {
             .describe(
               'Whether the requester may approve their own request. Default false',
             ),
-        // Every unit `HumanDuration` accepts, so a gate that submits cleanly
-        // cannot then fail here.
+        // Every unit the backend's policy reader accepts, so a gate that
+        // submits cleanly cannot then fail here.
         timeout: z =>
           z
-            .object({
-              years: z.number().optional(),
-              months: z.number().optional(),
-              weeks: z.number().optional(),
-              days: z.number().optional(),
-              hours: z.number().optional(),
-              minutes: z.number().optional(),
-              seconds: z.number().optional(),
-              milliseconds: z.number().optional(),
-            })
+            .object(
+              Object.fromEntries(
+                HUMAN_DURATION_UNITS.map(unit => [unit, z.number().optional()]),
+              ),
+            )
             .optional()
             .describe(
               'How long the request may stay pending. Default: forever',
@@ -165,7 +161,7 @@ export function createApprovalGateAction(options: {
         throw new Error(NO_GRANT_MESSAGE);
       }
 
-      // The check that makes an approval mean something (Q10). The hash is
+      // The check that makes an approval mean something. The hash is
       // recomputed from the parameters *this* task is running, not from
       // anything the approvals backend said, so a grant stolen and replayed
       // against a task with different parameters does not match.
@@ -173,6 +169,11 @@ export function createApprovalGateAction(options: {
       // `values` comes from the gate step's own input, which lives in the
       // catalog alongside the rest of the template — the same reason the gate
       // itself cannot be removed by whoever starts the run.
+      //
+      // The runner checks input against the schema before calling this, so the
+      // guard below matters only when the action is invoked some other way. It
+      // stays because this is the security boundary: it must fail closed, and
+      // say why.
       if (
         typeof ctx.input.values !== 'object' ||
         ctx.input.values === null ||

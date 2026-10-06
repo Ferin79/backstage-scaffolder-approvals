@@ -15,6 +15,7 @@
  */
 
 import { Route, Routes, useParams } from 'react-router-dom';
+import { requestRouteRef } from '../routes';
 import { YOUR_REQUESTS_PATH } from './ApprovalsLayout';
 import { ApprovalsPage } from './ApprovalsPage';
 import { RequestDetail } from './RequestDetail';
@@ -27,8 +28,8 @@ function RequestDetailRoute() {
 /**
  * Routes for the approvals plugin.
  *
- * Written once and mounted by both plugin definitions, so the dual-ship
- * duplication is wiring only (Q23).
+ * Written once and mounted by both plugin definitions, so the two entrypoints
+ * differ in wiring only.
  *
  * @public
  */
@@ -40,7 +41,7 @@ export function Router() {
         path={YOUR_REQUESTS_PATH}
         element={<ApprovalsPage view="mine" />}
       />
-      <Route path="/requests/:requestId" element={<RequestDetailRoute />} />
+      <Route path={requestRouteRef.path} element={<RequestDetailRoute />} />
     </Routes>
   );
 }

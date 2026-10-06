@@ -28,7 +28,7 @@
  *   one caller proceeds.
  * - **A failed launch was never retried.** The grant it minted stayed live, the
  *   sweep saw a live grant and waited, and the request failed when the grant
- *   lapsed (Q9 asks for the opposite). A launch that has had its grace period
+ *   lapsed, when it should have been retried. A launch that has had its grace period
  *   can now have its grant *revoked* and a new one minted, and `revoked_at` is
  *   what makes that safe: revoking is a compare-and-set that loses to a task
  *   redeeming the grant at the same moment.

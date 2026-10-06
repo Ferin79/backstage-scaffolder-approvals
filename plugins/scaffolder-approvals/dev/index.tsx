@@ -34,7 +34,7 @@ import { createMockApprovalsApi } from './mockApprovalsApi';
 /**
  * Where the catalog's entity page would be.
  *
- * People, groups and templates link to their catalog pages (B16), and those
+ * People, groups and templates link to their catalog pages, and those
  * links need the catalog's entity route to exist. The harness has no catalog,
  * so this stands in for it, and says which page a real app would show.
  */
@@ -73,7 +73,7 @@ createDevApp()
   .registerApi({
     api: approvalsApiRef,
     // The mock names whoever the harness signed in as as an approver, so
-    // approving, denying and withdrawing can all be tried here (B21).
+    // approving, denying and withdrawing can all be tried here.
     deps: { identityApi: identityApiRef },
     factory: ({ identityApi }) => createMockApprovalsApi(identityApi),
   })

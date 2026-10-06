@@ -15,4 +15,3 @@
  */
 
 export * from './RequestDetail';
-export * from './DecisionDialog';

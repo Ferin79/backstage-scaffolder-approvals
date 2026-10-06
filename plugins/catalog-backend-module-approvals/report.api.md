@@ -6,7 +6,9 @@
 import { BackendFeature } from '@backstage/backend-plugin-api';
 import type { CatalogProcessor } from '@backstage/plugin-catalog-node';
 import type { CatalogProcessorCache } from '@backstage/plugin-catalog-node';
+import type { CatalogProcessorEmit } from '@backstage/plugin-catalog-node';
 import { Entity } from '@backstage/catalog-model';
+import type { LocationSpec } from '@backstage/plugin-catalog-node';
 import type { LoggerService } from '@backstage/backend-plugin-api';
 
 // @public
@@ -17,10 +19,10 @@ export class ApprovalsGateProcessor implements CatalogProcessor {
   // (undocumented)
   preProcessEntity(
     entity: Entity,
-    _location?: unknown,
-    _emit?: unknown,
-    _originLocation?: unknown,
-    cache?: CatalogProcessorCache,
+    _location: LocationSpec,
+    _emit: CatalogProcessorEmit,
+    _originLocation: LocationSpec,
+    cache: CatalogProcessorCache,
   ): Promise<Entity>;
 }
 

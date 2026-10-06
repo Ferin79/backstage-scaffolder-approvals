@@ -17,13 +17,13 @@
 /**
  * New frontend system entrypoint for the scaffolder-approvals plugin.
  *
- * This package dual-ships (Q14). Both entrypoints mount the same components —
- * only the wiring differs (Q23), so there is one implementation to maintain and
- * two ways to install it.
+ * Both entrypoints mount the same components — only the wiring differs, so
+ * there is one implementation to maintain and two ways to install it.
  *
  * @packageDocumentation
  */
 
+import { SCAFFOLDER_APPROVALS_PLUGIN_ID } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   ApiBlueprint,
   createFrontendPlugin,
@@ -35,6 +35,7 @@ import { discoveryApiRef, fetchApiRef } from '@backstage/core-plugin-api';
 import { createElement } from 'react';
 import { ApprovalsClient, approvalsApiRef } from './api';
 import { ApprovalsIcon } from './components/ApprovalsIcon';
+import { loadPendingApprovalsCard } from './homePageCard';
 import { requestRouteRef, rootRouteRef } from './routes';
 
 const approvalsApi = ApiBlueprint.make({
@@ -43,28 +44,18 @@ const approvalsApi = ApiBlueprint.make({
     define({
       api: approvalsApiRef,
       deps: { discoveryApi: discoveryApiRef, fetchApi: fetchApiRef },
-      factory: ({ discoveryApi, fetchApi }) =>
-        new ApprovalsClient({ discoveryApi, fetchApi }),
+      factory: deps => new ApprovalsClient(deps),
     }),
 });
-
-/**
- * The nav entry, as Backstage 1.54 expects one.
- *
- * There is no `NavItemBlueprint` to reach for: a page carries its own `title`
- * and `icon`, outputs them as `core.title` and `core.icon`, and the app builds
- * the sidebar entry from that. An earlier `NavItemBlueprint` did exist and is
- * what other workspaces on older versions still use.
- */
-const navIcon = createElement(ApprovalsIcon);
 
 const approvalsPage = PageBlueprint.make({
   params: {
     path: '/scaffolder-approvals',
-    // Q22: page *and* nav item. Without a title the page is reachable only by
-    // URL, which for an inbox means the people who need it never see it.
+    // A page carries its own title and icon, and the app builds the sidebar
+    // entry from them. Without a title the page is reachable only by URL,
+    // which for an inbox means the people who need it never see it.
     title: 'Approvals',
-    icon: navIcon,
+    icon: createElement(ApprovalsIcon),
     routeRef: convertLegacyRouteRef(rootRouteRef),
     // The pages draw BUI's plugin header themselves, tabs included, so that
     // they look the same in both frontend systems. The app's own header would
@@ -77,27 +68,15 @@ const approvalsPage = PageBlueprint.make({
 });
 
 /**
- * The home-page card, as a widget the grid can place (Q22).
- *
- * The same component the legacy entrypoint exposes through
- * `createCardExtension`: only the wiring differs, which is the whole point of
- * dual-shipping.
+ * The home-page card, as a widget the grid can place: the same component the
+ * legacy entrypoint exposes through `createCardExtension`.
  */
 const approvalsWidget = HomePageWidgetBlueprint.make({
   name: 'pendingApprovals',
   params: {
     title: 'Approvals',
     description: 'Approval requests waiting on your decision',
-    components: () =>
-      // The card's own module, not the components barrel: the barrel also
-      // carries the wizard's review step, and with it the scaffolder's form
-      // and review code, none of which a home page needs to load.
-      import('./components/PendingApprovalsCard').then(m => ({
-        Content: m.PendingApprovalsContent,
-        // The extension draws its own card, so the way to the page has to be
-        // handed over as well, or the home page has none (B19).
-        Actions: m.PendingApprovalsActions,
-      })),
+    components: loadPendingApprovalsCard,
   },
 });
 
@@ -107,7 +86,7 @@ const approvalsWidget = HomePageWidgetBlueprint.make({
  * @public
  */
 export default createFrontendPlugin({
-  pluginId: 'scaffolder-approvals',
+  pluginId: SCAFFOLDER_APPROVALS_PLUGIN_ID,
   extensions: [approvalsApi, approvalsPage, approvalsWidget],
   routes: {
     root: convertLegacyRouteRef(rootRouteRef),

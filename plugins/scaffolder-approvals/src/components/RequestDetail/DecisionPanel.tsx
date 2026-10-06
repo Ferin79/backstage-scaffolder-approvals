@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import type {
-  ApprovalDecisionOutcome,
-  ApprovalRequestStatus,
-  ApprovalRequestWithDecisions,
-  DecisionEligibility,
-  DecisionIneligibility,
-  QuorumProgress,
+import {
+  type ApprovalDecisionOutcome,
+  type ApprovalRequestStatus,
+  type ApprovalRequestWithDecisions,
+  DECISION_INELIGIBILITY_MESSAGES,
+  type DecisionEligibility,
+  type DecisionIneligibility,
+  type QuorumProgress,
 } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import {
   Button,
@@ -48,47 +49,33 @@ import {
 } from '@remixicon/react';
 import type { ReactElement } from 'react';
 import { PolicySummary } from '../PolicySummary';
+import { scaffolderTaskPath } from '../scaffolderPaths';
 import { STATUS_TONE } from '../StatusPill';
 import { RequesterActions } from './RequesterActions';
 import styles from './RequestDetail.module.css';
 
 /**
- * Why the decide buttons are not available, in the approver's words.
+ * Why the decide buttons are not available, in the same words the backend
+ * refuses with. Only shown while a request is pending; once it has settled the
+ * question is what happened, which `OUTCOME` answers.
  *
- * Only shown while a request is pending. Once it has settled, nobody can decide
- * and the question is what happened, which `OUTCOME` answers.
- */
-const WHY_NOT: Record<DecisionIneligibility, string> = {
-  'not-an-approver': 'You are not an approver for this request.',
-  'self-approval': 'You cannot approve your own request.',
-  'not-pending': 'This request has already been decided.',
-  expired: 'This request timed out before anyone decided.',
-  'already-voted': 'You have already decided on this request.',
-};
-
-/**
- * Why the viewer cannot decide, said to the person it is about.
- *
- * Somebody outside every approver group, looking at their own request, was
- * told "You are not an approver for this request" (L8 in the browser review):
- * true, and beside the point. It is their request; the approvers named above
- * decide on it.
+ * A requester outside every approver group is not told they are "not an
+ * approver" — true, and beside the point. It is their request.
  */
 function whyNot(reason: DecisionIneligibility, isRequester: boolean): string {
   if (isRequester && reason === 'not-an-approver') {
     return 'This is your request. The approvers named above decide on it.';
   }
-  return WHY_NOT[reason];
+  return `${DECISION_INELIGIBILITY_MESSAGES[reason]}.`;
 }
 
 /**
  * What happened to a request that is no longer waiting, by its status.
  *
  * Not "this request has already been decided": a withdrawn or expired request
- * was never decided at all, and saying so sends people looking for a decision
- * that does not exist (B4 in the browser review). Written from the status
- * rather than from the decisions, too, so a denial that lost the race to an
- * approval does not make a running request read as denied.
+ * was never decided at all. Written from the status rather than from the
+ * decisions, so a denial that lost the race to an approval does not make a
+ * running request read as denied.
  */
 const OUTCOME: Record<Exclude<ApprovalRequestStatus, 'pending'>, string> = {
   approved: 'Approved. The template is starting.',
@@ -172,7 +159,7 @@ export interface DecisionPanelProps {
  * The heading is the answer to "what is happening": how many approvals are
  * still needed, or what became of it. Under it, whose approval it needs, so a
  * requester knows whom to chase and anyone can notice a gate naming a group
- * nobody is in (B5). The footer holds whatever the viewer can do: decide, see
+ * nobody is in. The footer holds whatever the viewer can do: decide, see
  * why they cannot, withdraw or resubmit their own, or open the task's log.
  *
  * @internal
@@ -248,7 +235,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
                   <Button
                     variant="primary"
                     isDisabled={busy}
-                    onClick={() => onDecide('approve')}
+                    onPress={() => onDecide('approve')}
                     iconStart={<RiCheckLine aria-hidden />}
                   >
                     Approve
@@ -257,7 +244,7 @@ export function DecisionPanel(props: DecisionPanelProps) {
                     variant="secondary"
                     destructive
                     isDisabled={busy}
-                    onClick={() => onDecide('deny')}
+                    onPress={() => onDecide('deny')}
                     iconStart={<RiCloseLine aria-hidden />}
                   >
                     Deny
@@ -281,10 +268,8 @@ export function DecisionPanel(props: DecisionPanelProps) {
 
             {request.taskId && (
               <Flex>
-                {/* §10.1: the requester cannot find this task under "my
-                    tasks", because the service principal created it. */}
                 <ButtonLink
-                  href={`/create/tasks/${request.taskId}`}
+                  href={scaffolderTaskPath(request.taskId)}
                   target="_blank"
                   variant="secondary"
                   iconEnd={<RiExternalLinkLine aria-hidden />}

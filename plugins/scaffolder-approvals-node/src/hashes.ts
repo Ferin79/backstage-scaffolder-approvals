@@ -18,20 +18,12 @@ import { createHash } from 'node:crypto';
 import { canonicalJson } from '@ferin79/backstage-plugin-scaffolder-approvals-common';
 import type { JsonObject } from '@backstage/types';
 
-/**
- * The width of a hex-encoded SHA-256 digest.
- *
- * The database columns holding these are sized to match, so changing the digest
- * would need a migration.
- *
- * @public
- */
-export const SHA256_HEX_LENGTH = 64;
-
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 /**
- * Hex-encoded SHA-256 of a UTF-8 string.
+ * Hex-encoded SHA-256 of a UTF-8 string: 64 characters, which the database
+ * columns holding these are sized for, so changing the digest needs a
+ * migration.
  *
  * @public
  */

@@ -147,7 +147,7 @@ describe('RequestDetail', () => {
   });
 
   it('puts the status in a labelled header item', async () => {
-    // B14: as a bare child of the header's spaced grid, the pill slid over
+    // As a bare child of the header's spaced grid, the pill slid over
     // the subtitle on a narrow screen. A labelled metadata item wraps under
     // the title instead, and names what the pill is.
     await render({ getRequest: jest.fn().mockResolvedValue(REQUEST) });
@@ -264,7 +264,7 @@ describe('RequestDetail', () => {
   });
 
   describe('a dialog left open while the request moves on', () => {
-    // M6 in the browser review: the page behind updated to Denied, and the
+    // The page behind updated to Denied, and the
     // dialog went on offering Approve.
     it('closes the decide dialog, and says nothing was sent', async () => {
       const signals = fakeSignals();
@@ -423,7 +423,7 @@ describe('RequestDetail', () => {
 
   describe('when you cannot decide', () => {
     it('tells a requester outside every approver group that it is their request', async () => {
-      // L8 in the browser review: "You are not an approver for this request"
+      // "You are not an approver for this request"
       // is true, and beside the point on your own request.
       await render(
         { getRequest: async () => REQUEST },
@@ -509,7 +509,7 @@ describe('RequestDetail', () => {
     const REQUESTER = identityOf('user:default/requester');
 
     it('offers Withdraw while the request is pending', async () => {
-      // §5: withdrawing is what `cancelled` means, as distinct from
+      // Withdrawing is what `cancelled` means, as distinct from
       // `rejected` — nobody decided, the requester changed their mind.
       const cancel = jest.fn().mockResolvedValue(REQUEST);
       await render({ getRequest: async () => REQUEST, cancel }, REQUESTER);
@@ -519,7 +519,7 @@ describe('RequestDetail', () => {
           name: 'Withdraw',
         }),
       );
-      // B11: it asks first, as Approve and Deny do — withdrawing is as final.
+      // It asks first, as Approve and Deny do — withdrawing is as final.
       expect(
         await screen.findByText('Withdraw this request?'),
       ).toBeInTheDocument();
@@ -552,7 +552,7 @@ describe('RequestDetail', () => {
     });
 
     it('offers Resubmit once the request has failed', async () => {
-      // Q5: a spent approval cannot be spent twice, so this starts a new
+      // A spent approval cannot be spent twice, so this starts a new
       // request rather than retrying the old one.
       const submitRequest = jest
         .fn()
@@ -578,7 +578,7 @@ describe('RequestDetail', () => {
     });
 
     describe('when the template no longer takes the values', () => {
-      // L18 in the browser review: after the template gained a required
+      // After the template gained a required
       // field, Resubmit posted the old values again and was refused again.
       it('opens its form with the values filled in', async () => {
         const alertApi = { post: jest.fn(), alert$: jest.fn() };
@@ -686,7 +686,7 @@ describe('RequestDetail', () => {
     });
 
     it('links to the task log once there is a task', async () => {
-      // §10.1: the requester cannot find this task under "my tasks", because
+      // The requester cannot find this task under "my tasks", because
       // it was created by the service principal. This link is the only way
       // they reach its log.
       await render({
@@ -705,7 +705,7 @@ describe('RequestDetail', () => {
 
   describe('template drift', () => {
     it('warns an approver that the steps have changed', async () => {
-      // §10.3: the values and the policy are frozen at submit, but the
+      // The values and the policy are frozen at submit, but the
       // template is read live at launch, so the steps on screen are not
       // necessarily the ones that will run.
       await render({
@@ -722,7 +722,7 @@ describe('RequestDetail', () => {
       );
     });
 
-    // H3: the scaffolder would refuse these values, so approving cannot work.
+    // The scaffolder would refuse these values, so approving cannot work.
     it('warns that the values no longer fit the parameters', async () => {
       await render({
         getRequest: async () => ({
@@ -736,7 +736,7 @@ describe('RequestDetail', () => {
       expect(notice).toHaveTextContent(/approving will fail/);
     });
 
-    // L19 in the browser review: the dialog covers the page's warning, and
+    // The dialog covers the page's warning, and
     // went on saying the template "starts straight away".
     it('repeats the warning in the approve dialog, and asks to approve anyway', async () => {
       await render({
@@ -999,14 +999,14 @@ describe('RequestDetail', () => {
     // row at all.
     expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
     // With no summary, the template's name stands in as the title: not its
-    // raw ref (B16). The page's title, under the plugin header's "Approvals".
+    // raw ref. The page's title, under the plugin header's "Approvals".
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(
       /^request-github-admin$/,
     );
   });
 
   describe('a settled request', () => {
-    // B4 in the browser review: "This request has already been decided" on
+    // "This request has already been decided" on
     // requests nobody decided, "0 of 2 approvals needed" on settled ones, and
     // an "Expires" date on requests that can no longer expire.
     it.each([
@@ -1098,7 +1098,7 @@ describe('RequestDetail', () => {
   });
 
   it('says who can approve, how many it takes, and whether the requester may', async () => {
-    // B5: the requester could see "0 of 2" but not whose two.
+    // The requester could see "0 of 2" but not whose two.
     await render({
       getRequest: async () => ({
         ...REQUEST,
@@ -1116,7 +1116,7 @@ describe('RequestDetail', () => {
       'Needs 2 approvals from devx-team or lead. The requester cannot approve their own request.',
     );
     // Each approver links to their catalog page, so a requester can see who
-    // is in the group they are waiting on (B16).
+    // is in the group they are waiting on.
     expect(screen.getByRole('link', { name: 'devx-team' })).toHaveAttribute(
       'href',
       '/catalog/default/group/devx-team',
@@ -1128,7 +1128,7 @@ describe('RequestDetail', () => {
   });
 
   it('names people and the template, each linked to its catalog page', async () => {
-    // B16: "user:default/requester", "template:default/request-github-admin"
+    // "user:default/requester", "template:default/request-github-admin"
     // and "group:default/devx-team" everywhere, none of them links.
     await render({
       getRequest: async () => ({
@@ -1170,7 +1170,7 @@ describe('RequestDetail', () => {
   });
 
   describe('a request past its deadline that the sweep has not reached yet', () => {
-    // B9: still `pending` in the database for up to five minutes, but nobody
+    // Still `pending` in the database for up to five minutes, but nobody
     // can decide it, so it must not read as waiting.
     const LAPSED = {
       ...REQUEST,
@@ -1203,7 +1203,7 @@ describe('RequestDetail', () => {
   });
 
   describe('when the request cannot be loaded', () => {
-    // B6: a bare error bar with no page around it and no way back.
+    // A bare error bar with no page around it and no way back.
     // Shaped like the client's `ResponseError`, body included: the error
     // panel reads the body of anything named ResponseError.
     const failing = (statusCode: number, message: string) =>
@@ -1262,7 +1262,7 @@ describe('RequestDetail', () => {
   });
 
   describe('live updates', () => {
-    // B10: somebody else's decision, or the template finishing, appeared only
+    // Somebody else's decision, or the template finishing, appeared only
     // on a manual reload.
     it('refetches when the backend signals a change to this request', async () => {
       const signals = fakeSignals();

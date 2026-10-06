@@ -85,7 +85,7 @@ function describe(errors: ErrorObject[]): string {
 /**
  * Check submitted values against a template's parameter schema.
  *
- * Done at submit time (Q3) rather than at launch, so that an approval is never
+ * Done at submit time rather than at launch, so that an approval is never
  * spent on a request that cannot run. An approver's time is the scarce
  * resource: finding out days later that a required field was missing means
  * starting the whole approval over.

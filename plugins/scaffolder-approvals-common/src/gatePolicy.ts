@@ -17,14 +17,14 @@
 import { parseEntityRef } from '@backstage/catalog-model';
 import type { HumanDuration } from '@backstage/types';
 import { DEFAULT_QUORUM, DEFAULT_SELF_APPROVE } from './constants';
-import { normaliseEntityRef } from './entityRefs';
+import { tryNormaliseEntityRef } from './entityRefs';
 import type { GatePolicy } from './types';
 
 /**
  * Thrown when a template's gate step does not describe a usable policy.
  *
  * Callers map this onto whatever their layer needs — the backend turns it into
- * an `InputError`, the catalog processor into an entity error.
+ * an `InputError`, the catalog processor into a logged warning.
  *
  * @public
  */
@@ -38,7 +38,14 @@ export class GatePolicyError extends Error {
 /** Kinds that can appear in `approvers`. */
 const APPROVER_KINDS = ['group', 'user'];
 
-const DURATION_UNITS: (keyof HumanDuration)[] = [
+/**
+ * Every unit a `HumanDuration` accepts, which is what a gate's `timeout` may
+ * use. Shared with the gate action's input schema, so a gate that submits
+ * cleanly cannot then fail the action's own validation.
+ *
+ * @public
+ */
+export const HUMAN_DURATION_UNITS: readonly (keyof HumanDuration)[] = [
   'years',
   'months',
   'weeks',
@@ -76,26 +83,19 @@ function readApprovers(raw: unknown): string[] {
       );
     }
 
-    let normalised: string;
-    try {
-      // Normalised through the same helper the approver check uses, so the two
-      // can never disagree about whether a ref matches.
-      normalised = normaliseEntityRef(entry);
-
-      const parsed = parseEntityRef(entry.trim(), {
-        defaultNamespace: 'default',
-      });
-      if (!APPROVER_KINDS.includes(parsed.kind.toLocaleLowerCase('en-US'))) {
-        throw new GatePolicyError(
-          `approvers[${index}] must be a group or user ref, got kind '${parsed.kind}'`,
-        );
-      }
-    } catch (error) {
-      if (error instanceof GatePolicyError) {
-        throw error;
-      }
+    // Normalised through the same helper the approver check uses, so the two
+    // can never disagree about whether a ref matches.
+    const normalised = tryNormaliseEntityRef(entry);
+    if (normalised === undefined) {
       throw new GatePolicyError(
         `approvers[${index}] is not a valid entity ref: ${entry}`,
+      );
+    }
+
+    const { kind } = parseEntityRef(normalised);
+    if (!APPROVER_KINDS.includes(kind)) {
+      throw new GatePolicyError(
+        `approvers[${index}] must be a group or user ref, got kind '${kind}'`,
       );
     }
 
@@ -138,7 +138,7 @@ function readTimeout(raw: unknown): HumanDuration | undefined {
 
   const source = raw as Record<string, unknown>;
   const unknownKeys = Object.keys(source).filter(
-    key => !(DURATION_UNITS as string[]).includes(key),
+    key => !(HUMAN_DURATION_UNITS as readonly string[]).includes(key),
   );
   if (unknownKeys.length) {
     throw new GatePolicyError(
@@ -148,7 +148,7 @@ function readTimeout(raw: unknown): HumanDuration | undefined {
 
   const result: HumanDuration = {};
   let total = 0;
-  for (const unit of DURATION_UNITS) {
+  for (const unit of HUMAN_DURATION_UNITS) {
     const value = source[unit];
     if (value === undefined) {
       continue;

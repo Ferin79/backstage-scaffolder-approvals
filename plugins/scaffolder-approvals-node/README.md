@@ -44,16 +44,15 @@ Conditions work for deciding, withdrawing and reading one request. Give listing 
 
 ## Other exports
 
-These are used inside the plugin; they are public so the backend and both modules share one definition.
+These are used inside the plugin; they are public so the backend and both modules share one definition. Checks that do not need Node, such as `findGateStep` and `checkGatedTemplate`, live in [`-common`](https://github.com/Ferin79/backstage-scaffolder-approvals/tree/main/plugins/scaffolder-approvals-common) so the wizard can run them too.
 
-| Export                                        | Used by                 | Purpose                                                                                                                                                               |
-| --------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `findGateStep`, `isGated`                     | Backend, catalog module | One definition of "this template is gated". `findGateStep` rejects broken shapes; `isGated` still counts a broken gate as gated, so it never reads as freely runnable |
-| `computeValuesHash`                           | Backend, gate action    | SHA-256 of the canonical JSON of a template's parameters. Computed at submit and inside the task; they must match for a grant to redeem                               |
-| `generateGrantToken`, `hashGrantToken`        | Backend                 | A 256-bit single-use token, and the hash that is the only form stored                                                                                                 |
-| `formatGrant`, `parseGrant`                   | Backend, gate action    | The `<requestId>.<token>` string handed to a task as a secret                                                                                                         |
-| `computeTemplateStepsHash`, `compareTemplate` | Backend                 | Detecting that a template changed while a request waited                                                                                                              |
-| `sha256Hex`, `isSha256Hex`, `assertSha256Hex` | Backend                 | Guards that keep a raw token from ever being stored where a hash belongs                                                                                              |
+| Export                                        | Used by              | Purpose                                                                                                                                 |
+| --------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `computeValuesHash`                           | Backend, gate action | SHA-256 of the canonical JSON of a template's parameters. Computed at submit and inside the task; they must match for a grant to redeem |
+| `generateGrantToken`, `hashGrantToken`        | Backend              | A 256-bit single-use token, and the hash that is the only form stored                                                                   |
+| `formatGrant`, `parseGrant`                   | Backend, gate action | The `<requestId>.<token>` string handed to a task as a secret                                                                           |
+| `computeTemplateStepsHash`, `compareTemplate` | Backend              | Detecting that a template changed while a request waited                                                                                |
+| `sha256Hex`, `isSha256Hex`, `assertSha256Hex` | Backend              | Guards that keep a raw token from ever being stored where a hash belongs                                                                |
 
 ## A note on BEP-0016
 

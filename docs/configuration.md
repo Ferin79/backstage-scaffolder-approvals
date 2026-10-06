@@ -91,7 +91,7 @@ The backend runs three jobs through the Backstage scheduler. Their schedules are
 | `scaffolder-approvals-timeouts`  | 5 minutes | Expires pending requests that nobody decided on before the gate's `timeout`                                                            |
 | `scaffolder-approvals-retention` | 6 hours   | Redacts the values and summary of long-settled requests                                                                                |
 
-Each run handles a capped batch, so a backlog built up during an outage drains steadily instead of hitting the scaffolder all at once.
+The reconcile and timeout jobs handle a capped batch per run, so a backlog built up during an outage drains steadily instead of hitting the scaffolder all at once. The retention job works through its backlog a batch at a time, up to 1,000 requests per run.
 
 The jobs can be triggered by hand through the scheduler's API, which is useful when testing:
 

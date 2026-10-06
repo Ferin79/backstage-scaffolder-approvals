@@ -23,6 +23,7 @@ import { Card, CardBody, CardHeader, Flex, Link, Text } from '@backstage/ui';
 import { RiCheckLine, RiCloseLine } from '@remixicon/react';
 import type { ReactNode } from 'react';
 import { PersonAvatar } from '../PersonAvatar';
+import { scaffolderTaskPath } from '../scaffolderPaths';
 import { formatDateTime, Timestamp } from '../Timestamp';
 import {
   type ParameterStanding,
@@ -71,13 +72,14 @@ function ScalarValue(props: { value: Scalar }) {
   if (typeof value === 'string') {
     return <Text className={styles.valueText}>{value}</Text>;
   }
-  if (typeof value === 'boolean') {
-    return <Text>{value ? 'Yes' : 'No'}</Text>;
+  if (typeof value === 'number') {
+    return <Text className={styles.number}>{value}</Text>;
   }
-  if (value === null) {
-    return <Text color="secondary">None</Text>;
-  }
-  return <Text className={styles.number}>{String(value)}</Text>;
+  return (
+    <Text color={value === null ? 'secondary' : undefined}>
+      {scalarText(value)}
+    </Text>
+  );
 }
 
 function Json(props: { value: unknown }) {
@@ -268,8 +270,9 @@ export function RequestParameters(props: {
       hidden: {},
       undeclared: {},
     };
+    const standingOf = standing?.(values);
     for (const [key, value] of Object.entries(values)) {
-      groups[standing ? standing(key, values) : 'shown'][key] = value;
+      groups[standingOf ? standingOf(key) : 'shown'][key] = value;
     }
     body = (
       <Flex direction="column" gap="4">
@@ -467,11 +470,8 @@ export function RequestDetails(props: {
           )}
           {request.taskId && (
             <Detail label="Task">
-              {/* §10.1: the requester cannot find this task under "my
-                  tasks", because it was created by the service principal.
-                  This link is how they reach its log at all. */}
               <Link
-                href={`/create/tasks/${request.taskId}`}
+                href={scaffolderTaskPath(request.taskId)}
                 target="_blank"
                 className={styles.taskLink}
               >

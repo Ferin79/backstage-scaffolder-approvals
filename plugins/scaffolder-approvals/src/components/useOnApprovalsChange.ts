@@ -23,10 +23,9 @@ import { useEffect, useRef } from 'react';
  * request, or only the one whose id is given.
  *
  * The backend broadcasts `{ action, requestId, status }` on every change: a
- * vote, a launch, a task finishing, a sweep expiring something. Without this, a
- * page showed somebody else's decision, or a template finishing, only once it
- * was reloaded (B10 in the browser review). The page refetches rather than
- * trusting the signal's own status, so a signal is only ever a prompt to look.
+ * vote, a launch, a task finishing, a sweep expiring something. The page
+ * refetches rather than trusting the signal's own status, so a signal is only
+ * ever a prompt to look.
  *
  * Signals are a soft dependency: without the signals plugin, `useSignal`
  * subscribes to nothing, and a page still refreshes on its own actions.

@@ -122,7 +122,7 @@ function walk(schema: unknown, path: string[], found: string[]): void {
  * There is a disclosure risk too, and it is the sharper one. If such a value
  * *were* submitted as an ordinary parameter, it would be stored in
  * `approval_requests.values` and every signed-in user can read every request
- * (Q12) — so a password typed into a gated template would be published to the
+ * by default — so a password typed into a gated template would be published to the
  * whole organisation until the retention sweep redacted it months later.
  *
  * Returns the paths of any such parameters, empty when there are none.

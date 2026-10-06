@@ -33,20 +33,6 @@ export class GateStepError extends Error {
   }
 }
 
-/**
- * What was found when looking for a gate on a template.
- *
- * `step` is undefined for an ungated template, which is not an error â€” most
- * templates are ungated.
- *
- * @public
- */
-export interface GateStepLookup {
-  step?: TemplateEntityStepV1beta3;
-  /** Position in `spec.steps`, for diagnostics. */
-  index?: number;
-}
-
 function stepsOf(entity: Entity): TemplateEntityStepV1beta3[] {
   const steps = (entity as TemplateEntityV1beta3).spec?.steps;
   return Array.isArray(steps) ? steps : [];
@@ -72,18 +58,18 @@ function describeStep(step: TemplateEntityStepV1beta3, index: number): string {
 }
 
 /**
- * Find a template's `approval:gate` step.
+ * Find a template's `approval:gate` step, or `undefined` for an ungated
+ * template — which is not an error, since most templates are ungated.
  *
- * Shared between the approvals service, which reads the policy off it, and the
- * catalog processor, which derives the `gated` annotation from its presence.
- * One definition of "this template is gated" is what keeps the annotation from
- * drifting away from the gate itself â€” the annotated-but-ungated mismatch is
- * the dangerous one.
+ * Shared between the approvals backend, which reads the policy off it, the
+ * catalog processor, which derives the `gated` annotation from its presence,
+ * and the wizard. One definition of "this template is gated" is what keeps the
+ * annotation from drifting away from the gate itself.
  *
  * The shapes below are rejected rather than interpreted. Each of them leaves a
- * template that still looks gated â€” it keeps the step, it keeps the derived
- * annotation â€” while a direct `POST /v2/tasks` runs real steps with no
- * approval. They were each reproduced against scaffolder-backend 4.1.0.
+ * template that still looks gated — it keeps the step, it keeps the derived
+ * annotation — while a direct `POST /v2/tasks` runs real steps with no
+ * approval. Each was reproduced against `@backstage/plugin-scaffolder-backend`.
  *
  * - **A gate that is not the first step.** Everything before it would run
  *   before anyone had approved, which defeats the gate entirely while still
@@ -105,7 +91,9 @@ function describeStep(step: TemplateEntityStepV1beta3, index: number): string {
  *
  * @public
  */
-export function findGateStep(entity: Entity): GateStepLookup {
+export function findGateStep(
+  entity: Entity,
+): TemplateEntityStepV1beta3 | undefined {
   const steps = stepsOf(entity);
 
   const found = steps
@@ -113,7 +101,7 @@ export function findGateStep(entity: Entity): GateStepLookup {
     .filter(({ step }) => step?.action === GATE_ACTION_ID);
 
   if (found.length === 0) {
-    return {};
+    return undefined;
   }
 
   if (found.length > 1) {
@@ -191,7 +179,7 @@ export function findGateStep(entity: Entity): GateStepLookup {
     );
   }
 
-  return { step, index };
+  return step;
 }
 
 /** The only `values` input a gate can check a run against: all of them. */
@@ -205,7 +193,7 @@ const WHOLE_PARAMETERS = /^\s*\$\{\{\s*parameters\s*\}\}\s*$/;
  * run outright; with anything narrower than `${{ parameters }}` the two hashes
  * never match. Either way the template can be asked for and approved, and then
  * every run fails at the gate — an approval spent on a request that could never
- * run, which is what checking a template at submit exists to prevent (Q3).
+ * run, which is what checking a template at submit exists to prevent.
  *
  * Kept with {@link findGateStep} rather than folded into it, so the catalog
  * processor can report it in its own words.
@@ -231,19 +219,4 @@ export function findGateValuesProblem(
     );
   }
   return undefined;
-}
-
-/**
- * Whether a template carries a usable gate.
- *
- * A malformed gate counts as gated: the template is trying to be gated and is
- * broken, and treating it as ungated would make it freely runnable.
- *
- * @public
- */
-export function isGated(entity: Entity): boolean {
-  if (entity.kind !== 'Template') {
-    return false;
-  }
-  return stepsOf(entity).some(step => step?.action === GATE_ACTION_ID);
 }
