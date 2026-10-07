@@ -3,6 +3,7 @@
   "include": [
     "packages/*/src",
     "packages/*/config.d.ts",
+    "packages/*/e2e-tests",
     "plugins/*/src",
     "plugins/*/config.d.ts",
     "plugins/*/dev",

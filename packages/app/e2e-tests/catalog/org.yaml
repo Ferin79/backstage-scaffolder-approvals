@@ -1,0 +1,60 @@
+# People the end-to-end tests sign in as, on top of the example org
+# (examples/scaffolder-approvals/org.yaml: requester, alice and bob in
+# devx-team, and outsider in no group).
+#
+# Each of these exists for one test that needs somebody nobody else touches,
+# so counts and empty lists stay predictable while tests run in parallel.
+
+# The only approver of e2e-home-card, so the home card's count is exactly what
+# that test submitted.
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: carol
+spec:
+  profile:
+    displayName: Carol Counter
+  memberOf: []
+---
+# Asks for nothing and approves nothing: both lists are empty for them.
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: newcomer
+spec:
+  profile:
+    displayName: Nina Newcomer
+  memberOf: []
+---
+# Submits enough requests to fill more than one page of "Your requests".
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: pager
+spec:
+  profile:
+    displayName: Paige Pager
+  memberOf: []
+---
+# A member of a group *inside* devx-team. Gates match direct members only, so
+# Dana is not an approver for devx-team's templates.
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: devx-platform
+  description: A sub-team of devx-team
+spec:
+  type: team
+  profile:
+    displayName: DevX platform
+  parent: devx-team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: dana
+spec:
+  profile:
+    displayName: Dana Nested
+  memberOf: [devx-platform]

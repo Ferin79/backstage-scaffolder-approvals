@@ -1,0 +1,440 @@
+# Templates the end-to-end tests run, each isolating one behaviour of the
+# approval gate. The examples in examples/scaffolder-approvals are tested too;
+# these cover what they do not: one approval, self-approval, expiry, a run
+# that fails, mixed approvers, and every gate shape the plugin refuses.
+
+# One approval from devx-team, and a step after the gate that records who
+# asked and who agreed. The workhorse for flows that need to run.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-single
+  title: E2E single approval
+  description: One member of devx-team has to approve.
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target:
+          title: Target
+          type: string
+          description: What the request is for
+        reason:
+          title: Reason
+          type: string
+          minLength: 5
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        quorum: 1
+        selfApprove: false
+        summary: 'Single approval for ${{ parameters.target }}'
+        values: ${{ parameters }}
+    - id: after
+      name: Record the actors
+      action: debug:log
+      input:
+        message: 'E2E-SINGLE ran for ${{ parameters.target }}; requestedBy=${{ steps.gate.output.requestedBy }}; approvedBy=${{ steps.gate.output.approvedBy }}; requestId=${{ steps.gate.output.requestId }}'
+---
+# The requester may approve their own request.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-self-approve
+  title: E2E self approval
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        quorum: 1
+        selfApprove: true
+        summary: 'Self-approvable for ${{ parameters.target }}'
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-SELF-APPROVE ran'
+---
+# Times out 30 seconds after it is submitted: long enough to open it first.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-expiring
+  title: E2E expiring
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        quorum: 1
+        timeout: { seconds: 30 }
+        summary: 'Expiring for ${{ parameters.target }}'
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-EXPIRING ran, which it never should'
+---
+# Approved, then a step after the gate fails.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-fails
+  title: E2E fails after approval
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        quorum: 1
+        summary: 'Failing run for ${{ parameters.target }}'
+        values: ${{ parameters }}
+    - id: boom
+      name: Fails on purpose
+      action: catalog:fetch
+      input:
+        entityRef: component:default/e2e-does-not-exist-anywhere
+---
+# A group and a user, two approvals needed: the outsider counts here.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-mixed-approvers
+  title: E2E mixed approvers
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers:
+          - group:default/devx-team
+          - user:default/outsider
+        quorum: 2
+        summary: 'Mixed approvers for ${{ parameters.target }}'
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-MIXED ran; approvedBy=${{ steps.gate.output.approvedBy }}'
+---
+# No summary and no parameters: the request is called by the template's
+# title, and has nothing to show under Parameters.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-no-summary
+  title: E2E without a summary
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters: []
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-NO-SUMMARY ran'
+---
+# Carol is its only approver, and approves nothing else.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-home-card
+  title: E2E home card
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [user:default/carol]
+        summary: 'Counted for ${{ parameters.target }}'
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-HOME-CARD ran'
+---
+# Every way the Parameters panel lays a value out: text, numbers, yes/no, a
+# list of names, a list of objects, a nested object, and a field the form
+# hides for the answer given.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-rich-parameters
+  title: E2E rich parameters
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Basics
+      required: [serviceName, replicas]
+      properties:
+        serviceName: { title: Service name, type: string }
+        replicas: { title: Replica count, type: integer, minimum: 1 }
+        public: { title: Publicly reachable, type: boolean }
+        regions:
+          title: Regions
+          type: array
+          items: { type: string }
+        notes:
+          title: Notes
+          type: string
+          ui:widget: textarea
+    - title: Delivery
+      properties:
+        environments:
+          title: Environments
+          type: array
+          items:
+            type: object
+            properties:
+              name: { title: Environment name, type: string }
+              autoDeploy: { title: Deploy automatically, type: boolean }
+        owner:
+          title: Ownership
+          type: object
+          properties:
+            team: { title: Owning team, type: string }
+            pager: { title: Pager rotation, type: string }
+        mode:
+          title: Mode
+          type: string
+          enum: [simple, advanced]
+      dependencies:
+        mode:
+          oneOf:
+            - properties:
+                mode: { const: simple }
+            - properties:
+                mode: { const: advanced }
+                tuning:
+                  title: Tuning profile
+                  type: string
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        summary: 'Rich parameters for ${{ parameters.serviceName }}'
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-RICH ran'
+---
+# Not gated: the scaffolder runs it as usual.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-ungated
+  title: E2E ungated
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      required: [target]
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: log
+      name: Log
+      action: debug:log
+      input:
+        message: 'E2E-UNGATED ran for ${{ parameters.target }}'
+---
+# Refused: `if:` on the gate would let the caller turn it off.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-refused-if
+  title: E2E refused - if on the gate
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      if: ${{ parameters.target }}
+      input:
+        approvers: [group:default/devx-team]
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-REFUSED-IF side effect'
+---
+# Refused: a secret cannot survive the wait for an approval.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-refused-secret
+  title: E2E refused - secret parameter
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      properties:
+        target: { title: Target, type: string }
+        token:
+          title: Token
+          type: string
+          ui:field: Secret
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-REFUSED-SECRET side effect'
+---
+# Refused: without `values` the gate has nothing to check the run against.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-refused-values
+  title: E2E refused - no values
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-REFUSED-VALUES side effect'
+---
+# Refused: approvers are read before the form exists.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-refused-dynamic-approvers
+  title: E2E refused - approvers from a parameter
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: ['${{ parameters.target }}']
+        values: ${{ parameters }}
+    - id: after
+      name: After the gate
+      action: debug:log
+      input:
+        message: 'E2E-REFUSED-DYNAMIC side effect'
+---
+# Refused: a step before the gate would run before anyone approved.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: e2e-refused-not-first
+  title: E2E refused - gate not first
+spec:
+  type: service
+  owner: group:default/devx-team
+  parameters:
+    - title: Target
+      properties:
+        target: { title: Target, type: string }
+  steps:
+    - id: before
+      name: Before the gate
+      action: debug:log
+      input:
+        message: 'E2E-REFUSED-NOT-FIRST ran before any approval'
+    - id: gate
+      name: Await approval
+      action: approval:gate
+      input:
+        approvers: [group:default/devx-team]
+        values: ${{ parameters }}

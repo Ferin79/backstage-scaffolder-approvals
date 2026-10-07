@@ -1,0 +1,64 @@
+# End-to-end tests (packages/app/e2e-tests): the approval flow driven in a
+# real browser against the real backend, as several people at once.
+#
+# Playwright builds the frontend and starts the backend itself, with
+# app-config.e2e.yaml; see playwright.config.ts.
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Keyed on the lockfile, which pins the Playwright version and with it
+      # the browser build.
+      - name: Cache Playwright's browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+
+      - name: Install Chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: yarn playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: yarn playwright install-deps chromium
+
+      - name: Run the end-to-end tests
+        run: yarn test:e2e
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            e2e-test-report/
+            node_modules/.cache/e2e-test-results/
+          retention-days: 14
