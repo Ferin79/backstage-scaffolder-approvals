@@ -5,3 +5,7 @@ coverage
 
 # Scaffolder skeletons: Nunjucks templates, not valid YAML or JSON until rendered.
 examples/scaffolder-approvals/provision-service/skeleton
+
+# Written by the end-to-end tests while they run, and their report
+packages/app/e2e-tests/catalog/runtime
+e2e-test-report

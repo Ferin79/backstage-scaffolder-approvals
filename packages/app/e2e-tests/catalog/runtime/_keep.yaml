@@ -1,0 +1,4 @@
+# Tests write templates into this folder while they run, to change and delete
+# them under a waiting request. They are not committed. This file keeps the
+# catalog location valid when there are none: a glob that matches nothing is
+# an error the catalog never recovers the location from on its own.

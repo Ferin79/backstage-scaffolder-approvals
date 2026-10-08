@@ -57,3 +57,7 @@ e2e-test-report/
 
 # Cache
 .cache/
+
+# Templates the end-to-end tests write while they run
+packages/app/e2e-tests/catalog/runtime/*
+!packages/app/e2e-tests/catalog/runtime/_keep.yaml

@@ -117,6 +117,35 @@ yarn build:api-reports  # update the report.api.md files after changing public A
 
 The backend tests run against SQLite and, when `BACKSTAGE_TEST_DATABASE_POSTGRES18_CONNECTION_STRING` is set, PostgreSQL 18. [CI](.github/workflows/ci.yml) runs formatting, type-check, lint, build and tests on every pull request and on pushes to `main`.
 
+### End-to-end tests
+
+[`packages/app/e2e-tests`](packages/app/e2e-tests) drives the whole feature in a real browser against the real backend, as several people at once: the Create page, the wizard, approving, denying, withdrawing, live updates, expiry, failed runs and Resubmit, templates changing under a waiting request, the inbox and home card, notifications, retention, and the REST API's contract. [A workflow](.github/workflows/e2e.yml) runs them on every pull request and on pushes to `main`, and uploads the HTML report.
+
+```sh
+yarn playwright install chromium   # once
+yarn test:e2e
+```
+
+Playwright builds the frontend, then starts the backend with [`app-config.e2e.yaml`](app-config.e2e.yaml) on top of `app-config.yaml`: the backend serves the built app on <http://localhost:7077>, with an empty database in `node_modules/.cache/e2e-db`. It leaves `.local-db` and anything running on 3000 and 7007 alone. The first run takes a few minutes for the build.
+
+To iterate on tests, start that backend yourself and leave it running; Playwright reuses it instead of building and starting its own. Its database is kept between your own starts; delete `node_modules/.cache/e2e-db` for an empty one.
+
+```sh
+yarn workspace app build   # again after changing frontend code
+yarn workspace backend start --config ../../app-config.yaml --config ../../app-config.e2e.yaml
+yarn playwright test wizard.test.ts            # one file
+yarn playwright test --ui                      # pick and watch tests
+yarn playwright show-report e2e-test-report    # the last run's report
+```
+
+How the tests are put together:
+
+- **Signing in as anyone.** The app signs in through the guest provider. The tests answer its refresh call with a test-only provider, [`e2eAuthProvider.ts`](packages/backend/src/e2eAuthProvider.ts), which signs in as the catalog user it is asked for, groups and all, so no restart is needed to switch people. It is mounted only when `auth.providers.e2e` is configured, which only the e2e config does, and refuses to work outside development.
+- **People and templates.** Besides the example org, [`catalog/org.yaml`](packages/app/e2e-tests/catalog/org.yaml) adds people that each exist for one test, and [`catalog/templates.yaml`](packages/app/e2e-tests/catalog/templates.yaml) one template per behaviour: one approval, self-approval, a 30-second timeout, a run that fails, mixed approvers, and every gate shape the plugin refuses. Tests that need to change or delete a template while a request waits on it write their own into `catalog/runtime/`, which is not committed.
+- **Running in parallel.** Every test makes its own requests, with values unique to it (the `unique` fixture), and finds them by those values, never by position or count. A test that counts things, such as the home card, uses a person nobody else touches.
+- **State through the API, the subject through the browser.** `apiAs(person)` reaches the REST API as anyone, for setting up and checking state; `signIn(person)` opens a page as them. [`support/pages.ts`](packages/app/e2e-tests/support/pages.ts) names the parts of the request page and the lists.
+- **Projects.** `setup` waits for the catalog and makes requests early in the run; `approvals` is everything else; `retention` runs last, because the retention sweep it triggers redacts every request settled more than two minutes earlier.
+
 ### Documentation
 
 The docs live in [`docs/`](docs), with screenshots in [`docs/images/`](docs/images). When a change affects what people see or do, update the matching page and, if a screen changed, its screenshot. Screenshots are taken from this app at a 1280×800 viewport and 2× scale.

@@ -16,12 +16,23 @@
 
 import { test, expect } from '@playwright/test';
 
-test('App should render the welcome page', async ({ page }) => {
+test('a guest signs in and lands on the home page with the approvals card', async ({
+  page,
+}) => {
   await page.goto('/');
 
   const enterButton = page.getByRole('button', { name: 'Enter' });
   await expect(enterButton).toBeVisible();
   await enterButton.click();
 
-  await expect(page.getByText('My Company Catalog')).toBeVisible();
+  const approvalsCard = page
+    .locator('[class*="MuiCard-root"]')
+    .filter({ has: page.getByRole('link', { name: 'Open approvals' }) });
+  // The guest is nobody's approver.
+  await expect(approvalsCard).toContainText('Nothing is waiting on you.');
+  await expect(
+    page.getByRole('navigation', { name: 'sidebar nav' }).getByRole('link', {
+      name: 'Approvals',
+    }),
+  ).toBeVisible();
 });

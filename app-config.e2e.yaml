@@ -1,0 +1,85 @@
+# Overlay for the end-to-end tests (packages/app/e2e-tests), loaded on top of
+# app-config.yaml by playwright.config.ts. Not for anything else: it signs
+# anybody in as anybody.
+#
+# The backend serves the built frontend (`yarn workspace app build`), so both
+# are on one port of their own, and the tests can run while the app is
+# running for development on 3000 and 7007. A production build, because the
+# dev server is too slow to serve a fresh browser for every test.
+app:
+  baseUrl: http://localhost:7077
+
+backend:
+  baseUrl: http://localhost:7077
+  listen:
+    port: 7077
+  cors:
+    origin: http://localhost:7077
+  # Files that playwright.config.ts deletes before it starts the backend, so
+  # every run starts empty. Not `:memory:`: in watch mode the CLI saves and
+  # restores an in-memory database over IPC, which can time out on a busy
+  # machine and leave the backend never ready.
+  database:
+    client: better-sqlite3
+    connection:
+      directory: ../../node_modules/.cache/e2e-db
+
+auth:
+  providers:
+    guest: {}
+    # `GET /api/auth/e2e/refresh?user=alice` signs in as user:default/alice.
+    # See packages/backend/src/e2eAuthProvider.ts.
+    e2e: {}
+
+scaffolderApprovals:
+  retention:
+    # Short, so the redaction test does not wait long, but longer than the
+    # minute after start-up when the sweep first runs by itself. Only the
+    # redaction test triggers it after that, once every other test is done.
+    # A string, because an object would merge with app-config.yaml's.
+    redactAfter: 'PT2M'
+
+catalog:
+  # Arrays replace rather than merge, so every location from app-config.yaml
+  # is repeated here.
+  locations:
+    - type: file
+      target: ../../examples/entities.yaml
+    - type: file
+      target: ../../examples/template/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../examples/org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ../../examples/scaffolder-approvals/org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ../../examples/scaffolder-approvals/request-github-admin.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../examples/scaffolder-approvals/provision-service/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ../../examples/scaffolder-approvals/provision-service/catalog.yaml
+
+    # The tests' own people and templates.
+    - type: file
+      target: ../app/e2e-tests/catalog/org.yaml
+      rules:
+        - allow: [User, Group]
+    - type: file
+      target: ../app/e2e-tests/catalog/templates.yaml
+      rules:
+        - allow: [Template]
+    # Templates a test writes, edits and deletes while it runs, to see what
+    # approvers are told when a template changes under a request.
+    - type: file
+      target: ../app/e2e-tests/catalog/runtime/*.yaml
+      rules:
+        - allow: [Template]
