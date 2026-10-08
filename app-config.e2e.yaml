@@ -15,10 +15,14 @@ backend:
     port: 7077
   cors:
     origin: http://localhost:7077
-  # A fresh database for every backend start.
+  # Files that playwright.config.ts deletes before it starts the backend, so
+  # every run starts empty. Not `:memory:`: in watch mode the CLI saves and
+  # restores an in-memory database over IPC, which can time out on a busy
+  # machine and leave the backend never ready.
   database:
     client: better-sqlite3
-    connection: ':memory:'
+    connection:
+      directory: ../../node_modules/.cache/e2e-db
 
 auth:
   providers:

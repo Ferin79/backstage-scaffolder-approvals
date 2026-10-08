@@ -126,9 +126,9 @@ yarn playwright install chromium   # once
 yarn test:e2e
 ```
 
-Playwright builds the frontend, then starts the backend with [`app-config.e2e.yaml`](app-config.e2e.yaml) on top of `app-config.yaml`: the backend serves the built app on <http://localhost:7077>, with a fresh in-memory database. It leaves `.local-db` and anything running on 3000 and 7007 alone. The first run takes a few minutes for the build.
+Playwright builds the frontend, then starts the backend with [`app-config.e2e.yaml`](app-config.e2e.yaml) on top of `app-config.yaml`: the backend serves the built app on <http://localhost:7077>, with an empty database in `node_modules/.cache/e2e-db`. It leaves `.local-db` and anything running on 3000 and 7007 alone. The first run takes a few minutes for the build.
 
-To iterate on tests, start that backend yourself and leave it running; Playwright reuses it instead of building and starting its own:
+To iterate on tests, start that backend yourself and leave it running; Playwright reuses it instead of building and starting its own. Its database is kept between your own starts; delete `node_modules/.cache/e2e-db` for an empty one.
 
 ```sh
 yarn workspace app build   # again after changing frontend code

@@ -23,13 +23,16 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * The frontend is built for production and served by the backend, which
  * starts with app-config.e2e.yaml on top of app-config.yaml: a port of its
- * own, a fresh in-memory database, the tests' templates and people, and a
- * sign-in provider that lets a test be anyone.
+ * own, an empty database, the tests' templates and people, and a sign-in
+ * provider that lets a test be anyone.
  */
 
 const CI = Boolean(process.env.CI);
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:7077';
 const APP_URL = process.env.E2E_APP_URL ?? BACKEND_URL;
+
+/** Deletes the database app-config.e2e.yaml keeps, so each start is empty. */
+const wipeDatabase = `node -e "require('fs').rmSync('node_modules/.cache/e2e-db', { recursive: true, force: true })"`;
 
 const configArgs = ['app-config.yaml', 'app-config.e2e.yaml']
   .map(file => `--config "${resolve(__dirname, file)}"`)
@@ -58,7 +61,7 @@ export default defineConfig({
   webServer: {
     // The frontend's dev server is too slow to hand every test a fresh
     // browser, so the backend serves a production build instead.
-    command: `yarn workspace app build && yarn workspace backend start ${configArgs}`,
+    command: `${wipeDatabase} && yarn workspace app build && yarn workspace backend start ${configArgs}`,
     url: `${BACKEND_URL}/.backstage/health/v1/readiness`,
     reuseExistingServer: !CI,
     timeout: 15 * 60_000,

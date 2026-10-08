@@ -128,7 +128,7 @@ test.describe('approving and denying', () => {
 
     const mine = new RequestsList(requesterPage);
     await mine.goto('mine');
-    await expect(mine.row(summary)).toContainText('Completed');
+    await expect(await mine.findRow(summary)).toContainText('Completed');
   });
 
   test('one denial rejects a request outright, whatever it already had', async ({
@@ -197,7 +197,7 @@ test.describe('approving and denying', () => {
 
     const mine = new RequestsList(requesterPage);
     await mine.goto('mine');
-    await expect(mine.row(summary)).toContainText('Denied');
+    await expect(await mine.findRow(summary)).toContainText('Denied');
   });
 });
 

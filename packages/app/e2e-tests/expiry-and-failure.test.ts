@@ -79,7 +79,7 @@ test.describe('a request nobody decides on in time', () => {
 
     const mine = new RequestsList(requesterPage);
     await mine.goto('mine');
-    await expect(mine.row(summary)).toContainText('Expired');
+    await expect(await mine.findRow(summary)).toContainText('Expired');
   });
 });
 

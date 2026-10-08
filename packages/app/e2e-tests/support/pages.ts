@@ -181,4 +181,24 @@ export class RequestsList {
   tab(name: 'Waiting on you' | 'Your requests'): Locator {
     return this.page.getByRole('tab', { name });
   }
+
+  /**
+   * The row for a request on whichever page it is on. Tests in parallel keep
+   * adding requests as the same people, so one made a while ago may have
+   * been pushed off the first page, newest first.
+   */
+  async findRow(text: string): Promise<Locator> {
+    const row = this.row(text);
+    for (;;) {
+      await expect(this.range).toBeVisible();
+      if ((await row.count()) > 0 || !(await this.nextPage.isEnabled())) {
+        break;
+      }
+      const range = await this.range.textContent();
+      await this.nextPage.click();
+      await expect(this.range).not.toHaveText(range!);
+    }
+    await expect(row, `a row for ${text} on some page`).toHaveCount(1);
+    return row;
+  }
 }
